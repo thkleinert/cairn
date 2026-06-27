@@ -1,20 +1,37 @@
 import { useState } from 'react';
-import { X, Copy, Check, Users, Trash2 } from 'lucide-react';
+import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil } from 'lucide-react';
 import type { Trip } from '../types';
+import { useCollaborators } from '../hooks/useCollaborators';
 
 interface Props {
   trip: Trip;
+  userId: string;
   onClose: () => void;
   onUpdate: (updates: Partial<Trip>) => void;
   onDelete: () => void;
   isOwner: boolean;
 }
 
+const ROLE_ICONS: Record<string, React.ReactNode> = {
+  owner: <Crown size={13} />,
+  editor: <Pencil size={13} />,
+  viewer: <Eye size={13} />,
+};
+
 export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }: Props) {
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState(trip.name);
   const [status, setStatus] = useState(trip.status);
   const [showDelete, setShowDelete] = useState(false);
+
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('editor');
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState('');
+  const [inviteSuccess, setInviteSuccess] = useState('');
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const { members, inviteCollaborator, removeCollaborator } = useCollaborators(trip.id);
 
   const shareUrl = `${window.location.origin}/shared/${trip.share_token}`;
 
@@ -27,6 +44,33 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
   const handleSave = () => {
     onUpdate({ name, status });
     onClose();
+  };
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim()) return;
+    setInviting(true);
+    setInviteError('');
+    setInviteSuccess('');
+    try {
+      await inviteCollaborator(inviteEmail.trim(), inviteRole);
+      setInviteSuccess(`${inviteEmail.trim()} added as ${inviteRole}`);
+      setInviteEmail('');
+    } catch (e) {
+      setInviteError(e instanceof Error ? e.message : 'Failed to invite');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleRemove = async (memberId: string, userIdToRemove: string) => {
+    setRemovingId(memberId);
+    try {
+      await removeCollaborator(userIdToRemove);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRemovingId(null);
+    }
   };
 
   return (
@@ -72,6 +116,69 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
               {copied ? <Check size={18} color="var(--color-success)" /> : <Copy size={18} />}
             </button>
           </div>
+        </div>
+
+        {/* Collaborators */}
+        <div className="detail-section">
+          <label className="detail-label"><Users size={13} /> Collaborators</label>
+
+          <div className="collab-list">
+            {members.map(m => (
+              <div key={m.id} className="collab-row">
+                <div className="collab-avatar">{m.email[0].toUpperCase()}</div>
+                <div className="collab-info">
+                  <span className="collab-email">{m.email}</span>
+                  <span className="collab-role">
+                    {ROLE_ICONS[m.role]}
+                    {m.role}
+                  </span>
+                </div>
+                {isOwner && m.role !== 'owner' && (
+                  <button
+                    className="btn-icon collab-remove"
+                    onClick={() => handleRemove(m.id, m.user_id)}
+                    disabled={removingId === m.id}
+                    aria-label={`Remove ${m.email}`}
+                  >
+                    <UserX size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {isOwner && (
+            <div className="collab-invite">
+              <div className="collab-invite-inputs">
+                <input
+                  className="input"
+                  type="email"
+                  placeholder="Email address"
+                  value={inviteEmail}
+                  onChange={e => { setInviteEmail(e.target.value); setInviteError(''); setInviteSuccess(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleInvite()}
+                />
+                <select
+                  className="input collab-role-select"
+                  value={inviteRole}
+                  onChange={e => setInviteRole(e.target.value as 'editor' | 'viewer')}
+                >
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+              </div>
+              <button
+                className="btn-secondary collab-invite-btn"
+                onClick={handleInvite}
+                disabled={inviting || !inviteEmail.trim()}
+              >
+                <UserPlus size={16} />
+                {inviting ? 'Adding…' : 'Add'}
+              </button>
+              {inviteError && <p className="collab-error">{inviteError}</p>}
+              {inviteSuccess && <p className="collab-success">{inviteSuccess}</p>}
+            </div>
+          )}
         </div>
 
         {isOwner && (

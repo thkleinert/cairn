@@ -194,6 +194,7 @@ export function TripView({ trip, userId, onBack }: Props) {
       {openSheet === 'settings' && (
         <TripSettingsSheet
           trip={trip}
+          userId={userId}
           onClose={() => setOpenSheet('none')}
           onUpdate={handleUpdateTrip}
           onDelete={handleDeleteTrip}

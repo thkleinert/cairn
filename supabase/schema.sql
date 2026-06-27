@@ -253,6 +253,131 @@ create policy "place_tags_delete" on public.place_tags for delete
   );
 
 -- ============================================================
+-- COLLABORATION RPCs
+-- ============================================================
+
+-- Returns trip members with their email (reads auth.users via SECURITY DEFINER)
+create or replace function public.get_trip_members(p_trip_id uuid)
+returns table (
+  id        uuid,
+  trip_id   uuid,
+  user_id   uuid,
+  role      text,
+  joined_at timestamptz,
+  email     text
+)
+language sql security definer stable
+set search_path = public, auth
+as $$
+  select
+    tm.id,
+    tm.trip_id,
+    tm.user_id,
+    tm.role,
+    tm.joined_at,
+    u.email
+  from public.trip_members tm
+  join auth.users u on u.id = tm.user_id
+  where tm.trip_id = p_trip_id
+    and public.is_trip_member(p_trip_id, auth.uid())
+  order by
+    case tm.role when 'owner' then 0 else 1 end,
+    tm.joined_at
+$$;
+
+grant execute on function public.get_trip_members(uuid) to authenticated;
+
+-- Invite an existing user by email (owner only)
+create or replace function public.invite_collaborator(
+  p_trip_id uuid,
+  p_email   text,
+  p_role    text default 'editor'
+)
+returns table (
+  id        uuid,
+  trip_id   uuid,
+  user_id   uuid,
+  role      text,
+  joined_at timestamptz,
+  email     text
+)
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid       uuid;
+  v_target_id uuid;
+  v_member_id uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+
+  if p_role not in ('editor', 'viewer') then
+    raise exception 'Role must be editor or viewer';
+  end if;
+
+  if not exists (
+    select 1 from public.trips where id = p_trip_id and owner_id = v_uid
+  ) then
+    raise exception 'Only the trip owner can invite collaborators';
+  end if;
+
+  select u.id into v_target_id from auth.users u where lower(u.email) = lower(p_email);
+  if v_target_id is null then
+    raise exception 'No account found with email %', p_email;
+  end if;
+
+  if v_target_id = v_uid then
+    raise exception 'You are already the owner of this trip';
+  end if;
+
+  insert into public.trip_members (trip_id, user_id, role)
+  values (p_trip_id, v_target_id, p_role)
+  on conflict (trip_id, user_id) do update set role = excluded.role
+  returning public.trip_members.id into v_member_id;
+
+  return query
+    select tm.id, tm.trip_id, tm.user_id, tm.role, tm.joined_at, u.email
+    from public.trip_members tm
+    join auth.users u on u.id = tm.user_id
+    where tm.id = v_member_id;
+end;
+$$;
+
+grant execute on function public.invite_collaborator(uuid, text, text) to authenticated;
+
+-- Remove a collaborator (owner only, cannot remove owner)
+create or replace function public.remove_collaborator(
+  p_trip_id uuid,
+  p_user_id uuid
+)
+returns void
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+
+  if not exists (
+    select 1 from public.trips where id = p_trip_id and owner_id = v_uid
+  ) then
+    raise exception 'Only the trip owner can remove collaborators';
+  end if;
+
+  if exists (select 1 from public.trips where id = p_trip_id and owner_id = p_user_id) then
+    raise exception 'Cannot remove the trip owner';
+  end if;
+
+  delete from public.trip_members where trip_id = p_trip_id and user_id = p_user_id;
+end;
+$$;
+
+grant execute on function public.remove_collaborator(uuid, uuid) to authenticated;
+
+-- ============================================================
 -- PUBLIC SHARE VIEW (bypasses RLS via share token)
 -- ============================================================
 

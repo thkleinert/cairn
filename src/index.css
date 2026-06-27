@@ -768,6 +768,52 @@ select.input {
    ============================================================ */
 .share-row { display: flex; align-items: center; gap: 8px; }
 .share-input { font-size: 13px; color: var(--color-text-secondary); }
+
+/* ============================================================
+   COLLABORATORS
+   ============================================================ */
+.collab-list {
+  display: flex; flex-direction: column; gap: 2px;
+  margin-bottom: 12px;
+}
+.collab-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+.collab-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--color-primary-light); color: var(--color-primary);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; flex-shrink: 0;
+}
+.collab-info {
+  flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0;
+}
+.collab-email {
+  font-size: 14px; font-weight: 500; color: var(--color-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.collab-role {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 500; color: var(--color-text-secondary);
+  text-transform: capitalize;
+}
+.collab-remove {
+  color: var(--color-muted);
+  transition: color 0.15s;
+}
+.collab-remove:hover { color: var(--color-danger); }
+
+.collab-invite { display: flex; flex-direction: column; gap: 8px; }
+.collab-invite-inputs { display: flex; gap: 8px; }
+.collab-role-select { width: 110px; flex-shrink: 0; }
+.collab-invite-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.collab-error { font-size: 13px; color: var(--color-danger); margin: 0; }
+.collab-success { font-size: 13px; color: var(--color-success); margin: 0; }
 .readonly-badge {
   padding: 4px 10px;
   background: #fef9c3; color: #b45309;
