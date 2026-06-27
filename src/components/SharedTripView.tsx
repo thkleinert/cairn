@@ -79,6 +79,8 @@ export function SharedTripView({ shareToken }: Props) {
           onUpdate={() => {}}
           onDelete={() => {}}
           onSetTags={() => {}}
+          onAddImage={async () => null}
+          onRemoveImage={() => {}}
         />
       )}
     </div>

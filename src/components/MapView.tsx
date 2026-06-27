@@ -15,6 +15,42 @@ interface Props {
 const PLANNED_COLOR = '#6366f1';
 const VISITED_COLOR = '#22c55e';
 
+function createMarkerEl(color: string, emoji: string | null, isSelected: boolean): HTMLDivElement {
+  const el = document.createElement('div');
+  el.className = 'map-marker';
+
+  if (emoji) {
+    el.style.cssText = `
+      width: 36px; height: 36px;
+      background: white;
+      border: 2.5px solid ${color};
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+      cursor: pointer;
+      transition: transform 0.2s;
+      transform: ${isSelected ? 'scale(1.35)' : 'scale(1)'};
+      z-index: ${isSelected ? '10' : '1'};
+    `;
+    el.textContent = emoji;
+  } else {
+    el.style.cssText = `
+      width: 28px; height: 28px;
+      background: ${color};
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg) ${isSelected ? 'scale(1.4)' : 'scale(1)'};
+      border: 2px solid white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      cursor: pointer;
+      transition: transform 0.2s;
+      z-index: ${isSelected ? '10' : '1'};
+    `;
+  }
+
+  return el;
+}
+
 export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPlace }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -29,22 +65,27 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
       zoom: 2,
     });
     mapRef.current.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
-    mapRef.current.addControl(new mapboxgl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), 'bottom-right');
+    mapRef.current.addControl(
+      new mapboxgl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }),
+      'bottom-right'
+    );
     return () => {
       mapRef.current?.remove();
       mapRef.current = null;
     };
   }, []);
 
-  const getTagColor = useCallback((place: Place) => {
+  const getTagInfo = useCallback((place: Place): { color: string; emoji: string | null } => {
     if (place.tags && place.tags.length > 0) {
       const t = allTags.find(t => t.id === place.tags![0].id);
-      if (t) return t.color;
+      if (t) return { color: t.color, emoji: t.icon ?? null };
     }
-    return place.status === 'visited' ? VISITED_COLOR : PLANNED_COLOR;
+    return {
+      color: place.status === 'visited' ? VISITED_COLOR : PLANNED_COLOR,
+      emoji: null,
+    };
   }, [allTags]);
 
-  // Filter and update markers
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -52,10 +93,8 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     const visible = places.filter(p =>
       activeTags.length === 0 || (p.tags ?? []).some(t => activeTags.includes(t.id))
     );
-
     const visibleIds = new Set(visible.map(p => p.id));
 
-    // Remove stale markers
     markersRef.current.forEach((marker, id) => {
       if (!visibleIds.has(id)) {
         marker.remove();
@@ -64,31 +103,26 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     });
 
     visible.forEach(place => {
-      const color = getTagColor(place);
+      const { color, emoji } = getTagInfo(place);
       const isSelected = selectedPlace?.id === place.id;
 
       if (markersRef.current.has(place.id)) {
         const existing = markersRef.current.get(place.id)!;
         const el = existing.getElement();
-        el.style.background = color;
-        el.style.transform = isSelected ? 'scale(1.4)' : 'scale(1)';
+        if (emoji) {
+          el.style.borderColor = color;
+          el.style.transform = isSelected ? 'scale(1.35)' : 'scale(1)';
+        } else {
+          el.style.background = color;
+          el.style.transform = `rotate(-45deg) ${isSelected ? 'scale(1.4)' : 'scale(1)'}`;
+        }
         el.style.zIndex = isSelected ? '10' : '1';
         return;
       }
 
-      const el = document.createElement('div');
-      el.className = 'map-marker';
-      el.style.background = color;
-      el.style.width = '28px';
-      el.style.height = '28px';
-      el.style.borderRadius = '50% 50% 50% 0';
-      el.style.transform = 'rotate(-45deg)';
-      el.style.border = '2px solid white';
-      el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
-      el.style.cursor = 'pointer';
-      el.style.transition = 'transform 0.2s';
-
-      const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+      const el = createMarkerEl(color, emoji, isSelected);
+      const anchor = emoji ? 'center' : 'bottom';
+      const marker = new mapboxgl.Marker({ element: el, anchor })
         .setLngLat([place.longitude, place.latitude])
         .addTo(map);
 
@@ -99,9 +133,8 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
 
       markersRef.current.set(place.id, marker);
     });
-  }, [places, activeTags, selectedPlace, allTags, getTagColor, onSelectPlace]);
+  }, [places, activeTags, selectedPlace, allTags, getTagInfo, onSelectPlace]);
 
-  // Fly to selected place
   useEffect(() => {
     if (!selectedPlace || !mapRef.current) return;
     mapRef.current.flyTo({
@@ -111,7 +144,6 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     });
   }, [selectedPlace]);
 
-  // Fit bounds when places load
   useEffect(() => {
     const map = mapRef.current;
     if (!map || places.length === 0) return;

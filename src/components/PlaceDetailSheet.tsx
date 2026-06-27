@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   X, CheckCircle, Circle, Tag as TagIcon, ExternalLink,
-  Trash2, Save, MapPin
+  Trash2, Save, MapPin, Plus, ImageIcon
 } from 'lucide-react';
-import type { Place, Tag } from '../types';
+import type { Place, Tag, PlaceImage } from '../types';
 import { format } from 'date-fns';
 
 interface Props {
@@ -14,28 +14,36 @@ interface Props {
   onUpdate: (updates: Partial<Place>) => void;
   onDelete: () => void;
   onSetTags: (tagIds: string[]) => void;
+  onAddImage: (url: string, caption?: string) => Promise<PlaceImage | null>;
+  onRemoveImage: (imageId: string) => void;
 }
 
 export function PlaceDetailSheet({
-  place, allTags, onClose, onToggleVisited, onUpdate, onDelete, onSetTags
+  place, allTags, onClose, onToggleVisited, onUpdate, onDelete,
+  onSetTags, onAddImage, onRemoveImage,
 }: Props) {
   const [notes, setNotes] = useState(place.notes ?? '');
   const [sourceUrl, setSourceUrl] = useState(place.source_url ?? '');
-  const [imageUrl, setImageUrl] = useState(place.image_url ?? '');
   const [selectedTags, setSelectedTags] = useState<string[]>((place.tags ?? []).map(t => t.id));
   const [dirty, setDirty] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [newImageUrl, setNewImageUrl] = useState('');
+  const [addingImage, setAddingImage] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const galleryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setNotes(place.notes ?? '');
     setSourceUrl(place.source_url ?? '');
-    setImageUrl(place.image_url ?? '');
     setSelectedTags((place.tags ?? []).map(t => t.id));
     setDirty(false);
+    setActiveImageIndex(0);
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const images: PlaceImage[] = place.images ?? [];
+
   const handleSave = () => {
-    onUpdate({ notes: notes || undefined, source_url: sourceUrl || undefined, image_url: imageUrl || undefined });
+    onUpdate({ notes: notes || undefined, source_url: sourceUrl || undefined });
     onSetTags(selectedTags);
     setDirty(false);
   };
@@ -45,17 +53,56 @@ export function PlaceDetailSheet({
     setDirty(true);
   };
 
+  const handleAddImage = async () => {
+    const url = newImageUrl.trim();
+    if (!url) return;
+    setAddingImage(true);
+    await onAddImage(url);
+    setNewImageUrl('');
+    setAddingImage(false);
+    // scroll gallery to end
+    setTimeout(() => {
+      if (galleryRef.current) {
+        galleryRef.current.scrollLeft = galleryRef.current.scrollWidth;
+        setActiveImageIndex(images.length); // will be the new last index
+      }
+    }, 100);
+  };
+
   const isVisited = place.status === 'visited';
+  const heroImage = images[activeImageIndex] ?? null;
 
   return (
     <div className="bottom-sheet-overlay" onClick={onClose}>
       <div className="bottom-sheet place-detail-sheet" onClick={e => e.stopPropagation()}>
         <div className="bottom-sheet-handle" />
 
-        {imageUrl ? (
+        {/* Image gallery hero */}
+        {heroImage ? (
           <div className="place-image-wrap">
-            <img src={imageUrl} alt={place.name} className="place-image" onError={() => setImageUrl('')} />
+            <img src={heroImage.url} alt={place.name} className="place-image" onError={() => {}} />
             <button className="sheet-close" onClick={onClose}><X size={20} /></button>
+            {images.length > 1 && (
+              <div className="image-dots">
+                {images.map((_, i) => (
+                  <button
+                    key={i}
+                    className={`image-dot ${i === activeImageIndex ? 'image-dot--active' : ''}`}
+                    onClick={() => setActiveImageIndex(i)}
+                  />
+                ))}
+              </div>
+            )}
+            <button
+              className="image-remove-btn"
+              onClick={() => {
+                onRemoveImage(heroImage.id);
+                setActiveImageIndex(Math.max(0, activeImageIndex - 1));
+              }}
+              aria-label="Remove image"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         ) : (
           <div className="sheet-header-row">
@@ -64,7 +111,7 @@ export function PlaceDetailSheet({
           </div>
         )}
 
-        {imageUrl && <h2 className="place-name place-name-below">{place.name}</h2>}
+        {heroImage && <h2 className="place-name place-name-below">{place.name}</h2>}
 
         {place.address && (
           <p className="place-address"><MapPin size={13} /> {place.address}</p>
@@ -91,6 +138,7 @@ export function PlaceDetailSheet({
                   style={{ '--tag-color': tag.color } as React.CSSProperties}
                   onClick={() => toggleTag(tag.id)}
                 >
+                  {tag.icon && <span>{tag.icon}</span>}
                   {tag.name}
                 </button>
               ))}
@@ -113,7 +161,7 @@ export function PlaceDetailSheet({
         {/* Source URL */}
         <div className="detail-section">
           <label className="detail-label">
-            <ExternalLink size={13} /> Source URL
+            <ExternalLink size={13} /> Source
           </label>
           <input
             type="url"
@@ -124,21 +172,50 @@ export function PlaceDetailSheet({
           />
           {sourceUrl && (
             <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="source-link">
-              Open link <ExternalLink size={12} />
+              Open <ExternalLink size={12} />
             </a>
           )}
         </div>
 
-        {/* Image URL */}
+        {/* Image gallery thumbnails */}
+        {images.length > 0 && (
+          <div className="detail-section">
+            <label className="detail-label"><ImageIcon size={13} /> Photos</label>
+            <div className="image-gallery" ref={galleryRef}>
+              {images.map((img, i) => (
+                <button
+                  key={img.id}
+                  className={`gallery-thumb-btn ${i === activeImageIndex ? 'gallery-thumb-btn--active' : ''}`}
+                  onClick={() => setActiveImageIndex(i)}
+                >
+                  <img src={img.url} alt="" className="gallery-thumb" onError={() => {}} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Add image */}
         <div className="detail-section">
-          <label className="detail-label">Image URL</label>
-          <input
-            type="url"
-            className="input"
-            placeholder="https://…"
-            value={imageUrl}
-            onChange={e => { setImageUrl(e.target.value); setDirty(true); }}
-          />
+          <label className="detail-label"><ImageIcon size={13} /> Add photo URL</label>
+          <div className="add-image-row">
+            <input
+              type="url"
+              className="input"
+              placeholder="https://…"
+              value={newImageUrl}
+              onChange={e => setNewImageUrl(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddImage()}
+            />
+            <button
+              className="btn-icon"
+              onClick={handleAddImage}
+              disabled={!newImageUrl.trim() || addingImage}
+              aria-label="Add image"
+            >
+              <Plus size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="detail-actions">

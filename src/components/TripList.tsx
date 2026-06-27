@@ -28,18 +28,26 @@ export function TripList({ userId, onSelectTrip }: Props) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     setCreating(true);
-    const trip = await createTrip(name.trim(), undefined, startDate || undefined, endDate || undefined);
-    setCreating(false);
-    setShowCreate(false);
-    setName('');
-    setStartDate('');
-    setEndDate('');
-    if (trip) onSelectTrip(trip);
+    setCreateError('');
+    try {
+      const trip = await createTrip(name.trim(), undefined, startDate || undefined, endDate || undefined);
+      setShowCreate(false);
+      setName('');
+      setStartDate('');
+      setEndDate('');
+      if (trip) onSelectTrip(trip);
+    } catch (err: unknown) {
+      const msg = (err as { message?: string })?.message ?? JSON.stringify(err);
+      setCreateError(msg);
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -119,6 +127,7 @@ export function TripList({ userId, onSelectTrip }: Props) {
                   <input type="date" className="input" value={endDate} onChange={e => setEndDate(e.target.value)} />
                 </label>
               </div>
+              {createError && <p className="error-text">{createError}</p>}
               <div className="form-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
                 <button type="submit" className="btn-primary" disabled={creating}>

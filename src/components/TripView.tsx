@@ -21,7 +21,7 @@ type Sheet = 'none' | 'tag-filter' | 'settings';
 type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack }: Props) {
-  const { places, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags } = usePlaces(trip.id);
+  const { places, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage } = usePlaces(trip.id);
   const { tags, createTag, deleteTag } = useTags(trip.id);
   const { updateTrip, deleteTrip } = useTrips(userId);
 
@@ -166,6 +166,15 @@ export function TripView({ trip, userId, onBack }: Props) {
               ...prev,
               tags: tags.filter(t => tagIds.includes(t.id)),
             } : null);
+          }}
+          onAddImage={async (url, caption) => {
+            const img = await addPlaceImage(selectedPlace.id, url, caption);
+            if (img) setSelectedPlace(prev => prev ? { ...prev, images: [...(prev.images ?? []), img] } : null);
+            return img;
+          }}
+          onRemoveImage={(imageId) => {
+            removePlaceImage(selectedPlace.id, imageId);
+            setSelectedPlace(prev => prev ? { ...prev, images: (prev.images ?? []).filter(i => i.id !== imageId) } : null);
           }}
         />
       )}

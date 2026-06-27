@@ -22,12 +22,14 @@ export function useTrips(userId: string | undefined) {
 
   const createTrip = async (name: string, description?: string, start_date?: string, end_date?: string) => {
     if (!userId) return null;
-    const { data, error } = await supabase
-      .from('trips')
-      .insert({ name, description, start_date, end_date, owner_id: userId })
-      .select()
-      .single();
-    if (!error && data) setTrips(prev => [data, ...prev]);
+    const { data, error } = await supabase.rpc('create_trip', {
+      p_name: name,
+      p_description: description ?? null,
+      p_start_date: start_date ?? null,
+      p_end_date: end_date ?? null,
+    });
+    if (error) throw error;
+    if (data) setTrips(prev => [data, ...prev]);
     return data;
   };
 

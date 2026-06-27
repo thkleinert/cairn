@@ -13,11 +13,11 @@ export function useTags(tripId: string | undefined) {
 
   useEffect(() => { fetchTags(); }, [fetchTags]);
 
-  const createTag = async (name: string, color: string) => {
+  const createTag = async (name: string, color: string, icon?: string) => {
     if (!tripId) return null;
     const { data, error } = await supabase
       .from('tags')
-      .insert({ trip_id: tripId, name, color })
+      .insert({ trip_id: tripId, name, color, icon: icon || null })
       .select()
       .single();
     if (!error && data) setTags(prev => [...prev, data]);

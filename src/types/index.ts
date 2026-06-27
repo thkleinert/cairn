@@ -37,6 +37,16 @@ export interface Tag {
   trip_id: string;
   name: string;
   color: string;
+  icon?: string;
+}
+
+export interface PlaceImage {
+  id: string;
+  place_id: string;
+  url: string;
+  caption?: string;
+  position: number;
+  created_at: string;
 }
 
 export interface Place {
@@ -56,6 +66,7 @@ export interface Place {
   created_at: string;
   updated_at: string;
   tags?: Tag[];
+  images?: PlaceImage[];
 }
 
 export interface PlaceTag {

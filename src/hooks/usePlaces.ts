@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Place } from '../types';
+import type { Place, PlaceImage } from '../types';
 
 export function usePlaces(tripId: string | undefined) {
   const [places, setPlaces] = useState<Place[]>([]);
@@ -11,19 +11,19 @@ export function usePlaces(tripId: string | undefined) {
     if (!tripId) { setLoading(false); return; }
     const { data } = await supabase
       .from('places')
-      .select('*, place_tags(tag_id, tags(*))')
+      .select('*, place_tags(tag_id, tags(*)), place_images(*)')
       .eq('trip_id', tripId)
       .order('created_at', { ascending: true });
 
-    const normalized = (data ?? []).map((p: Place & { place_tags?: Array<{ tags: unknown }> }) => ({
+    const normalized = (data ?? []).map((p: Place & { place_tags?: Array<{ tags: unknown }>, place_images?: PlaceImage[] }) => ({
       ...p,
       tags: (p.place_tags ?? []).map((pt) => pt.tags),
+      images: (p.place_images ?? []).sort((a, b) => a.position - b.position),
     }));
     setPlaces(normalized as Place[]);
     setLoading(false);
   }, [tripId]);
 
-  // Realtime subscription
   useEffect(() => {
     if (!tripId) return;
     fetchPlaces();
@@ -60,7 +60,7 @@ export function usePlaces(tripId: string | undefined) {
       .select()
       .single();
     if (!error && data) {
-      setPlaces(prev => [...prev, { ...data, tags: [] }]);
+      setPlaces(prev => [...prev, { ...data, tags: [], images: [] }]);
     }
     return data;
   };
@@ -100,5 +100,29 @@ export function usePlaces(tripId: string | undefined) {
     fetchPlaces();
   };
 
-  return { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags };
+  const addPlaceImage = async (placeId: string, url: string, caption?: string) => {
+    const existing = places.find(p => p.id === placeId);
+    const position = (existing?.images?.length ?? 0);
+    const { data, error } = await supabase
+      .from('place_images')
+      .insert({ place_id: placeId, url, caption: caption || null, position })
+      .select()
+      .single();
+    if (!error && data) {
+      setPlaces(prev => prev.map(p =>
+        p.id === placeId ? { ...p, images: [...(p.images ?? []), data] } : p
+      ));
+      return data as PlaceImage;
+    }
+    return null;
+  };
+
+  const removePlaceImage = async (placeId: string, imageId: string) => {
+    await supabase.from('place_images').delete().eq('id', imageId);
+    setPlaces(prev => prev.map(p =>
+      p.id === placeId ? { ...p, images: (p.images ?? []).filter(i => i.id !== imageId) } : p
+    ));
+  };
+
+  return { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage };
 }
