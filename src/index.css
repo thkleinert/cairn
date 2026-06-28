@@ -341,40 +341,63 @@ select.input {
 .map-container { position: absolute; inset: 0; }
 
 /* ============================================================
-   BOTTOM BAR
+   BOTTOM BAR — floating island pill
    ============================================================ */
 .trip-bottombar {
-  display: flex; align-items: center;
-  height: calc(var(--bottombar-height) + env(safe-area-inset-bottom));
-  padding: 0 16px env(safe-area-inset-bottom);
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  display: flex; justify-content: center; align-items: flex-end;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 14px);
+  height: calc(68px + env(safe-area-inset-bottom));
   z-index: 10;
-  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.bottombar-pill {
+  pointer-events: auto;
+  display: flex; align-items: stretch;
+  background: var(--color-surface);
+  border-radius: 99px;
+  padding: 0 8px;
+  height: 54px;
+  width: 272px;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
+  animation: pillSlideUp 0.4s cubic-bezier(0.32,0.72,0,1);
+}
+
+@keyframes pillSlideUp {
+  from { transform: translateY(20px); opacity: 0; }
 }
 
 .bottombar-tab {
   flex: 1;
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  min-height: var(--tap-target);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   color: var(--color-muted);
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.01em;
-  transition: color 0.15s;
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: color 0.18s;
 }
 .bottombar-tab--active { color: var(--color-primary); }
 
+.bottombar-tab svg {
+  transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+.bottombar-tab--active svg { transform: scale(1.1) translateY(-1px); }
+
 .fab {
-  width: 52px; height: 52px;
+  width: 44px; height: 44px;
+  align-self: center;
   background: var(--color-primary);
   color: white;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 16px rgba(13,148,136,0.38);
+  box-shadow: 0 2px 10px rgba(13,148,136,0.35);
   flex-shrink: 0;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.15s;
 }
-.fab:active { transform: scale(0.9); box-shadow: 0 2px 8px rgba(13,148,136,0.3); }
+.fab:active { transform: scale(0.88); box-shadow: 0 1px 5px rgba(13,148,136,0.2); }
 
 /* ============================================================
    SEARCH OVERLAY
@@ -743,7 +766,7 @@ select.input {
    ============================================================ */
 .place-list {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 8px;
+  padding: 8px 8px calc(76px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column; gap: 4px;
   background: var(--color-bg);
 }
