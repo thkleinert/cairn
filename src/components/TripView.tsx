@@ -176,6 +176,7 @@ export function TripView({ trip, userId, onBack }: Props) {
             removePlaceImage(selectedPlace.id, imageId);
             setSelectedPlace(prev => prev ? { ...prev, images: (prev.images ?? []).filter(i => i.id !== imageId) } : null);
           }}
+          onCreateTag={createTag}
         />
       )}
 

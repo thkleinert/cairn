@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import type { Tag } from '../types';
+import { useSwipeToClose } from '../hooks/useSwipeToClose';
 
 const PRESET_COLORS = [
   '#6366f1', '#ec4899', '#f59e0b', '#10b981',
@@ -48,10 +49,12 @@ export function TagFilterSheet({
     p => !tags.some(t => t.name.toLowerCase() === p.name.toLowerCase())
   );
 
+  const { sheetRef, handleProps } = useSwipeToClose(onClose);
+
   return (
     <div className="bottom-sheet-overlay" onClick={onClose}>
-      <div className="bottom-sheet" onClick={e => e.stopPropagation()}>
-        <div className="bottom-sheet-handle" />
+      <div className="bottom-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}>
+        <div className="bottom-sheet-handle" {...handleProps} />
         <div className="sheet-header-row">
           <h2 className="bottom-sheet-title">Tags</h2>
           <button className="sheet-close" onClick={onClose}><X size={20} /></button>

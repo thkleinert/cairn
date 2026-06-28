@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil } from 'lucide-react';
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
+import { useSwipeToClose } from '../hooks/useSwipeToClose';
 
 interface Props {
   trip: Trip;
@@ -32,6 +33,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   const { members, inviteCollaborator, removeCollaborator } = useCollaborators(trip.id);
+  const { sheetRef, handleProps } = useSwipeToClose(onClose);
 
   const shareUrl = `${window.location.origin}/shared/${trip.share_token}`;
 
@@ -75,8 +77,8 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
 
   return (
     <div className="bottom-sheet-overlay" onClick={onClose}>
-      <div className="bottom-sheet" onClick={e => e.stopPropagation()}>
-        <div className="bottom-sheet-handle" />
+      <div className="bottom-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}>
+        <div className="bottom-sheet-handle" {...handleProps} />
         <div className="sheet-header-row">
           <h2 className="bottom-sheet-title">Trip Settings</h2>
           <button className="sheet-close" onClick={onClose}><X size={20} /></button>

@@ -16,6 +16,7 @@
   --color-success-bg: #dcfce7;
   --color-danger: #dc2626;
   --color-muted: #9ca3af;
+  --color-secondary: #5c6370;
   --color-text: #0f1117;
   --color-text-secondary: #5c6370;
   --color-border: #e4e6ea;
@@ -186,7 +187,7 @@ select.input {
 .auth-screen {
   min-height: 100dvh;
   display: flex; align-items: center; justify-content: center;
-  padding: 24px;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
   background: linear-gradient(150deg, #f0f2ff 0%, #f5f8ff 50%, #edf7f0 100%);
 }
 
@@ -249,7 +250,7 @@ select.input {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 16px 12px;
+  padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column; gap: 10px;
 }
 
@@ -336,9 +337,8 @@ select.input {
    ============================================================ */
 .trip-bottombar {
   display: flex; align-items: center;
-  height: var(--bottombar-height);
-  padding: 0 16px;
-  padding-bottom: env(safe-area-inset-bottom);
+  height: calc(var(--bottombar-height) + env(safe-area-inset-bottom));
+  padding: 0 16px env(safe-area-inset-bottom);
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
   z-index: 10;
@@ -466,8 +466,16 @@ select.input {
   width: 36px; height: 4px;
   background: var(--color-border);
   border-radius: 2px;
-  margin: 0 auto 20px;
+  /* expanded tap target without changing visual */
+  padding: 10px 50px;
+  margin: -10px auto 10px;
+  box-sizing: content-box;
+  background-clip: content-box;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
+.bottom-sheet-handle:active { cursor: grabbing; }
 
 .bottom-sheet-title {
   font-size: 18px; font-weight: 700;
@@ -631,6 +639,18 @@ select.input {
 .tag-chip--active {
   background: var(--tag-color, var(--color-primary));
   color: white;
+}
+.tag-chip--add {
+  border-style: dashed;
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+  padding: 6px 10px;
+}
+.tag-chip--add:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+.quick-tag-form {
+  margin-top: 10px;
+  display: flex; flex-direction: column; gap: 10px;
 }
 
 .tag-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }

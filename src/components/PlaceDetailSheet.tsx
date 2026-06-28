@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import {
   X, CheckCircle, Circle, Tag as TagIcon, ExternalLink,
   Trash2, Save, MapPin, Plus, ImageIcon
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
 import { format } from 'date-fns';
+
+const QUICK_COLORS = [
+  '#6366f1', '#ec4899', '#f59e0b', '#10b981',
+  '#3b82f6', '#ef4444', '#8b5cf6', '#14b8a6',
+];
 
 interface Props {
   place: Place;
@@ -16,11 +22,12 @@ interface Props {
   onSetTags: (tagIds: string[]) => void;
   onAddImage: (url: string, caption?: string) => Promise<PlaceImage | null>;
   onRemoveImage: (imageId: string) => void;
+  onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
 }
 
 export function PlaceDetailSheet({
   place, allTags, onClose, onToggleVisited, onUpdate, onDelete,
-  onSetTags, onAddImage, onRemoveImage,
+  onSetTags, onAddImage, onRemoveImage, onCreateTag,
 }: Props) {
   const [notes, setNotes] = useState(place.notes ?? '');
   const [sourceUrl, setSourceUrl] = useState(place.source_url ?? '');
@@ -31,6 +38,9 @@ export function PlaceDetailSheet({
   const [addingImage, setAddingImage] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const galleryRef = useRef<HTMLDivElement>(null);
+  const [showAddTag, setShowAddTag] = useState(false);
+  const [quickName, setQuickName] = useState('');
+  const [quickColor, setQuickColor] = useState(QUICK_COLORS[0]);
 
   useEffect(() => {
     setNotes(place.notes ?? '');
@@ -69,13 +79,26 @@ export function PlaceDetailSheet({
     }, 100);
   };
 
+  const handleQuickCreate = async () => {
+    if (!quickName.trim() || !onCreateTag) return;
+    const tag = await onCreateTag(quickName.trim(), quickColor);
+    if (tag) {
+      setSelectedTags(prev => [...prev, tag.id]);
+      setDirty(true);
+    }
+    setQuickName('');
+    setQuickColor(QUICK_COLORS[0]);
+    setShowAddTag(false);
+  };
+
   const isVisited = place.status === 'visited';
   const heroImage = images[activeImageIndex] ?? null;
+  const { sheetRef, handleProps } = useSwipeToClose(onClose);
 
   return (
     <div className="bottom-sheet-overlay" onClick={onClose}>
-      <div className="bottom-sheet place-detail-sheet" onClick={e => e.stopPropagation()}>
-        <div className="bottom-sheet-handle" />
+      <div className="bottom-sheet place-detail-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}>
+        <div className="bottom-sheet-handle" {...handleProps} />
 
         {/* Image gallery hero */}
         {heroImage ? (
@@ -127,7 +150,7 @@ export function PlaceDetailSheet({
         </button>
 
         {/* Tags */}
-        {allTags.length > 0 && (
+        {(allTags.length > 0 || onCreateTag) && (
           <div className="detail-section">
             <label className="detail-label"><TagIcon size={13} /> Tags</label>
             <div className="tag-chips">
@@ -142,7 +165,42 @@ export function PlaceDetailSheet({
                   {tag.name}
                 </button>
               ))}
+              {onCreateTag && !showAddTag && (
+                <button className="tag-chip tag-chip--add" onClick={() => setShowAddTag(true)} aria-label="New tag">
+                  <Plus size={14} />
+                </button>
+              )}
             </div>
+            {showAddTag && (
+              <div className="quick-tag-form">
+                <input
+                  className="input"
+                  placeholder="Tag name"
+                  value={quickName}
+                  onChange={e => setQuickName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleQuickCreate();
+                    if (e.key === 'Escape') setShowAddTag(false);
+                  }}
+                  autoFocus
+                />
+                <div className="color-presets">
+                  {QUICK_COLORS.map(c => (
+                    <button
+                      key={c}
+                      className={`color-preset ${quickColor === c ? 'color-preset--active' : ''}`}
+                      style={{ background: c }}
+                      onClick={() => setQuickColor(c)}
+                      aria-label={c}
+                    />
+                  ))}
+                </div>
+                <div className="form-actions">
+                  <button className="btn-secondary" onClick={() => setShowAddTag(false)}>Cancel</button>
+                  <button className="btn-primary" onClick={handleQuickCreate} disabled={!quickName.trim()}>Add</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
