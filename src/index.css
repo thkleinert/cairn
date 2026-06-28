@@ -47,11 +47,19 @@ html {
   font-family: var(--font-sans);
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
-  background: var(--color-bg);
+  background: var(--color-surface);
   color: var(--color-text);
+  /* iOS PWA: fill the full physical screen height */
+  height: -webkit-fill-available;
 }
 
-body { min-height: 100dvh; overflow: hidden; }
+body {
+  min-height: 100dvh;
+  /* fallback for iOS < 15 where 100dvh ≠ full screen height */
+  min-height: -webkit-fill-available;
+  overflow: hidden;
+  background: var(--color-surface);
+}
 
 button { cursor: pointer; font-family: inherit; border: none; background: none; }
 input, textarea, select { font-family: inherit; font-size: 16px; }
