@@ -1,7 +1,7 @@
 /* ============================================================
    FONTS
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap');
 
 /* ============================================================
    DESIGN TOKENS
@@ -9,9 +9,9 @@
 :root {
   --color-bg: #f0f2f5;
   --color-surface: #ffffff;
-  --color-primary: #5b5ef4;
-  --color-primary-dark: #4749d4;
-  --color-primary-light: #eef0ff;
+  --color-primary: #0d9488;
+  --color-primary-dark: #0b7c72;
+  --color-primary-light: #e6f7f5;
   --color-success: #16a34a;
   --color-success-bg: #dcfce7;
   --color-danger: #dc2626;
@@ -31,6 +31,7 @@
   --sheet-max-height: 88dvh;
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Playfair Display', Georgia, serif;
 
   --shadow-card: 0 1px 3px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.05);
   --shadow-sheet: 0 -4px 32px rgba(0,0,0,0.12);
@@ -91,7 +92,7 @@ img { display: block; }
 }
 .input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(91,94,244,0.12);
+  box-shadow: 0 0 0 3px rgba(13,148,136,0.12);
 }
 textarea.input { height: auto; padding: 12px 14px; resize: vertical; line-height: 1.5; }
 select.input {
@@ -202,8 +203,8 @@ select.input {
   margin-bottom: 6px;
 }
 .auth-logo h1 {
-  font-size: 26px; font-weight: 800;
-  letter-spacing: -0.03em;
+  font-size: 26px; font-weight: 700;
+  font-family: var(--font-display);
   color: var(--color-text);
 }
 .auth-subtitle {
@@ -240,8 +241,8 @@ select.input {
 
 .trip-list-title {
   font-size: 24px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-weight: 700;
+  font-family: var(--font-display);
 }
 
 .trip-cards {
@@ -320,7 +321,7 @@ select.input {
   flex: 1;
   font-size: 17px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--font-display);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -361,11 +362,11 @@ select.input {
   color: white;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 16px rgba(91,94,244,0.38);
+  box-shadow: 0 4px 16px rgba(13,148,136,0.38);
   flex-shrink: 0;
   transition: transform 0.15s, box-shadow 0.15s;
 }
-.fab:active { transform: scale(0.9); box-shadow: 0 2px 8px rgba(91,94,244,0.3); }
+.fab:active { transform: scale(0.9); box-shadow: 0 2px 8px rgba(13,148,136,0.3); }
 
 /* ============================================================
    SEARCH OVERLAY
