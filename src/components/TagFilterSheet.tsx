@@ -9,6 +9,14 @@ const PRESET_COLORS = [
 
 const SUGGESTED_ICONS = ['📍', '🍔', '📷', '🏛️', '🏖️', '🛍️', '☕', '🍷', '🏨', '🎭', '🌿', '⛪'];
 
+const TAG_PRESETS = [
+  { name: 'Food',          icon: '🍔', color: '#ef4444' },
+  { name: 'Photography',   icon: '📷', color: '#3b82f6' },
+  { name: 'Accommodation', icon: '🏨', color: '#8b5cf6' },
+  { name: 'Outdoor',       icon: '🌿', color: '#10b981' },
+  { name: 'Coffee',        icon: '☕', color: '#f59e0b' },
+];
+
 interface Props {
   tags: Tag[];
   activeTags: string[];
@@ -35,6 +43,10 @@ export function TagFilterSheet({
     setNewIcon('');
     setShowCreate(false);
   };
+
+  const availablePresets = TAG_PRESETS.filter(
+    p => !tags.some(t => t.name.toLowerCase() === p.name.toLowerCase())
+  );
 
   return (
     <div className="bottom-sheet-overlay" onClick={onClose}>
@@ -72,6 +84,21 @@ export function TagFilterSheet({
             </div>
           ))}
         </div>
+
+        {!showCreate && availablePresets.length > 0 && (
+          <div className="tag-presets">
+            {availablePresets.map(p => (
+              <button
+                key={p.name}
+                className="tag-preset-chip"
+                onClick={() => onCreateTag(p.name, p.color, p.icon)}
+              >
+                <span>{p.icon}</span>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {showCreate ? (
           <div className="create-tag-form">
