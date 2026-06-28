@@ -233,7 +233,7 @@ select.input {
 
 .trip-list-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 16px 12px;
+  padding: calc(18px + env(safe-area-inset-top)) 16px 12px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
 }
@@ -308,8 +308,8 @@ select.input {
 
 .trip-topbar {
   display: flex; align-items: center; gap: 8px;
-  height: var(--topbar-height);
-  padding: 0 8px 0 4px;
+  height: calc(var(--topbar-height) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 8px 0 4px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   z-index: 10;

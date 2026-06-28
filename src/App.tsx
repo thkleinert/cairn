@@ -54,6 +54,14 @@ function AuthedApp() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const el = document.getElementById('splash');
+    if (!el) return;
+    el.classList.add('fade');
+    const t = setTimeout(() => el.remove(), 380);
+    return () => clearTimeout(t);
+  }, []);
+
   if (!isConfigured) return <SetupScreen />;
   return <AuthedApp />;
 }
