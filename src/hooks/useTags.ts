@@ -29,5 +29,16 @@ export function useTags(tripId: string | undefined) {
     setTags(prev => prev.filter(t => t.id !== id));
   };
 
-  return { tags, createTag, deleteTag, refetch: fetchTags };
+  const updateTag = async (id: string, updates: { name?: string; color?: string; icon?: string | null }) => {
+    const { data, error } = await supabase
+      .from('tags')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error && data) setTags(prev => prev.map(t => t.id === id ? data : t));
+    return data;
+  };
+
+  return { tags, createTag, deleteTag, updateTag, refetch: fetchTags };
 }

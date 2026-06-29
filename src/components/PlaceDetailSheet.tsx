@@ -41,6 +41,7 @@ export function PlaceDetailSheet({
   const [showAddTag, setShowAddTag] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [quickColor, setQuickColor] = useState(QUICK_COLORS[0]);
+  const [quickIcon, setQuickIcon] = useState('');
 
   useEffect(() => {
     setNotes(place.notes ?? '');
@@ -81,13 +82,14 @@ export function PlaceDetailSheet({
 
   const handleQuickCreate = async () => {
     if (!quickName.trim() || !onCreateTag) return;
-    const tag = await onCreateTag(quickName.trim(), quickColor);
+    const tag = await onCreateTag(quickName.trim(), quickColor, quickIcon.trim() || undefined);
     if (tag) {
       setSelectedTags(prev => [...prev, tag.id]);
       setDirty(true);
     }
     setQuickName('');
     setQuickColor(QUICK_COLORS[0]);
+    setQuickIcon('');
     setShowAddTag(false);
   };
 
@@ -173,17 +175,28 @@ export function PlaceDetailSheet({
             </div>
             {showAddTag && (
               <div className="quick-tag-form">
-                <input
-                  className="input"
-                  placeholder="Tag name"
-                  value={quickName}
-                  onChange={e => setQuickName(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') handleQuickCreate();
-                    if (e.key === 'Escape') setShowAddTag(false);
-                  }}
-                  autoFocus
-                />
+                <div className="tag-create-row">
+                  <div className="icon-input-wrap">
+                    <input
+                      className="input icon-input"
+                      placeholder="😀"
+                      maxLength={2}
+                      value={quickIcon}
+                      onChange={e => setQuickIcon(e.target.value)}
+                    />
+                  </div>
+                  <input
+                    className="input"
+                    placeholder="Tag name"
+                    value={quickName}
+                    onChange={e => setQuickName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleQuickCreate();
+                      if (e.key === 'Escape') { setShowAddTag(false); setQuickIcon(''); }
+                    }}
+                    autoFocus
+                  />
+                </div>
                 <div className="color-presets">
                   {QUICK_COLORS.map(c => (
                     <button
@@ -196,7 +209,7 @@ export function PlaceDetailSheet({
                   ))}
                 </div>
                 <div className="form-actions">
-                  <button className="btn-secondary" onClick={() => setShowAddTag(false)}>Cancel</button>
+                  <button className="btn-secondary" onClick={() => { setShowAddTag(false); setQuickIcon(''); }}>Cancel</button>
                   <button className="btn-primary" onClick={handleQuickCreate} disabled={!quickName.trim()}>Add</button>
                 </div>
               </div>

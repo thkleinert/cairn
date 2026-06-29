@@ -22,7 +22,7 @@ type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack }: Props) {
   const { places, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage } = usePlaces(trip.id);
-  const { tags, createTag, deleteTag } = useTags(trip.id);
+  const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   const { updateTrip, deleteTrip } = useTrips(userId);
 
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -190,6 +190,7 @@ export function TripView({ trip, userId, onBack }: Props) {
           onClearTags={() => setActiveTags([])}
           onCreateTag={createTag}
           onDeleteTag={deleteTag}
+          onUpdateTag={updateTag}
           onClose={() => setOpenSheet('none')}
         />
       )}
