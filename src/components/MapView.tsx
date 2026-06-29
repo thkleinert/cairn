@@ -29,7 +29,6 @@ function createMarkerEl(color: string, emoji: string | null, isSelected: boolean
       font-size: 18px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.25);
       cursor: pointer;
-      transition: transform 0.2s;
       transform: ${isSelected ? 'scale(1.35)' : 'scale(1)'};
       z-index: ${isSelected ? '10' : '1'};
     `;
@@ -43,7 +42,6 @@ function createMarkerEl(color: string, emoji: string | null, isSelected: boolean
       border: 2px solid white;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
       cursor: pointer;
-      transition: transform 0.2s;
       z-index: ${isSelected ? '10' : '1'};
     `;
   }
