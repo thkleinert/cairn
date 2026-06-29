@@ -48,16 +48,17 @@ html {
   -webkit-text-size-adjust: 100%;
   background: var(--color-surface);
   color: var(--color-text);
-  /* iOS PWA: fill the full physical screen height */
-  height: -webkit-fill-available;
+  height: 100%;
 }
 
 body {
-  min-height: 100dvh;
-  /* fallback for iOS < 15 where 100dvh ≠ full screen height */
-  min-height: -webkit-fill-available;
+  height: 100%;
   overflow: hidden;
   background: var(--color-surface);
+}
+
+#root {
+  height: 100%;
 }
 
 button { cursor: pointer; font-family: inherit; border: none; background: none; }
@@ -236,7 +237,7 @@ select.input {
    ============================================================ */
 .trip-list-screen {
   display: flex; flex-direction: column;
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -310,7 +311,7 @@ select.input {
    ============================================================ */
 .trip-view {
   display: flex; flex-direction: column;
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
   position: relative;
 }
@@ -343,7 +344,7 @@ select.input {
    BOTTOM BAR — floating island pill
    ============================================================ */
 .trip-bottombar {
-  position: absolute;
+  position: fixed;
   bottom: 0; left: 0; right: 0;
   display: flex; justify-content: center; align-items: flex-end;
   padding-bottom: calc(env(safe-area-inset-bottom) + 14px);
