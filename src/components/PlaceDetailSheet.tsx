@@ -2,12 +2,22 @@ import { useState, useEffect, useRef } from 'react';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import {
-  X, CheckCircle, Circle, Tag as TagIcon, ExternalLink,
+  X, Tag as TagIcon, ExternalLink,
   Trash2, Save, MapPin, Plus, ImageIcon
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
 import { TAG_COLORS } from '../constants';
 import { format } from 'date-fns';
+
+// Check that draws itself when the parent gains .visited-toggle--visited
+function CheckRing() {
+  return (
+    <svg className="check-ring" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+      <circle className="check-ring-circle" cx="10" cy="10" r="8.5" fill="none" strokeWidth="1.5" />
+      <path className="check-ring-path" d="M6 10.2l2.6 2.6L14 7.4" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 interface Props {
   place: Place;
@@ -166,7 +176,7 @@ export function PlaceDetailSheet({
         {/* Status */}
         {readOnly ? (
           <div className={`visited-toggle ${isVisited ? 'visited-toggle--visited' : ''} visited-toggle--static`}>
-            {isVisited ? <CheckCircle size={18} /> : <Circle size={18} />}
+            <CheckRing />
             {isVisited ? `Visited${place.visited_at ? ` · ${format(new Date(place.visited_at), 'MMM d, yyyy')}` : ''}` : 'Planned'}
           </div>
         ) : (
@@ -174,7 +184,7 @@ export function PlaceDetailSheet({
             className={`visited-toggle ${isVisited ? 'visited-toggle--visited' : ''}`}
             onClick={onToggleVisited}
           >
-            {isVisited ? <CheckCircle size={18} /> : <Circle size={18} />}
+            <CheckRing />
             {isVisited ? `Visited${place.visited_at ? ` · ${format(new Date(place.visited_at), 'MMM d, yyyy')}` : ''}` : 'Mark as visited'}
           </button>
         )}
@@ -192,7 +202,9 @@ export function PlaceDetailSheet({
                   onClick={() => toggleTag(tag.id)}
                   disabled={readOnly}
                 >
-                  {tag.icon && <span>{tag.icon}</span>}
+                  {tag.icon
+                    ? <span>{tag.icon}</span>
+                    : <span className="tag-chip-dot" style={{ background: tag.color }} />}
                   {tag.name}
                 </button>
               ))}

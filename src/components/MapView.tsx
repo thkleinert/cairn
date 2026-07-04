@@ -1,9 +1,12 @@
 import { useEffect, useRef, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import type { Place, Tag } from '../types';
-import { MARKER_PLANNED_COLOR, MARKER_VISITED_COLOR } from '../constants';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
+
+const LIGHT_STYLE = 'mapbox://styles/mapbox/light-v11';
+const DARK_STYLE = 'mapbox://styles/mapbox/dark-v11';
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 interface Props {
   places: Place[];
@@ -14,29 +17,31 @@ interface Props {
 }
 
 // Outer element is positioned by Mapbox (it owns its transform);
-// the inner element carries our visual styles so scaling never
-// conflicts with Mapbox's translate.
-function createMarkerEl(color: string, emoji: string | null): { outer: HTMLDivElement; inner: HTMLDivElement } {
+// the drop wrapper carries the entrance animation; the inner element
+// carries the visual styles so scaling never conflicts with either.
+function createMarkerEl(emoji: string | null, dropDelay: number): { outer: HTMLDivElement; inner: HTMLDivElement } {
   const outer = document.createElement('div');
+  const drop = document.createElement('div');
+  drop.className = 'map-marker-drop';
+  drop.style.animationDelay = `${dropDelay}ms`;
   const inner = document.createElement('div');
   inner.className = emoji ? 'map-marker map-marker--emoji' : 'map-marker map-marker--pin';
-  inner.style.setProperty('--marker-color', color);
   if (emoji) inner.textContent = emoji;
-  outer.appendChild(inner);
+  drop.appendChild(inner);
+  outer.appendChild(drop);
   return { outer, inner };
 }
 
-function styleMarker(inner: HTMLDivElement, color: string, emoji: string | null, isSelected: boolean) {
+function styleMarker(inner: HTMLDivElement, emoji: string | null, isVisited: boolean, isSelected: boolean) {
   inner.className = [
     'map-marker',
     emoji ? 'map-marker--emoji' : 'map-marker--pin',
+    isVisited ? 'map-marker--visited' : '',
     isSelected ? 'map-marker--selected' : '',
   ].filter(Boolean).join(' ');
-  inner.style.setProperty('--marker-color', color);
   inner.textContent = emoji ?? '';
-  // z-index lives on the outer (Mapbox-positioned) element so the
-  // selected marker renders above its neighbors
-  if (inner.parentElement) inner.parentElement.style.zIndex = isSelected ? '10' : '1';
+  const outer = inner.parentElement?.parentElement;
+  if (outer) outer.style.zIndex = isSelected ? '10' : '1';
 }
 
 export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPlace }: Props) {
@@ -55,7 +60,7 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     if (!containerRef.current || mapRef.current) return;
     mapRef.current = new mapboxgl.Map({
       container: containerRef.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
+      style: darkQuery.matches ? DARK_STYLE : LIGHT_STYLE,
       center: [0, 20],
       zoom: 2,
     });
@@ -64,21 +69,25 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
       new mapboxgl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }),
       'bottom-right'
     );
+
+    const onSchemeChange = (e: MediaQueryListEvent) => {
+      mapRef.current?.setStyle(e.matches ? DARK_STYLE : LIGHT_STYLE);
+    };
+    darkQuery.addEventListener('change', onSchemeChange);
+
     return () => {
+      darkQuery.removeEventListener('change', onSchemeChange);
       mapRef.current?.remove();
       mapRef.current = null;
     };
   }, []);
 
-  const getTagInfo = useCallback((place: Place): { color: string; emoji: string | null } => {
+  const getEmoji = useCallback((place: Place): string | null => {
     if (place.tags && place.tags.length > 0) {
       const t = allTags.find(t => t.id === place.tags![0].id);
-      if (t) return { color: t.color, emoji: t.icon ?? null };
+      if (t?.icon) return t.icon;
     }
-    return {
-      color: place.status === 'visited' ? MARKER_VISITED_COLOR : MARKER_PLANNED_COLOR,
-      emoji: null,
-    };
+    return null;
   }, [allTags]);
 
   useEffect(() => {
@@ -97,16 +106,19 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
       }
     });
 
+    let newIndex = 0;
     visible.forEach(place => {
-      const { color, emoji } = getTagInfo(place);
+      const emoji = getEmoji(place);
+      const isVisited = place.status === 'visited';
       const isSelected = selectedPlace?.id === place.id;
       const anchor = emoji ? 'center' : 'bottom';
 
       const existing = markersRef.current.get(place.id);
       if (existing) {
         if (existing.anchor === anchor) {
-          const inner = existing.marker.getElement().firstElementChild as HTMLDivElement;
-          styleMarker(inner, color, emoji, isSelected);
+          const inner = existing.marker.getElement()
+            .firstElementChild!.firstElementChild as HTMLDivElement;
+          styleMarker(inner, emoji, isVisited, isSelected);
           existing.marker.setLngLat([place.longitude, place.latitude]);
           return;
         }
@@ -115,8 +127,12 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
         markersRef.current.delete(place.id);
       }
 
-      const { outer, inner } = createMarkerEl(color, emoji);
-      if (isSelected) styleMarker(inner, color, emoji, true);
+      // Stagger the drop-in for batches; a single new marker drops immediately
+      const dropDelay = Math.min(newIndex * 45, 450);
+      newIndex += 1;
+
+      const { outer, inner } = createMarkerEl(emoji, dropDelay);
+      styleMarker(inner, emoji, isVisited, isSelected);
       const marker = new mapboxgl.Marker({ element: outer, anchor })
         .setLngLat([place.longitude, place.latitude])
         .addTo(map);
@@ -129,7 +145,7 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
 
       markersRef.current.set(place.id, { marker, anchor });
     });
-  }, [places, activeTags, selectedPlace, allTags, getTagInfo]);
+  }, [places, activeTags, selectedPlace, allTags, getEmoji]);
 
   useEffect(() => {
     if (!selectedPlace || !mapRef.current) return;

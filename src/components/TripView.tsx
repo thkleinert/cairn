@@ -132,27 +132,31 @@ export function TripView({ trip, userId, onBack }: Props) {
         </div>
       )}
 
-      {/* Bottom bar — floating island pill */}
+      {/* Bottom bar — floating island pill with sliding indicator */}
       <div className="trip-bottombar">
         <div className="bottombar-pill">
-          <button
-            className={`bottombar-tab ${viewMode === 'map' ? 'bottombar-tab--active' : ''}`}
-            onClick={() => setViewMode('map')}
-          >
-            <Map size={20} />
-            <span>Map</span>
-          </button>
+          <div className="bottombar-tabs">
+            <div className={`bottombar-indicator ${viewMode === 'list' ? 'bottombar-indicator--list' : ''}`} />
+            <button
+              className={`bottombar-tab ${viewMode === 'map' ? 'bottombar-tab--active' : ''}`}
+              onClick={() => setViewMode('map')}
+            >
+              <Map size={20} />
+              <span>Map</span>
+            </button>
+            <button
+              className={`bottombar-tab ${viewMode === 'list' ? 'bottombar-tab--active' : ''}`}
+              onClick={() => setViewMode('list')}
+            >
+              <List size={20} />
+              <span>
+                List{filteredCount > 0 && <span key={filteredCount} className="tab-count">&nbsp;{filteredCount}</span>}
+              </span>
+            </button>
+          </div>
 
           <button className="fab" onClick={() => setShowSearch(true)} aria-label="Add place">
             <Plus size={22} />
-          </button>
-
-          <button
-            className={`bottombar-tab ${viewMode === 'list' ? 'bottombar-tab--active' : ''}`}
-            onClick={() => setViewMode('list')}
-          >
-            <List size={20} />
-            <span>List {filteredCount > 0 ? `(${filteredCount})` : ''}</span>
           </button>
         </div>
       </div>

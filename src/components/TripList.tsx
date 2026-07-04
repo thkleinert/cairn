@@ -87,7 +87,11 @@ export function TripList({ userId, onSelectTrip }: Props) {
       {confirmSignOut && <p className="signout-hint">Tap again to sign out</p>}
 
       {loading ? (
-        <div className="loading-spinner" />
+        <div className="trip-cards">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="skeleton-card" style={{ animationDelay: `${i * 0.12}s` }} />
+          ))}
+        </div>
       ) : trips.length === 0 ? (
         <div className="empty-state">
           <MapPin size={48} color="var(--color-muted)" />

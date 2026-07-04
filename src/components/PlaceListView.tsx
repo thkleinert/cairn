@@ -35,7 +35,7 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace }: Pr
               <div className="place-list-body">
                 <div className="place-list-top">
                   {isVisited
-                    ? <CheckCircle size={16} color="var(--color-success)" />
+                    ? <CheckCircle size={16} color="var(--color-text)" />
                     : <Circle size={16} color="var(--color-muted)" />
                   }
                   <span className="place-list-name">{place.name}</span>
@@ -46,11 +46,8 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace }: Pr
                     {(place.tags ?? []).map(tag => {
                       const full = allTags.find(t => t.id === tag.id);
                       return (
-                        <span
-                          key={tag.id}
-                          className="tag-pill"
-                          style={{ background: full?.color ?? '#6366f1' }}
-                        >
+                        <span key={tag.id} className="tag-pill">
+                          <span className="tag-pill-dot" style={{ background: full?.color ?? 'var(--color-muted)' }} />
                           {full?.name ?? tag.name}
                         </span>
                       );

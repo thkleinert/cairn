@@ -1,12 +1,12 @@
 {
-  "name": "TripMap – Trip Planner",
+  "name": "TripMap \u2013 Trip Planner",
   "short_name": "TripMap",
   "description": "Plan and share your trips with an interactive map",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#0d9488",
-  "theme_color": "#0d9488",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "icons": [
     {
       "src": "/apple-touch-icon.png",
@@ -32,5 +32,8 @@
       "purpose": "maskable"
     }
   ],
-  "categories": ["travel", "navigation"]
+  "categories": [
+    "travel",
+    "navigation"
+  ]
 }
