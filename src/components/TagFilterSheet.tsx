@@ -1,12 +1,9 @@
 import { useState } from 'react';
-import { X, Plus, Trash2, Pencil } from 'lucide-react';
+import { X, Plus, Trash2, Pencil, Check } from 'lucide-react';
 import type { Tag } from '../types';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
-
-const PRESET_COLORS = [
-  '#6366f1', '#ec4899', '#f59e0b', '#10b981',
-  '#3b82f6', '#ef4444', '#8b5cf6', '#14b8a6',
-];
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { TAG_COLORS } from '../constants';
 
 const SUGGESTED_ICONS = ['📍', '🍔', '📷', '🏛️', '🏖️', '🛍️', '☕', '🍷', '🏨', '🎭', '🌿', '⛪'];
 
@@ -34,18 +31,21 @@ export function TagFilterSheet({
 }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
+  const [newColor, setNewColor] = useState(TAG_COLORS[0].value);
   const [newIcon, setNewIcon] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [editColor, setEditColor] = useState(PRESET_COLORS[0]);
+  const [editColor, setEditColor] = useState(TAG_COLORS[0].value);
   const [editIcon, setEditIcon] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEscapeClose(onClose);
 
   const handleCreate = () => {
     if (!newName.trim()) return;
     onCreateTag(newName.trim(), newColor, newIcon.trim() || undefined);
     setNewName('');
-    setNewColor(PRESET_COLORS[0]);
+    setNewColor(TAG_COLORS[0].value);
     setNewIcon('');
     setShowCreate(false);
   };
@@ -56,6 +56,7 @@ export function TagFilterSheet({
     setEditColor(tag.color);
     setEditIcon(tag.icon ?? '');
     setShowCreate(false);
+    setConfirmDeleteId(null);
   };
 
   const cancelEdit = () => setEditingId(null);
@@ -78,15 +79,22 @@ export function TagFilterSheet({
 
   return (
     <div className="bottom-sheet-overlay" onClick={onClose}>
-      <div className="bottom-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}>
+      <div
+        className="bottom-sheet"
+        ref={sheetRef}
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Tags"
+      >
         <div className="bottom-sheet-handle" {...handleProps} />
         <div className="sheet-header-row">
           <h2 className="bottom-sheet-title">Tags</h2>
-          <button className="sheet-close" onClick={onClose}><X size={20} /></button>
+          <button className="sheet-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
 
         {activeTags.length > 0 && (
-          <button className="btn-ghost" onClick={onClearTags} style={{ marginBottom: '8px' }}>
+          <button className="btn-ghost u-mb8" onClick={onClearTags}>
             Clear filter ({activeTags.length})
           </button>
         )}
@@ -95,7 +103,7 @@ export function TagFilterSheet({
           {tags.map(tag => (
             <div key={tag.id}>
               {editingId === tag.id ? (
-                <div className="create-tag-form" style={{ marginBottom: '4px' }}>
+                <div className="create-tag-form u-mb8">
                   <div className="tag-create-row">
                     <div className="icon-input-wrap">
                       <input
@@ -129,13 +137,13 @@ export function TagFilterSheet({
                     ))}
                   </div>
                   <div className="color-presets">
-                    {PRESET_COLORS.map(c => (
+                    {TAG_COLORS.map(c => (
                       <button
-                        key={c}
-                        className={`color-preset ${editColor === c ? 'color-preset--active' : ''}`}
-                        style={{ background: c }}
-                        onClick={() => setEditColor(c)}
-                        aria-label={c}
+                        key={c.value}
+                        className={`color-preset ${editColor === c.value ? 'color-preset--active' : ''}`}
+                        style={{ background: c.value }}
+                        onClick={() => setEditColor(c.value)}
+                        aria-label={c.name}
                       />
                     ))}
                   </div>
@@ -158,12 +166,33 @@ export function TagFilterSheet({
                     )}
                     {tag.name}
                   </button>
-                  <button className="btn-icon btn-icon-sm" onClick={() => startEdit(tag)} aria-label="Edit tag">
-                    <Pencil size={14} />
-                  </button>
-                  <button className="btn-icon btn-icon-sm" onClick={() => onDeleteTag(tag.id)} aria-label="Delete tag">
-                    <Trash2 size={14} />
-                  </button>
+                  {confirmDeleteId === tag.id ? (
+                    <>
+                      <button
+                        className="btn-icon btn-icon-sm tag-delete-confirm"
+                        onClick={() => { onDeleteTag(tag.id); setConfirmDeleteId(null); }}
+                        aria-label={`Confirm delete ${tag.name}`}
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        className="btn-icon btn-icon-sm"
+                        onClick={() => setConfirmDeleteId(null)}
+                        aria-label="Cancel delete"
+                      >
+                        <X size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn-icon btn-icon-sm" onClick={() => startEdit(tag)} aria-label={`Edit ${tag.name}`}>
+                        <Pencil size={14} />
+                      </button>
+                      <button className="btn-icon btn-icon-sm" onClick={() => setConfirmDeleteId(tag.id)} aria-label={`Delete ${tag.name}`}>
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -217,13 +246,13 @@ export function TagFilterSheet({
               ))}
             </div>
             <div className="color-presets">
-              {PRESET_COLORS.map(c => (
+              {TAG_COLORS.map(c => (
                 <button
-                  key={c}
-                  className={`color-preset ${newColor === c ? 'color-preset--active' : ''}`}
-                  style={{ background: c }}
-                  onClick={() => setNewColor(c)}
-                  aria-label={c}
+                  key={c.value}
+                  className={`color-preset ${newColor === c.value ? 'color-preset--active' : ''}`}
+                  style={{ background: c.value }}
+                  onClick={() => setNewColor(c.value)}
+                  aria-label={c.name}
                 />
               ))}
             </div>

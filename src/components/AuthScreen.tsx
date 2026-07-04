@@ -2,9 +2,21 @@ import { useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
+type Mode = 'signin' | 'signup' | 'reset';
+
+function friendlyAuthError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('invalid login credentials')) return 'Wrong email or password.';
+  if (m.includes('already registered')) return 'An account with this email already exists. Try signing in.';
+  if (m.includes('rate limit')) return 'Too many attempts — please wait a moment and try again.';
+  if (m.includes('at least 6 characters') || m.includes('password should')) return 'Password must be at least 6 characters.';
+  if (m.includes('email not confirmed')) return 'Please confirm your email first — check your inbox.';
+  return message;
+}
+
 export function AuthScreen() {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const { signIn, signUp, resetPassword } = useAuth();
+  const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,16 +31,31 @@ export function AuthScreen() {
     try {
       if (mode === 'signin') {
         const { error } = await signIn(email, password);
-        if (error) setError(error.message);
-      } else {
+        if (error) setError(friendlyAuthError(error.message));
+      } else if (mode === 'signup') {
         const { error } = await signUp(email, password);
-        if (error) setError(error.message);
+        if (error) setError(friendlyAuthError(error.message));
         else setMessage('Check your email to confirm your account.');
+      } else {
+        const { error } = await resetPassword(email);
+        if (error) setError(friendlyAuthError(error.message));
+        else setMessage('Check your email for a password reset link.');
       }
     } finally {
       setLoading(false);
     }
   };
+
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError('');
+    setMessage('');
+  };
+
+  const submitLabel =
+    mode === 'signin' ? 'Sign in'
+    : mode === 'signup' ? 'Create account'
+    : 'Send reset link';
 
   return (
     <div className="auth-screen">
@@ -37,7 +64,9 @@ export function AuthScreen() {
           <MapPin size={32} color="var(--color-primary)" />
           <h1>TripMap</h1>
         </div>
-        <p className="auth-subtitle">Plan your adventures together</p>
+        <p className="auth-subtitle">
+          {mode === 'reset' ? 'Reset your password' : 'Plan your adventures together'}
+        </p>
 
         <form onSubmit={handleSubmit} className="auth-form">
           <input
@@ -48,26 +77,36 @@ export function AuthScreen() {
             required
             className="input"
           />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-            className="input"
-          />
+          {mode !== 'reset' && (
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              className="input"
+            />
+          )}
           {error && <p className="error-text">{error}</p>}
           {message && <p className="success-text">{message}</p>}
           <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? 'Loading…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+            {loading ? 'Loading…' : submitLabel}
           </button>
         </form>
 
+        {mode === 'signin' && (
+          <button className="auth-toggle auth-forgot" onClick={() => switchMode('reset')}>
+            Forgot password?
+          </button>
+        )}
+
         <button
           className="auth-toggle"
-          onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}
+          onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
         >
-          {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+          {mode === 'signin' ? "Don't have an account? Sign up"
+            : mode === 'signup' ? 'Already have an account? Sign in'
+            : 'Back to sign in'}
         </button>
       </div>
     </div>

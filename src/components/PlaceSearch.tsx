@@ -27,6 +27,7 @@ export function PlaceSearch({ onSelect }: Props) {
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
   const sessionToken = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
   const divRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const initServices = useCallback(() => {
     if (!window.google?.maps?.places) return;
@@ -42,21 +43,17 @@ export function PlaceSearch({ onSelect }: Props) {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (window.google?.maps?.places) {
-        initServices();
-        clearInterval(interval);
-      }
-    }, 200);
-    return () => clearInterval(interval);
-  }, [initServices]);
-
-  const handleInput = (value: string) => {
-    setQuery(value);
-    if (!value.trim() || !autocompleteService.current) {
-      setPredictions([]);
+    // main.tsx dispatches this when the Google Maps script finishes loading
+    if (window.google?.maps?.places) {
+      initServices();
       return;
     }
+    window.addEventListener('gmaps-loaded', initServices);
+    return () => window.removeEventListener('gmaps-loaded', initServices);
+  }, [initServices]);
+
+  const fetchPredictions = useCallback((value: string) => {
+    if (!autocompleteService.current) return;
     autocompleteService.current.getPlacePredictions(
       { input: value, sessionToken: sessionToken.current ?? undefined },
       (results, status) => {
@@ -68,6 +65,16 @@ export function PlaceSearch({ onSelect }: Props) {
         }
       }
     );
+  }, []);
+
+  const handleInput = (value: string) => {
+    setQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!value.trim()) {
+      setPredictions([]);
+      return;
+    }
+    debounceRef.current = setTimeout(() => fetchPredictions(value), 250);
   };
 
   const handleSelect = (prediction: GooglePlacePrediction) => {
@@ -133,6 +140,7 @@ export function PlaceSearch({ onSelect }: Props) {
               </button>
             </li>
           ))}
+          <li className="predictions-attribution">powered by Google</li>
         </ul>
       )}
     </div>

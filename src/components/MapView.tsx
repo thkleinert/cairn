@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import type { Place, Tag } from '../types';
+import { MARKER_PLANNED_COLOR, MARKER_VISITED_COLOR } from '../constants';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
 
@@ -12,47 +13,43 @@ interface Props {
   onSelectPlace: (place: Place) => void;
 }
 
-const PLANNED_COLOR = '#6366f1';
-const VISITED_COLOR = '#22c55e';
+// Outer element is positioned by Mapbox (it owns its transform);
+// the inner element carries our visual styles so scaling never
+// conflicts with Mapbox's translate.
+function createMarkerEl(color: string, emoji: string | null): { outer: HTMLDivElement; inner: HTMLDivElement } {
+  const outer = document.createElement('div');
+  const inner = document.createElement('div');
+  inner.className = emoji ? 'map-marker map-marker--emoji' : 'map-marker map-marker--pin';
+  inner.style.setProperty('--marker-color', color);
+  if (emoji) inner.textContent = emoji;
+  outer.appendChild(inner);
+  return { outer, inner };
+}
 
-function createMarkerEl(color: string, emoji: string | null, isSelected: boolean): HTMLDivElement {
-  const el = document.createElement('div');
-  el.className = 'map-marker';
-
-  if (emoji) {
-    el.style.cssText = `
-      width: 36px; height: 36px;
-      background: white;
-      border: 2.5px solid ${color};
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.25);
-      cursor: pointer;
-      transform: ${isSelected ? 'scale(1.35)' : 'scale(1)'};
-      z-index: ${isSelected ? '10' : '1'};
-    `;
-    el.textContent = emoji;
-  } else {
-    el.style.cssText = `
-      width: 28px; height: 28px;
-      background: ${color};
-      border-radius: 50% 50% 50% 0;
-      transform: rotate(-45deg) ${isSelected ? 'scale(1.4)' : 'scale(1)'};
-      border: 2px solid white;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      cursor: pointer;
-      z-index: ${isSelected ? '10' : '1'};
-    `;
-  }
-
-  return el;
+function styleMarker(inner: HTMLDivElement, color: string, emoji: string | null, isSelected: boolean) {
+  inner.className = [
+    'map-marker',
+    emoji ? 'map-marker--emoji' : 'map-marker--pin',
+    isSelected ? 'map-marker--selected' : '',
+  ].filter(Boolean).join(' ');
+  inner.style.setProperty('--marker-color', color);
+  inner.textContent = emoji ?? '';
+  // z-index lives on the outer (Mapbox-positioned) element so the
+  // selected marker renders above its neighbors
+  if (inner.parentElement) inner.parentElement.style.zIndex = isSelected ? '10' : '1';
 }
 
 export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPlace }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const markersRef = useRef<Map<string, { marker: mapboxgl.Marker; anchor: string }>>(new Map());
+  const didFitRef = useRef(false);
+
+  // Keep refs to the latest props so marker click handlers never go stale
+  const placesRef = useRef(places);
+  placesRef.current = places;
+  const onSelectPlaceRef = useRef(onSelectPlace);
+  onSelectPlaceRef.current = onSelectPlace;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -79,7 +76,7 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
       if (t) return { color: t.color, emoji: t.icon ?? null };
     }
     return {
-      color: place.status === 'visited' ? VISITED_COLOR : PLANNED_COLOR,
+      color: place.status === 'visited' ? MARKER_VISITED_COLOR : MARKER_PLANNED_COLOR,
       emoji: null,
     };
   }, [allTags]);
@@ -93,9 +90,9 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     );
     const visibleIds = new Set(visible.map(p => p.id));
 
-    markersRef.current.forEach((marker, id) => {
+    markersRef.current.forEach((entry, id) => {
       if (!visibleIds.has(id)) {
-        marker.remove();
+        entry.marker.remove();
         markersRef.current.delete(id);
       }
     });
@@ -103,35 +100,36 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     visible.forEach(place => {
       const { color, emoji } = getTagInfo(place);
       const isSelected = selectedPlace?.id === place.id;
+      const anchor = emoji ? 'center' : 'bottom';
 
-      if (markersRef.current.has(place.id)) {
-        const existing = markersRef.current.get(place.id)!;
-        const el = existing.getElement();
-        if (emoji) {
-          el.style.borderColor = color;
-          el.style.transform = isSelected ? 'scale(1.35)' : 'scale(1)';
-        } else {
-          el.style.background = color;
-          el.style.transform = `rotate(-45deg) ${isSelected ? 'scale(1.4)' : 'scale(1)'}`;
+      const existing = markersRef.current.get(place.id);
+      if (existing) {
+        if (existing.anchor === anchor) {
+          const inner = existing.marker.getElement().firstElementChild as HTMLDivElement;
+          styleMarker(inner, color, emoji, isSelected);
+          existing.marker.setLngLat([place.longitude, place.latitude]);
+          return;
         }
-        el.style.zIndex = isSelected ? '10' : '1';
-        return;
+        // Anchor depends on marker shape — recreate when it changes (tag added/removed)
+        existing.marker.remove();
+        markersRef.current.delete(place.id);
       }
 
-      const el = createMarkerEl(color, emoji, isSelected);
-      const anchor = emoji ? 'center' : 'bottom';
-      const marker = new mapboxgl.Marker({ element: el, anchor })
+      const { outer, inner } = createMarkerEl(color, emoji);
+      if (isSelected) styleMarker(inner, color, emoji, true);
+      const marker = new mapboxgl.Marker({ element: outer, anchor })
         .setLngLat([place.longitude, place.latitude])
         .addTo(map);
 
-      el.addEventListener('click', (e) => {
+      outer.addEventListener('click', (e) => {
         e.stopPropagation();
-        onSelectPlace(place);
+        const current = placesRef.current.find(p => p.id === place.id);
+        if (current) onSelectPlaceRef.current(current);
       });
 
-      markersRef.current.set(place.id, marker);
+      markersRef.current.set(place.id, { marker, anchor });
     });
-  }, [places, activeTags, selectedPlace, allTags, getTagInfo, onSelectPlace]);
+  }, [places, activeTags, selectedPlace, allTags, getTagInfo]);
 
   useEffect(() => {
     if (!selectedPlace || !mapRef.current) return;
@@ -142,9 +140,11 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     });
   }, [selectedPlace]);
 
+  // Fit bounds once on initial load — never yank the viewport on add/remove
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || places.length === 0) return;
+    if (!map || places.length === 0 || didFitRef.current) return;
+    didFitRef.current = true;
     const bounds = new mapboxgl.LngLatBounds();
     places.forEach(p => bounds.extend([p.longitude, p.latitude]));
     map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 });

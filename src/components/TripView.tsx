@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
-import type { Trip, Place } from '../types';
+import type { Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTags } from '../hooks/useTags';
 import { useTrips } from '../hooks/useTrips';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import { MapView } from './MapView';
 import { PlaceSearch } from './PlaceSearch';
 import { PlaceDetailSheet } from './PlaceDetailSheet';
@@ -21,17 +22,22 @@ type Sheet = 'none' | 'tag-filter' | 'settings';
 type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack }: Props) {
-  const { places, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage } = usePlaces(trip.id);
+  const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   const { updateTrip, deleteTrip } = useTrips(userId);
 
-  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  // Selection is an id — the place object is always derived fresh from `places`,
+  // so realtime refetches and edits never leave the sheet stale.
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [openSheet, setOpenSheet] = useState<Sheet>('none');
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [showSearch, setShowSearch] = useState(false);
 
+  const selectedPlace = places.find(p => p.id === selectedPlaceId) ?? null;
   const isOwner = trip.owner_id === userId;
+
+  useEscapeClose(() => setShowSearch(false));
 
   const handleAddPlace = async (placeData: {
     name: string; address: string; latitude: number;
@@ -39,7 +45,7 @@ export function TripView({ trip, userId, onBack }: Props) {
   }) => {
     setShowSearch(false);
     const newPlace = await addPlace(placeData);
-    if (newPlace) setSelectedPlace({ ...newPlace, tags: [] });
+    if (newPlace) setSelectedPlaceId(newPlace.id);
   };
 
   const handleToggleTag = (id: string) => {
@@ -51,14 +57,14 @@ export function TripView({ trip, userId, onBack }: Props) {
   };
 
   const handleDeleteTrip = async () => {
-    await deleteTrip(trip.id);
-    onBack();
+    const ok = await deleteTrip(trip.id);
+    if (ok) onBack();
   };
 
   const handleDeletePlace = async () => {
     if (!selectedPlace) return;
     await deletePlace(selectedPlace.id);
-    setSelectedPlace(null);
+    setSelectedPlaceId(null);
   };
 
   const filteredCount = activeTags.length > 0
@@ -91,19 +97,27 @@ export function TripView({ trip, userId, onBack }: Props) {
       {/* Map or List */}
       <div className="trip-content">
         {viewMode === 'map' ? (
-          <MapView
-            places={places}
-            selectedPlace={selectedPlace}
-            activeTags={activeTags}
-            allTags={tags}
-            onSelectPlace={setSelectedPlace}
-          />
+          <>
+            <MapView
+              places={places}
+              selectedPlace={selectedPlace}
+              activeTags={activeTags}
+              allTags={tags}
+              onSelectPlace={(place) => setSelectedPlaceId(place.id)}
+            />
+            {!loading && places.length === 0 && !showSearch && (
+              <div className="map-empty-hint">
+                <Plus size={16} />
+                Tap the + button to add your first place
+              </div>
+            )}
+          </>
         ) : (
           <PlaceListView
             places={places}
             activeTags={activeTags}
             allTags={tags}
-            onSelectPlace={setSelectedPlace}
+            onSelectPlace={(place) => setSelectedPlaceId(place.id)}
           />
         )}
       </div>
@@ -148,36 +162,13 @@ export function TripView({ trip, userId, onBack }: Props) {
         <PlaceDetailSheet
           place={selectedPlace}
           allTags={tags}
-          onClose={() => setSelectedPlace(null)}
-          onToggleVisited={() => {
-            toggleVisited(selectedPlace.id, selectedPlace.status);
-            setSelectedPlace(prev => prev ? {
-              ...prev,
-              status: prev.status === 'planned' ? 'visited' : 'planned',
-              visited_at: prev.status === 'planned' ? new Date().toISOString() : undefined,
-            } : null);
-          }}
-          onUpdate={(updates) => {
-            updatePlace(selectedPlace.id, updates);
-            setSelectedPlace(prev => prev ? { ...prev, ...updates } : null);
-          }}
+          onClose={() => setSelectedPlaceId(null)}
+          onToggleVisited={() => toggleVisited(selectedPlace.id, selectedPlace.status)}
+          onUpdate={(updates) => updatePlace(selectedPlace.id, updates)}
           onDelete={handleDeletePlace}
-          onSetTags={(tagIds) => {
-            setPlaceTags(selectedPlace.id, tagIds);
-            setSelectedPlace(prev => prev ? {
-              ...prev,
-              tags: tags.filter(t => tagIds.includes(t.id)),
-            } : null);
-          }}
-          onAddImage={async (url, caption) => {
-            const img = await addPlaceImage(selectedPlace.id, url, caption);
-            if (img) setSelectedPlace(prev => prev ? { ...prev, images: [...(prev.images ?? []), img] } : null);
-            return img;
-          }}
-          onRemoveImage={(imageId) => {
-            removePlaceImage(selectedPlace.id, imageId);
-            setSelectedPlace(prev => prev ? { ...prev, images: (prev.images ?? []).filter(i => i.id !== imageId) } : null);
-          }}
+          onSetTags={(tagIds) => setPlaceTags(selectedPlace.id, tagIds)}
+          onAddImage={(url, caption) => addPlaceImage(selectedPlace.id, url, caption)}
+          onRemoveImage={(imageId) => removePlaceImage(selectedPlace.id, imageId)}
           onCreateTag={createTag}
         />
       )}

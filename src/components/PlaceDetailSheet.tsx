@@ -1,16 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import {
   X, CheckCircle, Circle, Tag as TagIcon, ExternalLink,
   Trash2, Save, MapPin, Plus, ImageIcon
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
+import { TAG_COLORS } from '../constants';
 import { format } from 'date-fns';
-
-const QUICK_COLORS = [
-  '#6366f1', '#ec4899', '#f59e0b', '#10b981',
-  '#3b82f6', '#ef4444', '#8b5cf6', '#14b8a6',
-];
 
 interface Props {
   place: Place;
@@ -23,11 +20,12 @@ interface Props {
   onAddImage: (url: string, caption?: string) => Promise<PlaceImage | null>;
   onRemoveImage: (imageId: string) => void;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
+  readOnly?: boolean;
 }
 
 export function PlaceDetailSheet({
   place, allTags, onClose, onToggleVisited, onUpdate, onDelete,
-  onSetTags, onAddImage, onRemoveImage, onCreateTag,
+  onSetTags, onAddImage, onRemoveImage, onCreateTag, readOnly = false,
 }: Props) {
   const [notes, setNotes] = useState(place.notes ?? '');
   const [sourceUrl, setSourceUrl] = useState(place.source_url ?? '');
@@ -40,7 +38,7 @@ export function PlaceDetailSheet({
   const galleryRef = useRef<HTMLDivElement>(null);
   const [showAddTag, setShowAddTag] = useState(false);
   const [quickName, setQuickName] = useState('');
-  const [quickColor, setQuickColor] = useState(QUICK_COLORS[0]);
+  const [quickColor, setQuickColor] = useState(TAG_COLORS[0].value);
   const [quickIcon, setQuickIcon] = useState('');
 
   useEffect(() => {
@@ -59,7 +57,16 @@ export function PlaceDetailSheet({
     setDirty(false);
   };
 
+  // Never silently discard edits — flush unsaved changes on any close path
+  const handleClose = () => {
+    if (dirty && !readOnly) handleSave();
+    onClose();
+  };
+
+  useEscapeClose(handleClose);
+
   const toggleTag = (id: string) => {
+    if (readOnly) return;
     setSelectedTags(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
     setDirty(true);
   };
@@ -88,25 +95,36 @@ export function PlaceDetailSheet({
       setDirty(true);
     }
     setQuickName('');
-    setQuickColor(QUICK_COLORS[0]);
+    setQuickColor(TAG_COLORS[0].value);
     setQuickIcon('');
     setShowAddTag(false);
   };
 
   const isVisited = place.status === 'visited';
   const heroImage = images[activeImageIndex] ?? null;
-  const { sheetRef, handleProps } = useSwipeToClose(onClose);
+  const { sheetRef, handleProps } = useSwipeToClose(handleClose);
+
+  const displayTags = readOnly
+    ? allTags.filter(t => selectedTags.includes(t.id))
+    : allTags;
 
   return (
-    <div className="bottom-sheet-overlay" onClick={onClose}>
-      <div className="bottom-sheet place-detail-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}>
+    <div className="bottom-sheet-overlay" onClick={handleClose}>
+      <div
+        className="bottom-sheet place-detail-sheet"
+        ref={sheetRef}
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={place.name}
+      >
         <div className="bottom-sheet-handle" {...handleProps} />
 
         {/* Image gallery hero */}
         {heroImage ? (
           <div className="place-image-wrap">
             <img src={heroImage.url} alt={place.name} className="place-image" onError={() => {}} />
-            <button className="sheet-close" onClick={onClose}><X size={20} /></button>
+            <button className="sheet-close" onClick={handleClose} aria-label="Close"><X size={20} /></button>
             {images.length > 1 && (
               <div className="image-dots">
                 {images.map((_, i) => (
@@ -114,25 +132,28 @@ export function PlaceDetailSheet({
                     key={i}
                     className={`image-dot ${i === activeImageIndex ? 'image-dot--active' : ''}`}
                     onClick={() => setActiveImageIndex(i)}
+                    aria-label={`Photo ${i + 1} of ${images.length}`}
                   />
                 ))}
               </div>
             )}
-            <button
-              className="image-remove-btn"
-              onClick={() => {
-                onRemoveImage(heroImage.id);
-                setActiveImageIndex(Math.max(0, activeImageIndex - 1));
-              }}
-              aria-label="Remove image"
-            >
-              <Trash2 size={14} />
-            </button>
+            {!readOnly && (
+              <button
+                className="image-remove-btn"
+                onClick={() => {
+                  onRemoveImage(heroImage.id);
+                  setActiveImageIndex(Math.max(0, activeImageIndex - 1));
+                }}
+                aria-label="Remove image"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         ) : (
           <div className="sheet-header-row">
             <h2 className="place-name">{place.name}</h2>
-            <button className="sheet-close" onClick={onClose}><X size={20} /></button>
+            <button className="sheet-close" onClick={handleClose} aria-label="Close"><X size={20} /></button>
           </div>
         )}
 
@@ -142,32 +163,40 @@ export function PlaceDetailSheet({
           <p className="place-address"><MapPin size={13} /> {place.address}</p>
         )}
 
-        {/* Status toggle */}
-        <button
-          className={`visited-toggle ${isVisited ? 'visited-toggle--visited' : ''}`}
-          onClick={onToggleVisited}
-        >
-          {isVisited ? <CheckCircle size={18} /> : <Circle size={18} />}
-          {isVisited ? `Visited${place.visited_at ? ` · ${format(new Date(place.visited_at), 'MMM d, yyyy')}` : ''}` : 'Mark as visited'}
-        </button>
+        {/* Status */}
+        {readOnly ? (
+          <div className={`visited-toggle ${isVisited ? 'visited-toggle--visited' : ''} visited-toggle--static`}>
+            {isVisited ? <CheckCircle size={18} /> : <Circle size={18} />}
+            {isVisited ? `Visited${place.visited_at ? ` · ${format(new Date(place.visited_at), 'MMM d, yyyy')}` : ''}` : 'Planned'}
+          </div>
+        ) : (
+          <button
+            className={`visited-toggle ${isVisited ? 'visited-toggle--visited' : ''}`}
+            onClick={onToggleVisited}
+          >
+            {isVisited ? <CheckCircle size={18} /> : <Circle size={18} />}
+            {isVisited ? `Visited${place.visited_at ? ` · ${format(new Date(place.visited_at), 'MMM d, yyyy')}` : ''}` : 'Mark as visited'}
+          </button>
+        )}
 
         {/* Tags */}
-        {(allTags.length > 0 || onCreateTag) && (
+        {(displayTags.length > 0 || (!readOnly && onCreateTag)) && (
           <div className="detail-section">
             <label className="detail-label"><TagIcon size={13} /> Tags</label>
             <div className="tag-chips">
-              {allTags.map(tag => (
+              {displayTags.map(tag => (
                 <button
                   key={tag.id}
                   className={`tag-chip ${selectedTags.includes(tag.id) ? 'tag-chip--active' : ''}`}
                   style={{ '--tag-color': tag.color } as React.CSSProperties}
                   onClick={() => toggleTag(tag.id)}
+                  disabled={readOnly}
                 >
                   {tag.icon && <span>{tag.icon}</span>}
                   {tag.name}
                 </button>
               ))}
-              {onCreateTag && !showAddTag && (
+              {!readOnly && onCreateTag && !showAddTag && (
                 <button className="tag-chip tag-chip--add" onClick={() => setShowAddTag(true)} aria-label="New tag">
                   <Plus size={14} />
                 </button>
@@ -198,13 +227,13 @@ export function PlaceDetailSheet({
                   />
                 </div>
                 <div className="color-presets">
-                  {QUICK_COLORS.map(c => (
+                  {TAG_COLORS.map(c => (
                     <button
-                      key={c}
-                      className={`color-preset ${quickColor === c ? 'color-preset--active' : ''}`}
-                      style={{ background: c }}
-                      onClick={() => setQuickColor(c)}
-                      aria-label={c}
+                      key={c.value}
+                      className={`color-preset ${quickColor === c.value ? 'color-preset--active' : ''}`}
+                      style={{ background: c.value }}
+                      onClick={() => setQuickColor(c.value)}
+                      aria-label={c.name}
                     />
                   ))}
                 </div>
@@ -218,35 +247,45 @@ export function PlaceDetailSheet({
         )}
 
         {/* Notes */}
-        <div className="detail-section">
-          <label className="detail-label">Notes</label>
-          <textarea
-            className="input detail-textarea"
-            placeholder="Add notes…"
-            value={notes}
-            onChange={e => { setNotes(e.target.value); setDirty(true); }}
-            rows={3}
-          />
-        </div>
+        {(!readOnly || notes) && (
+          <div className="detail-section">
+            <label className="detail-label">Notes</label>
+            {readOnly ? (
+              <p className="detail-static-text">{notes}</p>
+            ) : (
+              <textarea
+                className="input detail-textarea"
+                placeholder="Add notes…"
+                value={notes}
+                onChange={e => { setNotes(e.target.value); setDirty(true); }}
+                rows={3}
+              />
+            )}
+          </div>
+        )}
 
         {/* Source URL */}
-        <div className="detail-section">
-          <label className="detail-label">
-            <ExternalLink size={13} /> Source
-          </label>
-          <input
-            type="url"
-            className="input"
-            placeholder="https://…"
-            value={sourceUrl}
-            onChange={e => { setSourceUrl(e.target.value); setDirty(true); }}
-          />
-          {sourceUrl && (
-            <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="source-link">
-              Open <ExternalLink size={12} />
-            </a>
-          )}
-        </div>
+        {(!readOnly || sourceUrl) && (
+          <div className="detail-section">
+            <label className="detail-label">
+              <ExternalLink size={13} /> Source
+            </label>
+            {!readOnly && (
+              <input
+                type="url"
+                className="input"
+                placeholder="https://…"
+                value={sourceUrl}
+                onChange={e => { setSourceUrl(e.target.value); setDirty(true); }}
+              />
+            )}
+            {sourceUrl && (
+              <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="source-link">
+                Open <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
+        )}
 
         {/* Image gallery thumbnails */}
         {images.length > 0 && (
@@ -267,48 +306,52 @@ export function PlaceDetailSheet({
         )}
 
         {/* Add image */}
-        <div className="detail-section">
-          <label className="detail-label"><ImageIcon size={13} /> Add photo URL</label>
-          <div className="add-image-row">
-            <input
-              type="url"
-              className="input"
-              placeholder="https://…"
-              value={newImageUrl}
-              onChange={e => setNewImageUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAddImage()}
-            />
-            <button
-              className="btn-icon"
-              onClick={handleAddImage}
-              disabled={!newImageUrl.trim() || addingImage}
-              aria-label="Add image"
-            >
-              <Plus size={20} />
-            </button>
-          </div>
-        </div>
-
-        <div className="detail-actions">
-          {showDelete ? (
-            <div className="delete-confirm">
-              <span>Delete this place?</span>
-              <button className="btn-danger" onClick={onDelete}>Delete</button>
-              <button className="btn-secondary" onClick={() => setShowDelete(false)}>Cancel</button>
-            </div>
-          ) : (
-            <>
-              <button className="btn-ghost btn-danger-ghost" onClick={() => setShowDelete(true)}>
-                <Trash2 size={16} /> Delete
+        {!readOnly && (
+          <div className="detail-section">
+            <label className="detail-label"><ImageIcon size={13} /> Add photo URL</label>
+            <div className="add-image-row">
+              <input
+                type="url"
+                className="input"
+                placeholder="https://…"
+                value={newImageUrl}
+                onChange={e => setNewImageUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddImage()}
+              />
+              <button
+                className="btn-icon"
+                onClick={handleAddImage}
+                disabled={!newImageUrl.trim() || addingImage}
+                aria-label="Add image"
+              >
+                <Plus size={20} />
               </button>
-              {dirty && (
-                <button className="btn-primary" onClick={handleSave}>
-                  <Save size={16} /> Save
+            </div>
+          </div>
+        )}
+
+        {!readOnly && (
+          <div className="detail-actions">
+            {showDelete ? (
+              <div className="delete-confirm">
+                <span>Delete this place?</span>
+                <button className="btn-danger" onClick={onDelete}>Delete</button>
+                <button className="btn-secondary" onClick={() => setShowDelete(false)}>Cancel</button>
+              </div>
+            ) : (
+              <>
+                <button className="btn-ghost btn-danger-ghost" onClick={() => setShowDelete(true)}>
+                  <Trash2 size={16} /> Delete
                 </button>
-              )}
-            </>
-          )}
-        </div>
+                {dirty && (
+                  <button className="btn-primary" onClick={handleSave}>
+                    <Save size={16} /> Save
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

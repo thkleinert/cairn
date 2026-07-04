@@ -58,7 +58,7 @@ export interface Place {
   longitude: number;
   google_place_id?: string;
   status: PlaceStatus;
-  visited_at?: string;
+  visited_at?: string | null;
   notes?: string;
   source_url?: string;
   image_url?: string;

@@ -918,3 +918,166 @@ select.input {
    ============================================================ */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
+
+/* ============================================================
+   DARK MODE
+   ============================================================ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0f1114;
+    --color-surface: #1a1d21;
+    --color-primary: #14b8a6;
+    --color-primary-dark: #0d9488;
+    --color-primary-light: #123833;
+    --color-success: #4ade80;
+    --color-success-bg: #14352277;
+    --color-danger: #f87171;
+    --color-muted: #6b7280;
+    --color-secondary: #9ca3af;
+    --color-text: #f3f4f6;
+    --color-text-secondary: #9ca3af;
+    --color-border: #2e3238;
+    --color-overlay: rgba(0, 0, 0, 0.6);
+
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3);
+    --shadow-sheet: 0 -4px 32px rgba(0,0,0,0.5);
+  }
+
+  .input:focus { box-shadow: 0 0 0 3px rgba(20,184,166,0.2); }
+  .bottombar-pill {
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 1px 6px rgba(0,0,0,0.3);
+  }
+}
+
+/* ============================================================
+   MAP MARKERS
+   ============================================================ */
+.map-marker {
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.map-marker--pin {
+  width: 28px; height: 28px;
+  background: var(--marker-color, #6366f1);
+  border-radius: 50% 50% 50% 0;
+  border: 2px solid white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transform: rotate(-45deg);
+}
+.map-marker--pin.map-marker--selected {
+  transform: rotate(-45deg) scale(1.4);
+}
+.map-marker--emoji {
+  width: 36px; height: 36px;
+  background: white;
+  border: 2.5px solid var(--marker-color, #6366f1);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+}
+.map-marker--emoji.map-marker--selected {
+  transform: scale(1.35);
+}
+
+/* ============================================================
+   TOASTS
+   ============================================================ */
+.toast-stack {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 92px);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  z-index: 100;
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: center; gap: 8px;
+  max-width: min(92vw, 400px);
+  padding: 10px 16px;
+  border-radius: 99px;
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-size: 13px; font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  animation: toastIn 0.25s cubic-bezier(0.32,0.72,0,1);
+}
+.toast--error svg { color: #f87171; }
+.toast--success svg { color: #4ade80; }
+.toast--info svg { color: #60a5fa; }
+@keyframes toastIn {
+  from { transform: translateY(12px); opacity: 0; }
+}
+
+/* ============================================================
+   OFFLINE BANNER
+   ============================================================ */
+.offline-banner {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-size: 12px; font-weight: 600;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+}
+
+/* ============================================================
+   MAP EMPTY HINT
+   ============================================================ */
+.map-empty-hint {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom) + 96px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 18px;
+  border-radius: 99px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 13px; font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--color-border);
+  z-index: 5;
+  pointer-events: none;
+  animation: toastIn 0.3s cubic-bezier(0.32,0.72,0,1);
+}
+.map-empty-hint svg { color: var(--color-primary); }
+
+/* ============================================================
+   MISC ADDITIONS
+   ============================================================ */
+.u-mb8 { margin-bottom: 8px; }
+.u-mb16 { margin-bottom: 16px; }
+
+.trip-list-actions { display: flex; align-items: center; gap: 4px; }
+.btn-icon--danger { color: var(--color-danger); }
+.signout-hint {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--color-danger);
+  text-align: right;
+}
+
+.predictions-attribution {
+  padding: 6px 14px;
+  font-size: 10px;
+  color: var(--color-muted);
+  text-align: right;
+}
+
+.tag-delete-confirm { color: var(--color-danger); }
+
+.visited-toggle--static { pointer-events: none; }
+.detail-static-text {
+  font-size: 14px; line-height: 1.5;
+  color: var(--color-text);
+  white-space: pre-wrap;
+}
+.auth-forgot { margin-top: 4px; }

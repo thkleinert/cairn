@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import type { Tag } from '../types';
 
 export function useTags(tripId: string | undefined) {
@@ -7,11 +8,27 @@ export function useTags(tripId: string | undefined) {
 
   const fetchTags = useCallback(async () => {
     if (!tripId) return;
-    const { data } = await supabase.from('tags').select('*').eq('trip_id', tripId);
+    const { data, error } = await supabase.from('tags').select('*').eq('trip_id', tripId);
+    if (error) { toast('Could not load tags'); return; }
     setTags(data ?? []);
   }, [tripId]);
 
-  useEffect(() => { fetchTags(); }, [fetchTags]);
+  useEffect(() => {
+    if (!tripId) return;
+    fetchTags();
+
+    const channel = supabase
+      .channel(`tags:${tripId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'tags',
+        filter: `trip_id=eq.${tripId}`,
+      }, () => { fetchTags(); })
+      .subscribe();
+
+    return () => { channel.unsubscribe(); };
+  }, [tripId, fetchTags]);
 
   const createTag = async (name: string, color: string, icon?: string) => {
     if (!tripId) return null;
@@ -20,12 +37,20 @@ export function useTags(tripId: string | undefined) {
       .insert({ trip_id: tripId, name, color, icon: icon || null })
       .select()
       .single();
-    if (!error && data) setTags(prev => [...prev, data]);
+    if (error || !data) {
+      toast('Could not create tag');
+      return null;
+    }
+    setTags(prev => [...prev, data]);
     return data;
   };
 
   const deleteTag = async (id: string) => {
-    await supabase.from('tags').delete().eq('id', id);
+    const { error } = await supabase.from('tags').delete().eq('id', id);
+    if (error) {
+      toast('Could not delete tag');
+      return;
+    }
     setTags(prev => prev.filter(t => t.id !== id));
   };
 
@@ -36,7 +61,11 @@ export function useTags(tripId: string | undefined) {
       .eq('id', id)
       .select()
       .single();
-    if (!error && data) setTags(prev => prev.map(t => t.id === id ? data : t));
+    if (error || !data) {
+      toast('Could not update tag');
+      return null;
+    }
+    setTags(prev => prev.map(t => t.id === id ? data : t));
     return data;
   };
 

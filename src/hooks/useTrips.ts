@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import type { Trip } from '../types';
 
 export function useTrips(userId: string | undefined) {
@@ -8,10 +9,15 @@ export function useTrips(userId: string | undefined) {
 
   const fetchTrips = useCallback(async () => {
     if (!userId) { setLoading(false); return; }
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('trips')
       .select('*')
       .order('created_at', { ascending: false });
+    if (error) {
+      toast('Could not load trips');
+      setLoading(false);
+      return;
+    }
     setTrips(data ?? []);
     setLoading(false);
   }, [userId]);
@@ -40,13 +46,22 @@ export function useTrips(userId: string | undefined) {
       .eq('id', id)
       .select()
       .single();
-    if (!error && data) setTrips(prev => prev.map(t => t.id === id ? data : t));
+    if (error || !data) {
+      toast('Could not save trip');
+      return null;
+    }
+    setTrips(prev => prev.map(t => t.id === id ? data : t));
     return data;
   };
 
   const deleteTrip = async (id: string) => {
-    await supabase.from('trips').delete().eq('id', id);
+    const { error } = await supabase.from('trips').delete().eq('id', id);
+    if (error) {
+      toast('Could not delete trip');
+      return false;
+    }
     setTrips(prev => prev.filter(t => t.id !== id));
+    return true;
   };
 
   return { trips, loading, createTrip, updateTrip, deleteTrip, refetch: fetchTrips };

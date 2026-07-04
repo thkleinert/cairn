@@ -3,6 +3,7 @@ import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil } fr
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 
 interface Props {
   trip: Trip;
@@ -34,6 +35,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
 
   const { members, inviteCollaborator, removeCollaborator } = useCollaborators(trip.id);
   const { sheetRef, handleProps } = useSwipeToClose(onClose);
+  useEscapeClose(onClose);
 
   const shareUrl = `${window.location.origin}/shared/${trip.share_token}`;
 
@@ -77,11 +79,18 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
 
   return (
     <div className="bottom-sheet-overlay" onClick={onClose}>
-      <div className="bottom-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}>
+      <div
+        className="bottom-sheet"
+        ref={sheetRef}
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Trip settings"
+      >
         <div className="bottom-sheet-handle" {...handleProps} />
         <div className="sheet-header-row">
           <h2 className="bottom-sheet-title">Trip Settings</h2>
-          <button className="sheet-close" onClick={onClose}><X size={20} /></button>
+          <button className="sheet-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
 
         {isOwner && (
@@ -104,7 +113,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
               </select>
             </div>
 
-            <button className="btn-primary" onClick={handleSave} style={{ marginBottom: '16px' }}>
+            <button className="btn-primary u-mb16" onClick={handleSave}>
               Save changes
             </button>
           </>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import type { Place, PlaceImage } from '../types';
 
 export function usePlaces(tripId: string | undefined) {
@@ -9,11 +10,17 @@ export function usePlaces(tripId: string | undefined) {
 
   const fetchPlaces = useCallback(async () => {
     if (!tripId) { setLoading(false); return; }
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('places')
       .select('*, place_tags(tag_id, tags(*)), place_images(*)')
       .eq('trip_id', tripId)
       .order('created_at', { ascending: true });
+
+    if (error) {
+      toast('Could not load places');
+      setLoading(false);
+      return;
+    }
 
     const normalized = (data ?? []).map((p: Place & { place_tags?: Array<{ tags: unknown }>, place_images?: PlaceImage[] }) => ({
       ...p,
@@ -59,27 +66,40 @@ export function usePlaces(tripId: string | undefined) {
       .insert({ ...place, trip_id: tripId })
       .select()
       .single();
-    if (!error && data) {
-      setPlaces(prev => [...prev, { ...data, tags: [], images: [] }]);
+    if (error || !data) {
+      toast('Could not add place');
+      return null;
     }
+    setPlaces(prev => [...prev, { ...data, tags: [], images: [] }]);
     return data;
   };
 
   const updatePlace = async (id: string, updates: Partial<Place>) => {
+    // Optimistic: apply immediately, revert on failure
+    const before = places.find(p => p.id === id);
+    setPlaces(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+
     const { data, error } = await supabase
       .from('places')
       .update(updates)
       .eq('id', id)
       .select()
       .single();
-    if (!error && data) {
-      setPlaces(prev => prev.map(p => p.id === id ? { ...p, ...data } : p));
+    if (error || !data) {
+      if (before) setPlaces(prev => prev.map(p => p.id === id ? before : p));
+      toast('Could not save changes');
+      return null;
     }
+    setPlaces(prev => prev.map(p => p.id === id ? { ...p, ...data } : p));
     return data;
   };
 
   const deletePlace = async (id: string) => {
-    await supabase.from('places').delete().eq('id', id);
+    const { error } = await supabase.from('places').delete().eq('id', id);
+    if (error) {
+      toast('Could not delete place');
+      return;
+    }
     setPlaces(prev => prev.filter(p => p.id !== id));
   };
 
@@ -87,15 +107,30 @@ export function usePlaces(tripId: string | undefined) {
     const newStatus = currentStatus === 'planned' ? 'visited' : 'planned';
     const updates: Partial<Place> = {
       status: newStatus as Place['status'],
-      visited_at: newStatus === 'visited' ? new Date().toISOString() : undefined,
+      visited_at: newStatus === 'visited' ? new Date().toISOString() : null,
     };
     return updatePlace(id, updates);
   };
 
   const setPlaceTags = async (placeId: string, tagIds: string[]) => {
-    await supabase.from('place_tags').delete().eq('place_id', placeId);
-    if (tagIds.length > 0) {
-      await supabase.from('place_tags').insert(tagIds.map(tag_id => ({ place_id: placeId, tag_id })));
+    // Diff against current tags — avoids the destructive delete-all-then-insert
+    const current = (places.find(p => p.id === placeId)?.tags ?? []).map(t => t.id);
+    const toRemove = current.filter(id => !tagIds.includes(id));
+    const toAdd = tagIds.filter(id => !current.includes(id));
+
+    if (toRemove.length > 0) {
+      const { error } = await supabase
+        .from('place_tags')
+        .delete()
+        .eq('place_id', placeId)
+        .in('tag_id', toRemove);
+      if (error) { toast('Could not update tags'); return; }
+    }
+    if (toAdd.length > 0) {
+      const { error } = await supabase
+        .from('place_tags')
+        .insert(toAdd.map(tag_id => ({ place_id: placeId, tag_id })));
+      if (error) { toast('Could not update tags'); return; }
     }
     fetchPlaces();
   };
@@ -108,17 +143,22 @@ export function usePlaces(tripId: string | undefined) {
       .insert({ place_id: placeId, url, caption: caption || null, position })
       .select()
       .single();
-    if (!error && data) {
-      setPlaces(prev => prev.map(p =>
-        p.id === placeId ? { ...p, images: [...(p.images ?? []), data] } : p
-      ));
-      return data as PlaceImage;
+    if (error || !data) {
+      toast('Could not add photo');
+      return null;
     }
-    return null;
+    setPlaces(prev => prev.map(p =>
+      p.id === placeId ? { ...p, images: [...(p.images ?? []), data] } : p
+    ));
+    return data as PlaceImage;
   };
 
   const removePlaceImage = async (placeId: string, imageId: string) => {
-    await supabase.from('place_images').delete().eq('id', imageId);
+    const { error } = await supabase.from('place_images').delete().eq('id', imageId);
+    if (error) {
+      toast('Could not remove photo');
+      return;
+    }
     setPlaces(prev => prev.map(p =>
       p.id === placeId ? { ...p, images: (p.images ?? []).filter(i => i.id !== imageId) } : p
     ));

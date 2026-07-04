@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Plus, MapPin, Calendar, Users, CheckCircle, Clock, Navigation } from 'lucide-react';
+import { Plus, MapPin, Calendar, CheckCircle, Clock, Navigation, LogOut } from 'lucide-react';
 import type { Trip } from '../types';
 import { useTrips } from '../hooks/useTrips';
-import { format } from 'date-fns';
+import { useAuth } from '../hooks/useAuth';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { format, parseISO } from 'date-fns';
 
 interface Props {
   userId: string;
@@ -23,12 +25,16 @@ const STATUS_LABELS = {
 
 export function TripList({ userId, onSelectTrip }: Props) {
   const { trips, loading, createTrip } = useTrips(userId);
+  const { signOut } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+
+  useEscapeClose(() => setShowCreate(false));
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,21 +49,42 @@ export function TripList({ userId, onSelectTrip }: Props) {
       setEndDate('');
       if (trip) onSelectTrip(trip);
     } catch (err: unknown) {
-      const msg = (err as { message?: string })?.message ?? JSON.stringify(err);
+      const msg = err instanceof Error && err.message
+        ? err.message
+        : 'Could not create trip. Please try again.';
       setCreateError(msg);
     } finally {
       setCreating(false);
     }
   };
 
+  const handleSignOut = () => {
+    if (!confirmSignOut) {
+      setConfirmSignOut(true);
+      setTimeout(() => setConfirmSignOut(false), 3000);
+      return;
+    }
+    signOut();
+  };
+
   return (
     <div className="trip-list-screen">
       <header className="trip-list-header">
         <h1 className="trip-list-title">My Trips</h1>
-        <button className="btn-icon" onClick={() => setShowCreate(true)} aria-label="New trip">
-          <Plus size={24} />
-        </button>
+        <div className="trip-list-actions">
+          <button
+            className={`btn-icon ${confirmSignOut ? 'btn-icon--danger' : ''}`}
+            onClick={handleSignOut}
+            aria-label={confirmSignOut ? 'Tap again to sign out' : 'Sign out'}
+          >
+            <LogOut size={20} />
+          </button>
+          <button className="btn-icon" onClick={() => setShowCreate(true)} aria-label="New trip">
+            <Plus size={24} />
+          </button>
+        </div>
       </header>
+      {confirmSignOut && <p className="signout-hint">Tap again to sign out</p>}
 
       {loading ? (
         <div className="loading-spinner" />
@@ -83,19 +110,15 @@ export function TripList({ userId, onSelectTrip }: Props) {
                       {STATUS_LABELS[trip.status]}
                     </span>
                   </div>
-                  <div className="trip-card-meta">
-                    {trip.start_date && (
+                  {trip.start_date && (
+                    <div className="trip-card-meta">
                       <span className="meta-item">
                         <Calendar size={12} />
-                        {format(new Date(trip.start_date), 'MMM d, yyyy')}
-                        {trip.end_date && ` – ${format(new Date(trip.end_date), 'MMM d, yyyy')}`}
+                        {format(parseISO(trip.start_date), 'MMM d, yyyy')}
+                        {trip.end_date && ` – ${format(parseISO(trip.end_date), 'MMM d, yyyy')}`}
                       </span>
-                    )}
-                    <span className="meta-item">
-                      <Users size={12} />
-                      Members
-                    </span>
-                  </div>
+                    </div>
+                  )}
                 </div>
               </button>
             </li>
@@ -105,7 +128,13 @@ export function TripList({ userId, onSelectTrip }: Props) {
 
       {showCreate && (
         <div className="bottom-sheet-overlay" onClick={() => setShowCreate(false)}>
-          <div className="bottom-sheet" onClick={e => e.stopPropagation()}>
+          <div
+            className="bottom-sheet"
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="New trip"
+          >
             <div className="bottom-sheet-handle" />
             <h2 className="bottom-sheet-title">New Trip</h2>
             <form onSubmit={handleCreate} className="create-trip-form">
