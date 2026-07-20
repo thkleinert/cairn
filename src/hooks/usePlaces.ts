@@ -176,6 +176,26 @@ export function usePlaces(tripId: string | undefined) {
     return data as PlaceImage;
   };
 
+  // Uploads to the place-images bucket under {trip_id}/{place_id}/... — the
+  // storage RLS policy checks trip membership from that first path segment
+  const uploadPlaceImage = async (placeId: string, file: File) => {
+    const place = places.find(p => p.id === placeId);
+    if (!place) return null;
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `${place.trip_id}/${placeId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('place-images')
+      .upload(path, file, { contentType: file.type || 'image/jpeg' });
+    if (uploadError) {
+      toast('Could not upload photo');
+      return null;
+    }
+
+    const { data } = supabase.storage.from('place-images').getPublicUrl(path);
+    return addPlaceImage(placeId, data.publicUrl);
+  };
+
   const removePlaceImage = async (placeId: string, imageId: string) => {
     const { error } = await supabase.from('place_images').delete().eq('id', imageId);
     if (error) {
@@ -187,5 +207,5 @@ export function usePlaces(tripId: string | undefined) {
     ));
   };
 
-  return { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage, reorderPlaces };
+  return { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
 }

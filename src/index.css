@@ -694,7 +694,27 @@ select.input {
 .place-detail-sheet { padding-top: 8px; }
 
 .place-image-wrap { position: relative; margin: -12px -20px 0; }
+
+/* Native scroll-snap gallery — swipes with real momentum/rubber-banding
+   instead of a hand-rolled drag implementation */
+.place-image-scroller {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  height: 220px;
+}
+.place-image-scroller::-webkit-scrollbar { display: none; }
+.place-image-slide {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  height: 100%;
+}
 .place-image { width: 100%; height: 220px; object-fit: cover; display: block; }
+.place-image-slide .place-image { height: 100%; }
+
 .place-image-wrap .sheet-close {
   position: absolute; top: 12px; right: 12px;
   background: rgba(0,0,0,0.45); color: white;
@@ -815,6 +835,21 @@ select.input {
   display: flex; gap: 8px; align-items: center;
 }
 .add-image-row .input { flex: 1; }
+
+.upload-photos-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .cover-preview {
   width: 100%; height: 120px;

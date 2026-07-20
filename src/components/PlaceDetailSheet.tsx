@@ -3,7 +3,7 @@ import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import {
   X, Tag as TagIcon, ExternalLink,
-  Trash2, Save, MapPin, Plus, ImageIcon
+  Trash2, Save, MapPin, Plus, ImageIcon, Upload
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
 import { TAG_COLORS } from '../constants';
@@ -28,6 +28,7 @@ interface Props {
   onDelete: () => void;
   onSetTags: (tagIds: string[]) => void;
   onAddImage: (url: string, caption?: string) => Promise<PlaceImage | null>;
+  onUploadImage?: (file: File) => Promise<PlaceImage | null>;
   onRemoveImage: (imageId: string) => void;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
   readOnly?: boolean;
@@ -35,7 +36,7 @@ interface Props {
 
 export function PlaceDetailSheet({
   place, allTags, onClose, onToggleVisited, onUpdate, onDelete,
-  onSetTags, onAddImage, onRemoveImage, onCreateTag, readOnly = false,
+  onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
 }: Props) {
   const [notes, setNotes] = useState(place.notes ?? '');
   const [sourceUrl, setSourceUrl] = useState(place.source_url ?? '');
@@ -44,8 +45,12 @@ export function PlaceDetailSheet({
   const [showDelete, setShowDelete] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState('');
   const [addingImage, setAddingImage] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const galleryRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showAddTag, setShowAddTag] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [quickColor, setQuickColor] = useState(TAG_COLORS[0].value);
@@ -56,10 +61,43 @@ export function PlaceDetailSheet({
     setSourceUrl(place.source_url ?? '');
     setSelectedTags((place.tags ?? []).map(t => t.id));
     setDirty(false);
-    setActiveImageIndex(0);
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const images: PlaceImage[] = place.images ?? [];
+  const prevPlaceIdRef = useRef(place.id);
+
+  // Reset to the first image on a new place; otherwise (same place, image
+  // count changed via add/remove) resync the scroll position to whatever
+  // index was active — the DOM shifted so the old pixel offset no longer
+  // points at the same slide
+  useEffect(() => {
+    const el = scrollerRef.current;
+    const placeChanged = prevPlaceIdRef.current !== place.id;
+    prevPlaceIdRef.current = place.id;
+    if (placeChanged) {
+      setActiveImageIndex(0);
+      el?.scrollTo({ left: 0 });
+    } else if (el) {
+      el.scrollTo({ left: activeImageIndex * el.clientWidth });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [place.id, images.length]);
+
+  const scrollToImage = (index: number) => {
+    const el = scrollerRef.current;
+    setActiveImageIndex(index);
+    if (el) el.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
+  };
+
+  const handleHeroScroll = () => {
+    if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
+    scrollDebounceRef.current = setTimeout(() => {
+      const el = scrollerRef.current;
+      if (!el || el.clientWidth === 0) return;
+      const index = Math.round(el.scrollLeft / el.clientWidth);
+      setActiveImageIndex(prev => (prev === index ? prev : index));
+    }, 60);
+  };
 
   const handleSave = () => {
     onUpdate({ notes: notes || undefined, source_url: sourceUrl || undefined });
@@ -88,12 +126,26 @@ export function PlaceDetailSheet({
     await onAddImage(url);
     setNewImageUrl('');
     setAddingImage(false);
-    // scroll gallery to end
+    const newIndex = images.length; // closure length is pre-update — equals the new last index
     setTimeout(() => {
-      if (galleryRef.current) {
-        galleryRef.current.scrollLeft = galleryRef.current.scrollWidth;
-        setActiveImageIndex(images.length); // will be the new last index
-      }
+      scrollToImage(newIndex);
+      if (galleryRef.current) galleryRef.current.scrollLeft = galleryRef.current.scrollWidth;
+    }, 100);
+  };
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length === 0 || !onUploadImage) return;
+    setUploading(true);
+    for (const file of files) {
+      await onUploadImage(file);
+    }
+    setUploading(false);
+    const newIndex = images.length + files.length - 1; // last of the newly uploaded photos
+    setTimeout(() => {
+      scrollToImage(newIndex);
+      if (galleryRef.current) galleryRef.current.scrollLeft = galleryRef.current.scrollWidth;
     }, 100);
   };
 
@@ -111,7 +163,6 @@ export function PlaceDetailSheet({
   };
 
   const isVisited = place.status === 'visited';
-  const heroImage = images[activeImageIndex] ?? null;
   const { sheetRef, handleProps } = useSwipeToClose(handleClose);
 
   const displayTags = readOnly
@@ -130,10 +181,16 @@ export function PlaceDetailSheet({
       >
         <div className="bottom-sheet-handle" {...handleProps} />
 
-        {/* Image gallery hero */}
-        {heroImage ? (
+        {/* Image gallery hero — native scroll-snap so it swipes with momentum */}
+        {images.length > 0 ? (
           <div className="place-image-wrap">
-            <img src={heroImage.url} alt={place.name} className="place-image" onError={() => {}} />
+            <div className="place-image-scroller" ref={scrollerRef} onScroll={handleHeroScroll}>
+              {images.map(img => (
+                <div key={img.id} className="place-image-slide">
+                  <img src={img.url} alt={place.name} className="place-image" onError={() => {}} />
+                </div>
+              ))}
+            </div>
             <button className="sheet-close" onClick={handleClose} aria-label="Close"><X size={20} /></button>
             {images.length > 1 && (
               <div className="image-dots">
@@ -141,7 +198,7 @@ export function PlaceDetailSheet({
                   <button
                     key={i}
                     className={`image-dot ${i === activeImageIndex ? 'image-dot--active' : ''}`}
-                    onClick={() => setActiveImageIndex(i)}
+                    onClick={() => scrollToImage(i)}
                     aria-label={`Photo ${i + 1} of ${images.length}`}
                   />
                 ))}
@@ -151,8 +208,10 @@ export function PlaceDetailSheet({
               <button
                 className="image-remove-btn"
                 onClick={() => {
-                  onRemoveImage(heroImage.id);
-                  setActiveImageIndex(Math.max(0, activeImageIndex - 1));
+                  const removed = images[activeImageIndex];
+                  if (!removed) return;
+                  onRemoveImage(removed.id);
+                  setActiveImageIndex(prev => Math.max(0, Math.min(prev, images.length - 2)));
                 }}
                 aria-label="Remove image"
               >
@@ -167,7 +226,7 @@ export function PlaceDetailSheet({
           </div>
         )}
 
-        {heroImage && <h2 className="place-name place-name-below">{place.name}</h2>}
+        {images.length > 0 && <h2 className="place-name place-name-below">{place.name}</h2>}
 
         {place.address && (
           <p className="place-address"><MapPin size={13} /> {place.address}</p>
@@ -308,7 +367,7 @@ export function PlaceDetailSheet({
                 <button
                   key={img.id}
                   className={`gallery-thumb-btn ${i === activeImageIndex ? 'gallery-thumb-btn--active' : ''}`}
-                  onClick={() => setActiveImageIndex(i)}
+                  onClick={() => scrollToImage(i)}
                 >
                   <img src={img.url} alt="" className="gallery-thumb" onError={() => {}} />
                 </button>
@@ -317,10 +376,10 @@ export function PlaceDetailSheet({
           </div>
         )}
 
-        {/* Add image */}
+        {/* Add photos */}
         {!readOnly && (
           <div className="detail-section">
-            <label className="detail-label"><ImageIcon size={13} /> Add photo URL</label>
+            <label className="detail-label"><ImageIcon size={13} /> Add photos</label>
             <div className="add-image-row">
               <input
                 type="url"
@@ -334,11 +393,31 @@ export function PlaceDetailSheet({
                 className="btn-icon"
                 onClick={handleAddImage}
                 disabled={!newImageUrl.trim() || addingImage}
-                aria-label="Add image"
+                aria-label="Add from URL"
               >
                 <Plus size={20} />
               </button>
             </div>
+            {onUploadImage && (
+              <>
+                <button
+                  className="btn-secondary upload-photos-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  <Upload size={16} />
+                  {uploading ? 'Uploading…' : 'Upload from device'}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="visually-hidden"
+                  onChange={handleFilesSelected}
+                />
+              </>
+            )}
           </div>
         )}
 
