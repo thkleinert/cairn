@@ -470,8 +470,8 @@ select.input {
 .trip-topbar-title {
   flex: 1;
   font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   font-family: var(--font-display);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
