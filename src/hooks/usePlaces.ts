@@ -58,7 +58,6 @@ export function usePlaces(tripId: string | undefined) {
     google_place_id?: string;
     image_url?: string;
     notes?: string;
-    source_url?: string;
   }) => {
     if (!tripId) return null;
     const { data, error } = await supabase

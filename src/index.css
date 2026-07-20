@@ -693,37 +693,16 @@ select.input {
    ============================================================ */
 .place-detail-sheet { padding-top: 8px; }
 
+/* Cover photo — a single static image auto-pulled from Google, not the
+   manually-curated gallery (see .lightbox-* further down) */
 .place-image-wrap { position: relative; margin: -12px -20px 0; }
-
-/* Native scroll-snap gallery — swipes with real momentum/rubber-banding
-   instead of a hand-rolled drag implementation */
-.place-image-scroller {
-  display: flex;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  height: 220px;
-}
-.place-image-scroller::-webkit-scrollbar { display: none; }
-.place-image-slide {
-  flex: 0 0 100%;
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
-  height: 100%;
-}
 .place-image { width: 100%; height: 220px; object-fit: cover; display: block; }
-.place-image-slide .place-image { height: 100%; }
-
 .place-image-wrap .sheet-close {
   position: absolute; top: 12px; right: 12px;
   background: rgba(0,0,0,0.45); color: white;
 }
 
-.image-dots {
-  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 5px;
-}
+/* Reused by the lightbox's position dots */
 .image-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
@@ -737,12 +716,57 @@ select.input {
   transform: scale(1.25);
 }
 
-.image-remove-btn {
-  position: absolute; bottom: 10px; right: 12px;
-  width: 30px; height: 30px;
-  background: rgba(0,0,0,0.45); color: white;
-  border-radius: 50%;
+/* ============================================================
+   IMAGE LIGHTBOX — full-screen swipeable "shot ideas" gallery
+   ============================================================ */
+.lightbox-overlay {
+  position: fixed; inset: 0;
+  z-index: 60;
+  background: rgba(0,0,0,0.94);
+  animation: fadeIn 0.18s ease;
+}
+
+.lightbox-scroller {
+  width: 100%; height: 100%;
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.lightbox-scroller::-webkit-scrollbar { display: none; }
+
+.lightbox-slide {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
   display: flex; align-items: center; justify-content: center;
+  padding: 0 4px;
+}
+.lightbox-image {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain;
+}
+
+.lightbox-close, .lightbox-remove {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 14px);
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.14);
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s;
+}
+.lightbox-close { right: 14px; }
+.lightbox-remove { left: 14px; }
+.lightbox-close:active, .lightbox-remove:active { background: rgba(255,255,255,0.26); }
+
+.lightbox-dots {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 20px);
+  left: 50%; transform: translateX(-50%);
+  display: flex; gap: 6px;
 }
 
 .place-name {
@@ -800,12 +824,32 @@ select.input {
 }
 .detail-textarea { min-height: 80px; }
 
-.source-link {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 13px; color: var(--color-primary);
-  font-weight: 500;
-  margin-top: 6px;
+.source-pills {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-bottom: 10px;
 }
+.source-pill {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding-left: 4px;
+  border-radius: 99px;
+  border: 1.5px solid var(--color-border);
+  min-height: 36px;
+}
+.source-pill-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 6px 0 10px;
+  font-size: 13px; font-weight: 500;
+  color: var(--color-primary);
+}
+.source-pill-remove {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  margin-right: 4px;
+  border-radius: 50%;
+  color: var(--color-muted);
+  transition: background 0.12s, color 0.12s;
+}
+.source-pill-remove:active { background: var(--color-bg); color: var(--color-text); }
 
 /* Multi-image gallery */
 .image-gallery {

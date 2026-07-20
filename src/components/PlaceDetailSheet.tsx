@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { ImageLightbox } from './ImageLightbox';
 import {
   X, Tag as TagIcon, ExternalLink,
   Trash2, Save, MapPin, Plus, ImageIcon, Upload
@@ -17,6 +18,14 @@ function CheckRing() {
       <path className="check-ring-path" d="M6 10.2l2.6 2.6L14 7.4" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+function displayHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
 }
 
 interface Props {
@@ -39,18 +48,16 @@ export function PlaceDetailSheet({
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
 }: Props) {
   const [notes, setNotes] = useState(place.notes ?? '');
-  const [sourceUrl, setSourceUrl] = useState(place.source_url ?? '');
+  const [newSourceUrl, setNewSourceUrl] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>((place.tags ?? []).map(t => t.id));
   const [dirty, setDirty] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState('');
   const [addingImage, setAddingImage] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const galleryRef = useRef<HTMLDivElement>(null);
-  const scrollerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showAddTag, setShowAddTag] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [quickColor, setQuickColor] = useState(TAG_COLORS[0].value);
@@ -58,49 +65,15 @@ export function PlaceDetailSheet({
 
   useEffect(() => {
     setNotes(place.notes ?? '');
-    setSourceUrl(place.source_url ?? '');
     setSelectedTags((place.tags ?? []).map(t => t.id));
     setDirty(false);
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const images: PlaceImage[] = place.images ?? [];
-  const prevPlaceIdRef = useRef(place.id);
-
-  // Reset to the first image on a new place; otherwise (same place, image
-  // count changed via add/remove) resync the scroll position to whatever
-  // index was active — the DOM shifted so the old pixel offset no longer
-  // points at the same slide
-  useEffect(() => {
-    const el = scrollerRef.current;
-    const placeChanged = prevPlaceIdRef.current !== place.id;
-    prevPlaceIdRef.current = place.id;
-    if (placeChanged) {
-      setActiveImageIndex(0);
-      el?.scrollTo({ left: 0 });
-    } else if (el) {
-      el.scrollTo({ left: activeImageIndex * el.clientWidth });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [place.id, images.length]);
-
-  const scrollToImage = (index: number) => {
-    const el = scrollerRef.current;
-    setActiveImageIndex(index);
-    if (el) el.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
-  };
-
-  const handleHeroScroll = () => {
-    if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
-    scrollDebounceRef.current = setTimeout(() => {
-      const el = scrollerRef.current;
-      if (!el || el.clientWidth === 0) return;
-      const index = Math.round(el.scrollLeft / el.clientWidth);
-      setActiveImageIndex(prev => (prev === index ? prev : index));
-    }, 60);
-  };
+  const sourceUrls = place.source_urls ?? [];
 
   const handleSave = () => {
-    onUpdate({ notes: notes || undefined, source_url: sourceUrl || undefined });
+    onUpdate({ notes: notes || undefined });
     onSetTags(selectedTags);
     setDirty(false);
   };
@@ -126,9 +99,7 @@ export function PlaceDetailSheet({
     await onAddImage(url);
     setNewImageUrl('');
     setAddingImage(false);
-    const newIndex = images.length; // closure length is pre-update — equals the new last index
     setTimeout(() => {
-      scrollToImage(newIndex);
       if (galleryRef.current) galleryRef.current.scrollLeft = galleryRef.current.scrollWidth;
     }, 100);
   };
@@ -142,11 +113,22 @@ export function PlaceDetailSheet({
       await onUploadImage(file);
     }
     setUploading(false);
-    const newIndex = images.length + files.length - 1; // last of the newly uploaded photos
     setTimeout(() => {
-      scrollToImage(newIndex);
       if (galleryRef.current) galleryRef.current.scrollLeft = galleryRef.current.scrollWidth;
     }, 100);
+  };
+
+  // Sources are immediate — persisted on every add/remove, not tied to the
+  // notes/tags draft-and-save flow
+  const handleAddSource = () => {
+    const url = newSourceUrl.trim();
+    if (!url) return;
+    onUpdate({ source_urls: [...sourceUrls, url] });
+    setNewSourceUrl('');
+  };
+
+  const handleRemoveSource = (index: number) => {
+    onUpdate({ source_urls: sourceUrls.filter((_, i) => i !== index) });
   };
 
   const handleQuickCreate = async () => {
@@ -181,43 +163,12 @@ export function PlaceDetailSheet({
       >
         <div className="bottom-sheet-handle" {...handleProps} />
 
-        {/* Image gallery hero — native scroll-snap so it swipes with momentum */}
-        {images.length > 0 ? (
+        {/* Cover photo — auto-pulled from Google at creation time, not
+            part of the manually-curated gallery below */}
+        {place.image_url ? (
           <div className="place-image-wrap">
-            <div className="place-image-scroller" ref={scrollerRef} onScroll={handleHeroScroll}>
-              {images.map(img => (
-                <div key={img.id} className="place-image-slide">
-                  <img src={img.url} alt={place.name} className="place-image" onError={() => {}} />
-                </div>
-              ))}
-            </div>
+            <img src={place.image_url} alt={place.name} className="place-image" onError={() => {}} />
             <button className="sheet-close" onClick={handleClose} aria-label="Close"><X size={20} /></button>
-            {images.length > 1 && (
-              <div className="image-dots">
-                {images.map((_, i) => (
-                  <button
-                    key={i}
-                    className={`image-dot ${i === activeImageIndex ? 'image-dot--active' : ''}`}
-                    onClick={() => scrollToImage(i)}
-                    aria-label={`Photo ${i + 1} of ${images.length}`}
-                  />
-                ))}
-              </div>
-            )}
-            {!readOnly && (
-              <button
-                className="image-remove-btn"
-                onClick={() => {
-                  const removed = images[activeImageIndex];
-                  if (!removed) return;
-                  onRemoveImage(removed.id);
-                  setActiveImageIndex(prev => Math.max(0, Math.min(prev, images.length - 2)));
-                }}
-                aria-label="Remove image"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
           </div>
         ) : (
           <div className="sheet-header-row">
@@ -226,7 +177,7 @@ export function PlaceDetailSheet({
           </div>
         )}
 
-        {images.length > 0 && <h2 className="place-name place-name-below">{place.name}</h2>}
+        {place.image_url && <h2 className="place-name place-name-below">{place.name}</h2>}
 
         {place.address && (
           <p className="place-address"><MapPin size={13} /> {place.address}</p>
@@ -335,30 +286,58 @@ export function PlaceDetailSheet({
           </div>
         )}
 
-        {/* Source URL */}
-        {(!readOnly || sourceUrl) && (
+        {/* Sources — multiple URLs, each a removable pill once added */}
+        {(!readOnly || sourceUrls.length > 0) && (
           <div className="detail-section">
             <label className="detail-label">
-              <ExternalLink size={13} /> Source
+              <ExternalLink size={13} /> Sources
             </label>
-            {!readOnly && (
-              <input
-                type="url"
-                className="input"
-                placeholder="https://…"
-                value={sourceUrl}
-                onChange={e => { setSourceUrl(e.target.value); setDirty(true); }}
-              />
+            {sourceUrls.length > 0 && (
+              <div className="source-pills">
+                {sourceUrls.map((url, i) => (
+                  <span key={i} className="source-pill">
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="source-pill-link">
+                      <ExternalLink size={11} /> {displayHost(url)}
+                    </a>
+                    {!readOnly && (
+                      <button
+                        className="source-pill-remove"
+                        onClick={() => handleRemoveSource(i)}
+                        aria-label={`Remove source ${displayHost(url)}`}
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
             )}
-            {sourceUrl && (
-              <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="source-link">
-                Open <ExternalLink size={12} />
-              </a>
+            {!readOnly && (
+              <div className="add-image-row">
+                <input
+                  type="url"
+                  className="input"
+                  placeholder="https://…"
+                  value={newSourceUrl}
+                  onChange={e => setNewSourceUrl(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddSource()}
+                />
+                <button
+                  className="btn-icon"
+                  onClick={handleAddSource}
+                  disabled={!newSourceUrl.trim()}
+                  aria-label="Add source"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
             )}
           </div>
         )}
 
-        {/* Image gallery thumbnails */}
+        {/* Photos — a small gallery for remembering shot ideas, separate
+            from the auto-pulled cover photo above. Tap to open the
+            swipeable full-screen viewer. */}
         {images.length > 0 && (
           <div className="detail-section">
             <label className="detail-label"><ImageIcon size={13} /> Photos</label>
@@ -366,8 +345,8 @@ export function PlaceDetailSheet({
               {images.map((img, i) => (
                 <button
                   key={img.id}
-                  className={`gallery-thumb-btn ${i === activeImageIndex ? 'gallery-thumb-btn--active' : ''}`}
-                  onClick={() => scrollToImage(i)}
+                  className="gallery-thumb-btn"
+                  onClick={() => setLightboxIndex(i)}
                 >
                   <img src={img.url} alt="" className="gallery-thumb" onError={() => {}} />
                 </button>
@@ -444,6 +423,15 @@ export function PlaceDetailSheet({
           </div>
         )}
       </div>
+
+      {lightboxIndex !== null && (
+        <ImageLightbox
+          images={images}
+          startIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onRemove={readOnly ? undefined : onRemoveImage}
+        />
+      )}
     </div>
   );
 }

@@ -37,10 +37,6 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace, onRe
       {filtered.map((place, index) => {
         const isVisited = place.status === 'visited';
         const offsetPx = canReorder ? getRowOffsetPx(index, place.id) : 0;
-        // Prefer the first gallery photo — it's what the user actively
-        // curated — falling back to the one-time Google snapshot only
-        // if no gallery photos have been added yet
-        const thumbUrl = place.images?.[0]?.url ?? place.image_url;
         return (
           <li
             key={place.id}
@@ -67,8 +63,8 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace, onRe
               className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
               onClick={() => onSelectPlace(place)}
             >
-              {thumbUrl && (
-                <img src={thumbUrl} alt="" className="place-list-thumb" />
+              {place.image_url && (
+                <img src={place.image_url} alt="" className="place-list-thumb" />
               )}
               <div className="place-list-body">
                 <div className="place-list-top">

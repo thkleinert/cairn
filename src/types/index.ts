@@ -60,7 +60,7 @@ export interface Place {
   status: PlaceStatus;
   visited_at?: string | null;
   notes?: string;
-  source_url?: string;
+  source_urls: string[];
   image_url?: string;
   added_by?: string;
   position: number;
