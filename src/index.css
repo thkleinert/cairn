@@ -8,9 +8,9 @@
 :root {
   --color-bg: #f6f6f7;
   --color-surface: #ffffff;
-  --color-primary: #131416;
-  --color-primary-dark: #000000;
-  --color-primary-light: #f0f1f2;
+  --color-primary: #0d9488;
+  --color-primary-dark: #0b7c72;
+  --color-primary-light: #e6f7f5;
   --color-on-primary: #ffffff;
   --color-success: #131416;
   --color-success-bg: #f0f1f2;
@@ -113,7 +113,7 @@ img { display: block; }
 }
 .input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(19,20,22,0.08);
+  box-shadow: 0 0 0 3px rgba(13,148,136,0.12);
 }
 textarea.input { height: auto; padding: 12px 14px; resize: vertical; line-height: 1.5; }
 select.input {
@@ -1191,10 +1191,10 @@ select.input {
   :root {
     --color-bg: #0e0f10;
     --color-surface: #17181a;
-    --color-primary: #f2f3f4;
-    --color-primary-dark: #ffffff;
-    --color-primary-light: #232527;
-    --color-on-primary: #131416;
+    --color-primary: #14b8a6;
+    --color-primary-dark: #0d9488;
+    --color-primary-light: #123833;
+    --color-on-primary: #ffffff;
     --color-success: #f2f3f4;
     --color-success-bg: #232527;
     --color-danger: #f87171;
@@ -1212,7 +1212,7 @@ select.input {
     --shadow-sheet: 0 -4px 32px rgba(0,0,0,0.5);
   }
 
-  .input:focus { box-shadow: 0 0 0 3px rgba(242,243,244,0.12); }
+  .input:focus { box-shadow: 0 0 0 3px rgba(20,184,166,0.2); }
   .bottombar-pill {
     box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 1px 6px rgba(0,0,0,0.3);
   }
