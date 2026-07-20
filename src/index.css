@@ -267,6 +267,12 @@ select.input {
   font-family: var(--font-display);
 }
 
+.trip-list-count {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
 .skeleton-card {
   height: 96px;
   border-radius: var(--radius-md);
@@ -286,6 +292,16 @@ select.input {
   display: flex; flex-direction: column; gap: 10px;
 }
 
+/* Entrance stagger — cards settle in on first render */
+.trip-cards li {
+  animation: rowIn var(--dur-base) var(--glide) backwards;
+}
+.trip-cards li:nth-child(1) { animation-delay: 0.03s; }
+.trip-cards li:nth-child(2) { animation-delay: 0.08s; }
+.trip-cards li:nth-child(3) { animation-delay: 0.13s; }
+.trip-cards li:nth-child(4) { animation-delay: 0.18s; }
+.trip-cards li:nth-child(n+5) { animation-delay: 0.23s; }
+
 .trip-card {
   width: 100%;
   background: var(--color-surface);
@@ -299,39 +315,62 @@ select.input {
 .trip-card:active { transform: scale(0.985); box-shadow: none; }
 
 .trip-card-image { width: 100%; height: 150px; object-fit: cover; }
-.trip-card-body { padding: 16px; }
-.trip-card-top {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 8px; margin-bottom: 10px;
+
+/* Route-line motif standing in for a cover photo */
+.trip-card-route {
+  position: relative;
+  height: 72px;
+  background: var(--color-bg);
+  overflow: hidden;
 }
+.trip-route-svg { width: 100%; height: 100%; display: block; }
+.trip-route-path {
+  fill: none;
+  stroke: var(--color-text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.5;
+  stroke-dasharray: 500;
+  stroke-dashoffset: 500;
+  animation: routeDraw 900ms var(--glide) forwards;
+}
+.trip-route-dot {
+  fill: var(--color-text);
+  opacity: 0;
+  animation: dotIn 260ms var(--spring-bounce) forwards;
+}
+@keyframes routeDraw { to { stroke-dashoffset: 0; } }
+@keyframes dotIn { to { opacity: 1; } }
+
+.trip-card-body { padding: 16px 18px 18px; }
 .trip-card-name {
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  flex: 1;
 }
 
-.status-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px;
-  border-radius: 99px;
-  font-size: 11px; font-weight: 600;
-  white-space: nowrap;
-  letter-spacing: 0.01em;
-}
-.status-planning, .status-ongoing, .status-completed {
-  background: var(--color-bg);
+.trip-card-meta {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-top: 6px;
+  font-size: 12.5px; font-weight: 500;
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
 }
-.status-ongoing { color: var(--color-text); border-color: var(--color-text); }
+.meta-sep { color: var(--color-border); }
 
-.trip-card-meta { display: flex; flex-wrap: wrap; gap: 10px; }
-.meta-item {
-  display: flex; align-items: center; gap: 4px;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  font-weight: 500;
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-text-secondary);
+  flex-shrink: 0;
+}
+.status-dot--ongoing, .status-dot--completed {
+  background: var(--color-text);
+  border-color: var(--color-text);
+}
+.status-dot--ongoing { animation: statusPulse 1.8s ease-in-out infinite; }
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--color-primary-light); }
+  50% { box-shadow: 0 0 0 4px var(--color-primary-light); }
 }
 
 /* ============================================================

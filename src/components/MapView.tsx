@@ -4,8 +4,11 @@ import type { Place, Tag } from '../types';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
 
-const LIGHT_STYLE = 'mapbox://styles/mapbox/light-v11';
-const DARK_STYLE = 'mapbox://styles/mapbox/dark-v11';
+// Streets give the map real structure — roads, buildings, parks, labels —
+// instead of the flat light/dark canvases, while our ink markers still
+// pop against either.
+const LIGHT_STYLE = 'mapbox://styles/mapbox/streets-v12';
+const DARK_STYLE = 'mapbox://styles/mapbox/navigation-night-v1';
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 interface Props {
