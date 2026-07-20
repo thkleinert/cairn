@@ -191,6 +191,15 @@ select.input {
 .btn-icon--active { color: var(--color-primary); }
 .btn-icon-sm { min-width: 36px; min-height: 36px; }
 
+/* Filled variant — marks the one primary action on a screen (e.g. New trip)
+   so it doesn't read at the same weight as secondary ghost icon buttons */
+.btn-icon--fill {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.16);
+}
+.btn-icon--fill:active { background: var(--color-primary-dark); transform: scale(0.9); }
+
 .badge {
   position: absolute; top: 4px; right: 4px;
   background: var(--color-primary);
@@ -251,6 +260,8 @@ select.input {
   display: flex; flex-direction: column;
   height: 100%;
   overflow: hidden;
+  /* Recessed page canvas so the white header and cards read as elevated */
+  background: var(--color-bg);
 }
 
 /* Large title collapses to a compact bar once the list scrolls */
@@ -271,33 +282,59 @@ select.input {
   border-color: var(--color-border);
 }
 
-.trip-list-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.trip-list-heading { display: flex; flex-direction: column; min-width: 0; }
+
+.trip-list-title-row { display: flex; align-items: center; gap: 8px; }
 
 .trip-list-title {
-  font-size: 32px;
-  font-weight: 700;
+  font-size: 34px;
+  font-weight: 800;
   letter-spacing: -0.03em;
   font-family: var(--font-display);
   transition: font-size var(--dur-base) var(--glide);
 }
 .trip-list-header--compact .trip-list-title { font-size: 17px; }
 
-.trip-list-count {
-  font-size: 13px;
+.trip-count-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px;
+  padding: 0 7px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 99px;
+  font-size: 12px; font-weight: 700;
   color: var(--color-text-secondary);
-  overflow: hidden;
-  max-height: 20px;
-  transition: opacity var(--dur-fast), max-height var(--dur-base) var(--glide);
+  transition: opacity var(--dur-fast), transform var(--dur-fast) var(--spring-bounce);
 }
-.trip-list-header--compact .trip-list-count {
+.trip-list-header--compact .trip-count-pill {
   opacity: 0;
-  max-height: 0;
+  transform: scale(0.6);
+  pointer-events: none;
+}
+
+/* Short ink rule draws in under the title — echoes the route-line
+   motif used on the cards, adds a designed flourish without color */
+.trip-list-rule {
+  display: block;
+  width: 28px; height: 3px;
+  margin-top: 8px;
+  background: var(--color-text);
+  border-radius: 2px;
+  transform-origin: left;
+  animation: ruleGrow 500ms var(--glide) 150ms backwards;
+  transition: opacity var(--dur-fast), transform var(--dur-base) var(--glide), margin var(--dur-base);
+}
+@keyframes ruleGrow { from { transform: scaleX(0); opacity: 0; } }
+.trip-list-header--compact .trip-list-rule {
+  opacity: 0;
+  transform: scaleX(0);
+  margin-top: 0;
 }
 
 .skeleton-card {
   height: 96px;
   border-radius: var(--radius-md);
-  background: var(--color-bg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   animation: skeletonPulse 1.2s ease-in-out infinite backwards;
 }
 @keyframes skeletonPulse {

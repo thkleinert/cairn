@@ -100,10 +100,13 @@ export function TripList({ userId, onSelectTrip }: Props) {
     <div className="trip-list-screen">
       <header className={`trip-list-header ${compact ? 'trip-list-header--compact' : ''}`}>
         <div className="trip-list-heading">
-          <h1 className="trip-list-title">My Trips</h1>
-          {!loading && trips.length > 0 && (
-            <p className="trip-list-count">{trips.length} trip{trips.length === 1 ? '' : 's'}</p>
-          )}
+          <div className="trip-list-title-row">
+            <h1 className="trip-list-title">My Trips</h1>
+            {!loading && trips.length > 0 && (
+              <span className="trip-count-pill">{trips.length}</span>
+            )}
+          </div>
+          <span className="trip-list-rule" aria-hidden="true" />
         </div>
         <div className="trip-list-actions">
           <button
@@ -113,8 +116,8 @@ export function TripList({ userId, onSelectTrip }: Props) {
           >
             <LogOut size={20} />
           </button>
-          <button className="btn-icon" onClick={() => setShowCreate(true)} aria-label="New trip">
-            <Plus size={24} />
+          <button className="btn-icon btn-icon--fill" onClick={() => setShowCreate(true)} aria-label="New trip">
+            <Plus size={22} />
           </button>
         </div>
       </header>
