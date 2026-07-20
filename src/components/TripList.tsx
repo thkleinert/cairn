@@ -116,9 +116,6 @@ export function TripList({ userId, onSelectTrip }: Props) {
           >
             <LogOut size={20} />
           </button>
-          <button className="btn-icon btn-icon--fill" onClick={() => setShowCreate(true)} aria-label="New trip">
-            <Plus size={22} />
-          </button>
         </div>
       </header>
       {confirmSignOut && <p className="signout-hint">Tap again to sign out</p>}
@@ -133,7 +130,7 @@ export function TripList({ userId, onSelectTrip }: Props) {
         <div className="empty-state">
           <MapPin size={48} color="var(--color-muted)" />
           <p>No trips yet</p>
-          <button className="btn-primary" onClick={() => setShowCreate(true)}>Create your first trip</button>
+          <p className="empty-state-hint">Tap the + button to create one</p>
         </div>
       ) : (
         <ul className="trip-cards" ref={scrollRef}>
@@ -168,6 +165,12 @@ export function TripList({ userId, onSelectTrip }: Props) {
           ))}
         </ul>
       )}
+
+      <div className="trip-list-fab-wrap">
+        <button className="trip-list-fab" onClick={() => setShowCreate(true)} aria-label="New trip">
+          <Plus size={26} />
+        </button>
+      </div>
 
       {showCreate && (
         <div className="bottom-sheet-overlay" onClick={() => setShowCreate(false)}>

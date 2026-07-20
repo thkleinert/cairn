@@ -191,15 +191,6 @@ select.input {
 .btn-icon--active { color: var(--color-primary); }
 .btn-icon-sm { min-width: 36px; min-height: 36px; }
 
-/* Filled variant — marks the one primary action on a screen (e.g. New trip)
-   so it doesn't read at the same weight as secondary ghost icon buttons */
-.btn-icon--fill {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.16);
-}
-.btn-icon--fill:active { background: var(--color-primary-dark); transform: scale(0.9); }
-
 .badge {
   position: absolute; top: 4px; right: 4px;
   background: var(--color-primary);
@@ -346,9 +337,34 @@ select.input {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
+  padding: 16px 12px calc(96px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column; gap: 10px;
 }
+
+/* Floating add-trip button — bottom-center, matching the FAB used for
+   adding places in Trip View so the "add" affordance is consistent
+   app-wide, and reachable one-handed instead of a top-corner button */
+.trip-list-fab-wrap {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex; justify-content: center; align-items: flex-end;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
+  height: calc(76px + env(safe-area-inset-bottom));
+  z-index: 10;
+  pointer-events: none;
+}
+.trip-list-fab {
+  pointer-events: auto;
+  width: 56px; height: 56px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.20);
+  transition: transform 0.18s var(--spring-bounce), box-shadow var(--dur-fast);
+  animation: pillSlideUp 0.4s var(--glide);
+}
+.trip-list-fab:active { transform: scale(0.88); box-shadow: 0 2px 8px rgba(0,0,0,0.14); }
 
 /* Entrance stagger — cards settle in on first render */
 .trip-cards li {
@@ -1124,6 +1140,7 @@ select.input {
   flex: 1;
 }
 .empty-state p { font-size: 15px; font-weight: 500; }
+.empty-state .empty-state-hint { font-size: 13px; color: var(--color-text-secondary); margin-top: -6px; }
 .list-empty { height: 100%; }
 
 /* ============================================================
