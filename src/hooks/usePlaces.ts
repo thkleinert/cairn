@@ -14,7 +14,7 @@ export function usePlaces(tripId: string | undefined) {
       .from('places')
       .select('*, place_tags(tag_id, tags(*)), place_images(*)')
       .eq('trip_id', tripId)
-      .order('created_at', { ascending: true });
+      .order('position', { ascending: true });
 
     if (error) {
       toast('Could not load places');
@@ -63,7 +63,7 @@ export function usePlaces(tripId: string | undefined) {
     if (!tripId) return null;
     const { data, error } = await supabase
       .from('places')
-      .insert({ ...place, trip_id: tripId })
+      .insert({ ...place, trip_id: tripId, position: places.length })
       .select()
       .single();
     if (error || !data) {
@@ -101,6 +101,29 @@ export function usePlaces(tripId: string | undefined) {
       return;
     }
     setPlaces(prev => prev.filter(p => p.id !== id));
+  };
+
+  // Drag-to-reorder: apply the new order immediately, revert everything
+  // on failure (any partial write would otherwise leave positions mixed)
+  const reorderPlaces = async (orderedIds: string[]) => {
+    const before = places;
+    const reordered = orderedIds
+      .map((id, index) => {
+        const place = places.find(p => p.id === id);
+        return place ? { ...place, position: index } : null;
+      })
+      .filter((p): p is Place => p !== null);
+    setPlaces(reordered);
+
+    const results = await Promise.all(
+      orderedIds.map((id, index) =>
+        supabase.from('places').update({ position: index }).eq('id', id)
+      )
+    );
+    if (results.some(r => r.error)) {
+      setPlaces(before);
+      toast('Could not save the new order');
+    }
   };
 
   const toggleVisited = async (id: string, currentStatus: string) => {
@@ -164,5 +187,5 @@ export function usePlaces(tripId: string | undefined) {
     ));
   };
 
-  return { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage };
+  return { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage, reorderPlaces };
 }

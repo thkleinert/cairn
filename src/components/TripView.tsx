@@ -22,7 +22,7 @@ type Sheet = 'none' | 'tag-filter' | 'settings';
 type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack }: Props) {
-  const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage } = usePlaces(trip.id);
+  const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   const { updateTrip, deleteTrip } = useTrips(userId);
 
@@ -118,6 +118,7 @@ export function TripView({ trip, userId, onBack }: Props) {
             activeTags={activeTags}
             allTags={tags}
             onSelectPlace={(place) => setSelectedPlaceId(place.id)}
+            onReorder={reorderPlaces}
           />
         )}
       </div>

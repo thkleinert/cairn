@@ -63,6 +63,7 @@ export interface Place {
   source_url?: string;
   image_url?: string;
   added_by?: string;
+  position: number;
   created_at: string;
   updated_at: string;
   tags?: Tag[];

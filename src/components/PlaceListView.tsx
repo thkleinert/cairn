@@ -1,16 +1,26 @@
-import { CheckCircle, Circle, MapPin } from 'lucide-react';
+import { useRef } from 'react';
+import { CheckCircle, Circle, MapPin, GripVertical } from 'lucide-react';
 import type { Place, Tag } from '../types';
+import { useDragReorder } from '../hooks/useDragReorder';
 
 interface Props {
   places: Place[];
   activeTags: string[];
   allTags: Tag[];
   onSelectPlace: (place: Place) => void;
+  onReorder: (orderedIds: string[]) => void;
 }
 
-export function PlaceListView({ places, activeTags, allTags, onSelectPlace }: Props) {
-  const filtered = activeTags.length === 0
-    ? places
+export function PlaceListView({ places, activeTags, allTags, onSelectPlace, onReorder }: Props) {
+  // Reordering only makes sense against the full, unfiltered order
+  const canReorder = activeTags.length === 0;
+  const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
+
+  const { order, dragId, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx } =
+    useDragReorder({ items: places, getId: p => p.id, onReorder, enabled: canReorder });
+
+  const filtered = canReorder
+    ? order
     : places.filter(p => (p.tags ?? []).some(t => activeTags.includes(t.id)));
 
   if (filtered.length === 0) {
@@ -23,12 +33,36 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace }: Pr
   }
 
   return (
-    <ul className="place-list">
-      {filtered.map(place => {
+    <ul className={`place-list ${suppressTransition ? 'place-list--reordering' : ''}`}>
+      {filtered.map((place, index) => {
         const isVisited = place.status === 'visited';
+        const offsetPx = canReorder ? getRowOffsetPx(index, place.id) : 0;
         return (
-          <li key={place.id}>
-            <button className="place-list-item" onClick={() => onSelectPlace(place)}>
+          <li
+            key={place.id}
+            ref={el => { rowRefs.current[place.id] = el; }}
+            className={`place-list-item ${dragId === place.id ? 'place-list-item--dragging' : ''}`}
+            style={offsetPx ? { transform: `translateY(${offsetPx}px)` } : undefined}
+          >
+            {canReorder && (
+              <button
+                className="place-list-drag-handle"
+                aria-label={`Reorder ${place.name}`}
+                onPointerDown={e => {
+                  const row = rowRefs.current[place.id];
+                  if (row) handlePointerDown(place.id, index, row, e);
+                }}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+              >
+                <GripVertical size={16} />
+              </button>
+            )}
+            <button
+              className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
+              onClick={() => onSelectPlace(place)}
+            >
               {place.image_url && (
                 <img src={place.image_url} alt="" className="place-list-thumb" />
               )}
