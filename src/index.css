@@ -220,7 +220,7 @@ select.input {
 }
 
 .auth-logo {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
   margin-bottom: 6px;
 }
 .auth-logo h1 {
@@ -232,11 +232,12 @@ select.input {
   color: var(--color-text-secondary);
   font-size: 14px;
   margin-bottom: 28px;
+  text-align: center;
 }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .auth-toggle {
   margin-top: 20px;
-  color: var(--color-primary);
+  color: var(--color-text-secondary);
   font-size: 14px;
   font-weight: 500;
   text-align: center;
@@ -497,15 +498,15 @@ select.input {
 
 .bottombar-pill {
   pointer-events: auto;
-  display: flex; align-items: center;
+  display: flex; align-items: stretch;
   background: var(--color-surface);
   border-radius: 99px;
-  padding: 5px;
+  padding: 0 8px;
   height: 54px;
   width: 272px;
-  gap: 6px;
+  gap: 4px;
   border: 1px solid var(--color-border);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.08), 0 1px 6px rgba(0,0,0,0.05);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
   animation: pillSlideUp 0.4s var(--glide);
 }
 
@@ -513,46 +514,20 @@ select.input {
   from { transform: translateY(20px); opacity: 0; }
 }
 
-.bottombar-tabs {
-  position: relative;
-  flex: 1;
-  display: flex;
-  align-self: stretch;
-}
-
-.bottombar-indicator {
-  position: absolute;
-  top: 0; bottom: 0; left: 0;
-  width: 50%;
-  background: var(--color-primary);
-  border-radius: 99px;
-  transition: transform var(--dur-base) var(--glide);
-}
-.bottombar-indicator--list { transform: translateX(100%); }
-
 .bottombar-tab {
   flex: 1;
-  position: relative;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   color: var(--color-muted);
   font-size: 10px; font-weight: 600;
   letter-spacing: 0.04em;
-  transition: color var(--dur-base);
+  transition: color 0.18s;
 }
-.bottombar-tab--active { color: var(--color-on-primary); }
+.bottombar-tab--active { color: var(--color-primary); }
 
 .bottombar-tab svg {
   transition: transform 0.25s var(--spring-bounce);
 }
-.bottombar-tab--active svg { transform: scale(1.05); }
-
-.tab-count {
-  display: inline-block;
-  animation: countPop var(--dur-base) var(--spring-bounce);
-}
-@keyframes countPop {
-  40% { transform: translateY(-3px) scale(1.25); }
-}
+.bottombar-tab--active svg { transform: scale(1.1) translateY(-1px); }
 
 .fab {
   width: 44px; height: 44px;
@@ -561,11 +536,11 @@ select.input {
   color: var(--color-on-primary);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+  box-shadow: 0 2px 10px rgba(13,148,136,0.35);
   flex-shrink: 0;
-  transition: transform 0.18s var(--spring-bounce), box-shadow var(--dur-fast);
+  transition: transform 0.18s var(--spring-bounce), box-shadow 0.15s;
 }
-.fab:active { transform: scale(0.88); box-shadow: 0 1px 5px rgba(0,0,0,0.12); }
+.fab:active { transform: scale(0.88); box-shadow: 0 1px 5px rgba(13,148,136,0.2); }
 
 /* ============================================================
    SEARCH OVERLAY
