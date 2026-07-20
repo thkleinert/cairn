@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil } from 'lucide-react';
+import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil, ImageIcon } from 'lucide-react';
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
@@ -24,6 +24,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState(trip.name);
   const [status, setStatus] = useState(trip.status);
+  const [coverImageUrl, setCoverImageUrl] = useState(trip.cover_image_url ?? '');
   const [showDelete, setShowDelete] = useState(false);
 
   const [inviteEmail, setInviteEmail] = useState('');
@@ -46,7 +47,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
   };
 
   const handleSave = () => {
-    onUpdate({ name, status });
+    onUpdate({ name, status, cover_image_url: coverImageUrl.trim() || null });
     onClose();
   };
 
@@ -111,6 +112,20 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
                 <option value="ongoing">Ongoing</option>
                 <option value="completed">Completed</option>
               </select>
+            </div>
+
+            <div className="detail-section">
+              <label className="detail-label"><ImageIcon size={13} /> Cover photo</label>
+              {coverImageUrl && (
+                <img src={coverImageUrl} alt="" className="cover-preview" onError={() => {}} />
+              )}
+              <input
+                type="url"
+                className="input"
+                placeholder="https://…"
+                value={coverImageUrl}
+                onChange={e => setCoverImageUrl(e.target.value)}
+              />
             </div>
 
             <button className="btn-primary u-mb16" onClick={handleSave}>

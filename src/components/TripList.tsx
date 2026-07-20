@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Plus, MapPin, LogOut } from 'lucide-react';
 import type { Trip } from '../types';
 import { useTrips } from '../hooks/useTrips';
@@ -50,8 +50,20 @@ export function TripList({ userId, onSelectTrip }: Props) {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [compact, setCompact] = useState(false);
+  const scrollRef = useRef<HTMLUListElement>(null);
 
   useEscapeClose(() => setShowCreate(false));
+
+  // Large title collapses once the list actually scrolls — motion tied
+  // to real state, not a decorative timer
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setCompact(el.scrollTop > 8);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [loading, trips.length]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,8 +98,8 @@ export function TripList({ userId, onSelectTrip }: Props) {
 
   return (
     <div className="trip-list-screen">
-      <header className="trip-list-header">
-        <div>
+      <header className={`trip-list-header ${compact ? 'trip-list-header--compact' : ''}`}>
+        <div className="trip-list-heading">
           <h1 className="trip-list-title">My Trips</h1>
           {!loading && trips.length > 0 && (
             <p className="trip-list-count">{trips.length} trip{trips.length === 1 ? '' : 's'}</p>
@@ -121,7 +133,7 @@ export function TripList({ userId, onSelectTrip }: Props) {
           <button className="btn-primary" onClick={() => setShowCreate(true)}>Create your first trip</button>
         </div>
       ) : (
-        <ul className="trip-cards">
+        <ul className="trip-cards" ref={scrollRef}>
           {trips.map(trip => (
             <li key={trip.id}>
               <button className="trip-card" onClick={() => onSelectTrip(trip)}>

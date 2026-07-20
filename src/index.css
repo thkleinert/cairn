@@ -253,24 +253,45 @@ select.input {
   overflow: hidden;
 }
 
+/* Large title collapses to a compact bar once the list scrolls */
 .trip-list-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: calc(18px + env(safe-area-inset-top)) 16px 12px;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px;
+  padding: calc(22px + env(safe-area-inset-top)) 16px 20px;
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid transparent;
+  position: relative;
+  z-index: 5;
+  transition: padding var(--dur-base) var(--glide), border-color var(--dur-base) var(--glide), align-items var(--dur-base);
 }
+.trip-list-header--compact {
+  align-items: center;
+  padding-top: calc(14px + env(safe-area-inset-top));
+  padding-bottom: 12px;
+  border-color: var(--color-border);
+}
+
+.trip-list-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
 .trip-list-title {
-  font-size: 24px;
+  font-size: 32px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   font-family: var(--font-display);
+  transition: font-size var(--dur-base) var(--glide);
 }
+.trip-list-header--compact .trip-list-title { font-size: 17px; }
 
 .trip-list-count {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--color-text-secondary);
-  margin-top: 2px;
+  overflow: hidden;
+  max-height: 20px;
+  transition: opacity var(--dur-fast), max-height var(--dur-base) var(--glide);
+}
+.trip-list-header--compact .trip-list-count {
+  opacity: 0;
+  max-height: 0;
 }
 
 .skeleton-card {
@@ -766,6 +787,14 @@ select.input {
   display: flex; gap: 8px; align-items: center;
 }
 .add-image-row .input { flex: 1; }
+
+.cover-preview {
+  width: 100%; height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  margin-bottom: 8px;
+}
 
 .detail-actions {
   display: flex; align-items: center; justify-content: space-between;

@@ -10,7 +10,7 @@ export interface Trip {
   end_date?: string;
   status: TripStatus;
   share_token: string;
-  cover_image_url?: string;
+  cover_image_url?: string | null;
   owner_id: string;
   created_at: string;
   updated_at: string;
