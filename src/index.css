@@ -1145,17 +1145,15 @@ select.input {
 .create-trip-form { display: flex; flex-direction: column; gap: 14px; }
 .date-row { display: flex; gap: 12px; }
 .date-label {
-  flex: 1; display: flex; flex-direction: column; gap: 6px;
+  /* min-width: 0 — flex items default to min-width: auto, which for a
+     native date input's intrinsic content width is wide enough to
+     overflow the row instead of sharing it evenly */
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;
   font-size: 13px; font-weight: 600; color: var(--color-text-secondary);
 }
+.date-label .input { width: 100%; min-width: 0; }
 .form-actions { display: flex; gap: 10px; }
 .form-actions > * { flex: 1; }
-
-/* ============================================================
-   SHARE
-   ============================================================ */
-.share-row { display: flex; align-items: center; gap: 8px; }
-.share-input { font-size: 13px; color: var(--color-text-secondary); }
 
 /* ============================================================
    COLLABORATORS

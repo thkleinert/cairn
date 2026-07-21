@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil, ImageIcon, Plus, Calendar } from 'lucide-react';
+import { X, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil, ImageIcon, Plus, Calendar, Type } from 'lucide-react';
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
@@ -23,7 +23,6 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadCover, isOwner }: Props) {
-  const [copied, setCopied] = useState(false);
   const [name, setName] = useState(trip.name);
   const [startDate, setStartDate] = useState(trip.start_date ?? '');
   const [endDate, setEndDate] = useState(trip.end_date ?? '');
@@ -42,21 +41,23 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   const { sheetRef, handleProps } = useSwipeToClose(onClose);
   useEscapeClose(onClose);
 
-  const shareUrl = `${window.location.origin}/shared/${trip.share_token}`;
-
-  const copyLink = async () => {
-    await navigator.clipboard.writeText(shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // Everything below auto-saves on change/blur — no separate Save button
+  const handleNameBlur = () => {
+    const trimmed = name.trim();
+    if (trimmed && trimmed !== trip.name) onUpdate({ name: trimmed });
+    else setName(trip.name);
   };
 
-  const handleSave = () => {
-    onUpdate({ name, start_date: startDate || null, end_date: endDate || null });
-    onClose();
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    onUpdate({ start_date: value || null });
   };
 
-  // Cover photo persists immediately on selection, unlike name/status
-  // which wait for the explicit Save below
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    onUpdate({ end_date: value || null });
+  };
+
   const handleSetCoverUrl = (url: string) => {
     setCoverImageUrl(url);
     onUpdate({ cover_image_url: url });
@@ -120,8 +121,8 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
         {isOwner && (
           <>
             <div className="detail-section">
-              <label className="detail-label">Name</label>
-              <input className="input" value={name} onChange={e => setName(e.target.value)} />
+              <label className="detail-label"><Type size={13} /> Name</label>
+              <input className="input" value={name} onChange={e => setName(e.target.value)} onBlur={handleNameBlur} />
             </div>
 
             <div className="detail-section">
@@ -129,11 +130,11 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
               <div className="date-row">
                 <label className="date-label">
                   <span>Start</span>
-                  <input type="date" className="input" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                  <input type="date" className="input" value={startDate} onChange={e => handleStartDateChange(e.target.value)} />
                 </label>
                 <label className="date-label">
                   <span>End</span>
-                  <input type="date" className="input" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                  <input type="date" className="input" value={endDate} onChange={e => handleEndDateChange(e.target.value)} />
                 </label>
               </div>
             </div>
@@ -168,24 +169,11 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
                 </button>
               )}
             </div>
-
-            <button className="btn-primary u-mb16" onClick={handleSave}>
-              Save changes
-            </button>
           </>
         )}
 
-        <div className="detail-section">
-          <label className="detail-label"><Users size={13} /> Share link (read-only)</label>
-          <div className="share-row">
-            <input className="input share-input" value={shareUrl} readOnly />
-            <button className="btn-icon" onClick={copyLink} aria-label="Copy link">
-              {copied ? <Check size={18} color="var(--color-success)" /> : <Copy size={18} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Collaborators */}
+        {/* Collaborators — invite by email with a role, no separate
+            read-only link to manage */}
         <div className="detail-section">
           <label className="detail-label"><Users size={13} /> Collaborators</label>
 
