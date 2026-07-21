@@ -250,7 +250,7 @@ select.input {
   width: 100%;
   min-height: var(--tap-target);
 }
-.auth-forgot + .auth-toggle { margin-top: 8px; }
+.auth-forgot + .auth-toggle { margin-top: -16px; }
 
 /* ============================================================
    TRIP LIST
