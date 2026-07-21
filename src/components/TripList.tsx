@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, MapPin, LogOut } from 'lucide-react';
+import { Plus, MapPin, LogOut, Calendar } from 'lucide-react';
 import type { Trip } from '../types';
 import { useTrips } from '../hooks/useTrips';
 import { useAuth } from '../hooks/useAuth';
@@ -10,12 +10,6 @@ interface Props {
   userId: string;
   onSelectTrip: (trip: Trip) => void;
 }
-
-const STATUS_LABELS = {
-  planning: 'Planning',
-  ongoing: 'Ongoing',
-  completed: 'Completed',
-};
 
 // Deterministic per-trip seed so each card's route motif is stable across renders
 function routeSeed(id: string): number {
@@ -100,12 +94,7 @@ export function TripList({ userId, onSelectTrip }: Props) {
     <div className="trip-list-screen">
       <header className={`trip-list-header ${compact ? 'trip-list-header--compact' : ''}`}>
         <div className="trip-list-heading">
-          <div className="trip-list-title-row">
-            <h1 className="trip-list-title">My Trips</h1>
-            {!loading && trips.length > 0 && (
-              <span className="trip-count-pill">{trips.length}</span>
-            )}
-          </div>
+          <h1 className="trip-list-title">My Trips</h1>
           <span className="trip-list-rule" aria-hidden="true" />
         </div>
         <div className="trip-list-actions">
@@ -146,19 +135,15 @@ export function TripList({ userId, onSelectTrip }: Props) {
                 )}
                 <div className="trip-card-body">
                   <h2 className="trip-card-name">{trip.name}</h2>
-                  <div className="trip-card-meta">
-                    <span className={`status-dot status-dot--${trip.status}`} />
-                    <span>{STATUS_LABELS[trip.status]}</span>
-                    {trip.start_date && (
-                      <>
-                        <span className="meta-sep">·</span>
-                        <span>
-                          {format(parseISO(trip.start_date), 'MMM d, yyyy')}
-                          {trip.end_date && ` – ${format(parseISO(trip.end_date), 'MMM d, yyyy')}`}
-                        </span>
-                      </>
-                    )}
-                  </div>
+                  {trip.start_date && (
+                    <div className="trip-card-meta">
+                      <Calendar size={12} />
+                      <span>
+                        {format(parseISO(trip.start_date), 'MMM d, yyyy')}
+                        {trip.end_date && ` – ${format(parseISO(trip.end_date), 'MMM d, yyyy')}`}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </button>
             </li>

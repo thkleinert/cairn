@@ -25,7 +25,6 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
 export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadCover, isOwner }: Props) {
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState(trip.name);
-  const [status, setStatus] = useState(trip.status);
   const [coverImageUrl, setCoverImageUrl] = useState(trip.cover_image_url ?? '');
   const [showCoverSheet, setShowCoverSheet] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -50,7 +49,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   };
 
   const handleSave = () => {
-    onUpdate({ name, status });
+    onUpdate({ name });
     onClose();
   };
 
@@ -121,19 +120,6 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
             <div className="detail-section">
               <label className="detail-label">Name</label>
               <input className="input" value={name} onChange={e => setName(e.target.value)} />
-            </div>
-
-            <div className="detail-section">
-              <label className="detail-label">Status</label>
-              <select
-                className="input"
-                value={status}
-                onChange={e => setStatus(e.target.value as Trip['status'])}
-              >
-                <option value="planning">Planning</option>
-                <option value="ongoing">Ongoing</option>
-                <option value="completed">Completed</option>
-              </select>
             </div>
 
             <div className="detail-section">

@@ -73,7 +73,7 @@ body {
   height: 100%;
 }
 
-button { cursor: pointer; font-family: inherit; border: none; background: none; }
+button { cursor: pointer; font-family: inherit; border: none; background: none; color: inherit; }
 input, textarea, select { font-family: inherit; font-size: 16px; }
 ul { list-style: none; }
 a { color: inherit; }
@@ -279,8 +279,6 @@ select.input {
 
 .trip-list-heading { display: flex; flex-direction: column; min-width: 0; }
 
-.trip-list-title-row { display: flex; align-items: center; gap: 8px; }
-
 .trip-list-title {
   font-size: 34px;
   font-weight: 800;
@@ -289,22 +287,6 @@ select.input {
   transition: font-size var(--dur-base) var(--glide);
 }
 .trip-list-header--compact .trip-list-title { font-size: 17px; }
-
-.trip-count-pill {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 22px; height: 22px;
-  padding: 0 7px;
-  border: 1.5px solid var(--color-border);
-  border-radius: 99px;
-  font-size: 12px; font-weight: 700;
-  color: var(--color-text-secondary);
-  transition: opacity var(--dur-fast), transform var(--dur-fast) var(--spring-bounce);
-}
-.trip-list-header--compact .trip-count-pill {
-  opacity: 0;
-  transform: scale(0.6);
-  pointer-events: none;
-}
 
 /* Short ink rule draws in under the title — echoes the route-line
    motif used on the cards, adds a designed flourish without color */
@@ -425,30 +407,14 @@ select.input {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  color: var(--color-text);
 }
 
 .trip-card-meta {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  display: flex; align-items: center; gap: 5px;
   margin-top: 6px;
   font-size: 12.5px; font-weight: 500;
   color: var(--color-text-secondary);
-}
-.meta-sep { color: var(--color-border); }
-
-.status-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-text-secondary);
-  flex-shrink: 0;
-}
-.status-dot--ongoing, .status-dot--completed {
-  background: var(--color-text);
-  border-color: var(--color-text);
-}
-.status-dot--ongoing { animation: statusPulse 1.8s ease-in-out infinite; }
-@keyframes statusPulse {
-  0%, 100% { box-shadow: 0 0 0 0 var(--color-primary-light); }
-  50% { box-shadow: 0 0 0 4px var(--color-primary-light); }
 }
 
 /* ============================================================
@@ -776,8 +742,12 @@ select.input {
   font-size: 20px; font-weight: 800;
   letter-spacing: -0.03em;
 }
-.sheet-header-row .place-name,
-.place-name-row .place-name {
+/* Element selector, not a class list — every sheet header row's title is
+   an h2 (place name or bottom-sheet-title); this keeps it flexing to push
+   the close button (and anything between them) to the far right
+   regardless of which one it is */
+.sheet-header-row h2,
+.place-name-row h2 {
   flex: 1; min-width: 0; margin: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
