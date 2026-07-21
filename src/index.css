@@ -244,11 +244,13 @@ select.input {
   margin-top: 20px;
   color: var(--color-text-secondary);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
+  opacity: 0.75;
   text-align: center;
   width: 100%;
   min-height: var(--tap-target);
 }
+.auth-forgot + .auth-toggle { margin-top: 8px; }
 
 /* ============================================================
    TRIP LIST

@@ -104,7 +104,7 @@ export function AuthScreen() {
           className="auth-toggle"
           onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
         >
-          {mode === 'signin' ? "Don't have an account? Sign up"
+          {mode === 'signin' ? "Don't have an account? Sign up."
             : mode === 'signup' ? 'Already have an account? Sign in'
             : 'Back to sign in'}
         </button>
