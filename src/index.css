@@ -1143,15 +1143,16 @@ select.input {
    FORMS
    ============================================================ */
 .create-trip-form { display: flex; flex-direction: column; gap: 14px; }
-.date-row { display: flex; gap: 12px; }
+/* Stacked, not side-by-side — native <input type="date"> controls
+   (especially iOS Safari) can enforce their own minimum rendering
+   width regardless of CSS width/min-width, so two of them sharing a
+   row is never reliably safe from overflow. Full width each instead. */
+.date-row { display: flex; flex-direction: column; gap: 12px; }
 .date-label {
-  /* min-width: 0 — flex items default to min-width: auto, which for a
-     native date input's intrinsic content width is wide enough to
-     overflow the row instead of sharing it evenly */
-  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 6px;
   font-size: 13px; font-weight: 600; color: var(--color-text-secondary);
 }
-.date-label .input { width: 100%; min-width: 0; }
+.date-label .input { width: 100%; }
 .form-actions { display: flex; gap: 10px; }
 .form-actions > * { flex: 1; }
 
