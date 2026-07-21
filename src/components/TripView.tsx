@@ -67,10 +67,6 @@ export function TripView({ trip, userId, onBack }: Props) {
     setSelectedPlaceId(null);
   };
 
-  const filteredCount = activeTags.length > 0
-    ? places.filter(p => (p.tags ?? []).some(t => activeTags.includes(t.id))).length
-    : places.length;
-
   return (
     <div className="trip-view">
       {/* Top bar */}
@@ -153,7 +149,7 @@ export function TripView({ trip, userId, onBack }: Props) {
             onClick={() => setViewMode('list')}
           >
             <List size={20} />
-            <span>List {filteredCount > 0 ? `(${filteredCount})` : ''}</span>
+            <span>List</span>
           </button>
         </div>
       </div>

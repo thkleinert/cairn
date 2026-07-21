@@ -763,11 +763,16 @@ select.input {
 .place-address {
   display: flex; align-items: center; gap: 4px;
   font-size: 13px; color: var(--color-text-secondary);
-  margin-bottom: 4px;
+  margin-bottom: 16px;
 }
 .visited-date-line {
   font-size: 12.5px; color: var(--color-text-secondary);
   margin-bottom: 16px;
+}
+/* Pull tight against the address specifically when both are present —
+   without an address, the date line just uses its own margin-top: 0 */
+.place-address + .visited-date-line {
+  margin-top: -12px;
 }
 
 /* Compact icon toggle next to the place name — replaces the old
