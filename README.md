@@ -41,14 +41,19 @@ A **trip** is a shared space with a name, dates, a cover photo, and a list of co
 - **Visited routing** — draws the real road route (via Mapbox Directions) between places you've marked visited, in order, falling back to a straight dashed line where no road route exists (e.g. between islands).
 - **Installable PWA** — add it to your home screen for an app-like, offline-tolerant experience.
 
-|                                                     |                                                       |
-| --------------------------------------------------- | ----------------------------------------------------- |
-| ![Trip list](docs/screenshots/trip-list.png)        | ![Map view](docs/screenshots/trip-map.png)             |
-| ![Places list](docs/screenshots/trip-places-list.png) | ![Place detail](docs/screenshots/place-detail.png)   |
-
-<p align="center">
-  <img src="docs/screenshots/trip-settings.png" width="260" alt="Trip settings" />
-</p>
+<table>
+  <tr>
+    <td><img src="docs/screenshots/trip-list.png" width="260" alt="Trip list" /></td>
+    <td><img src="docs/screenshots/trip-map.png" width="260" alt="Map view" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/trip-places-list.png" width="260" alt="Places list" /></td>
+    <td><img src="docs/screenshots/place-detail.png" width="260" alt="Place detail" /></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/screenshots/trip-settings.png" width="260" alt="Trip settings" /></td>
+  </tr>
+</table>
 
 ## Tech stack
 
