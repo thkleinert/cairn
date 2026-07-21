@@ -49,19 +49,21 @@ export async function fetchFreshGooglePhotoUrl(googlePlaceId: string): Promise<s
 // place-images bucket, returning a stable public URL — or null if the
 // download/upload failed, in which case the caller should keep whatever
 // URL it already had rather than losing the photo entirely.
+//
+// This has to go through an Edge Function, not a direct browser fetch —
+// Google's photo CDN sends no CORS headers, so fetch(tempUrl) fails
+// outright from a browser (confirmed: "TypeError: Failed to fetch").
+// The function does the same fetch server-side, where CORS doesn't
+// apply, and uploads using the caller's own JWT so the usual storage
+// RLS (trip membership) still applies.
 export async function persistGooglePhoto(tripId: string, placeId: string, tempUrl: string): Promise<string | null> {
+  const path = `${tripId}/${placeId}/cover-${Date.now()}.jpg`;
   try {
-    const res = await fetch(tempUrl);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    const ext = blob.type.split('/')[1] || 'jpg';
-    const path = `${tripId}/${placeId}/cover-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage
-      .from('place-images')
-      .upload(path, blob, { contentType: blob.type || 'image/jpeg' });
-    if (error) return null;
-    const { data } = supabase.storage.from('place-images').getPublicUrl(path);
-    return data.publicUrl;
+    const { data, error } = await supabase.functions.invoke<{ url?: string; error?: string }>('persist-photo', {
+      body: { photoUrl: tempUrl, path },
+    });
+    if (error || !data?.url) return null;
+    return data.url;
   } catch {
     return null;
   }
