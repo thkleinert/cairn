@@ -22,6 +22,35 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
+// TEMPORARY DIAGNOSTIC — pinning down the iOS standalone-PWA bottom gap.
+// Remove once we have real device numbers to work from.
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;visibility:hidden;padding-bottom:env(safe-area-inset-bottom);';
+    document.body.appendChild(probe);
+    const safeAreaBottom = getComputedStyle(probe).paddingBottom;
+    document.body.removeChild(probe);
+
+    const vv = window.visualViewport;
+    const lines = [
+      `innerHeight: ${window.innerHeight}`,
+      `visualViewport: ${vv ? `${Math.round(vv.width)}x${Math.round(vv.height)} offsetTop=${vv.offsetTop.toFixed(1)} scale=${vv.scale}` : 'unavailable'}`,
+      `documentElement.clientHeight: ${document.documentElement.clientHeight}`,
+      `screen: ${window.screen.width}x${window.screen.height} dpr=${window.devicePixelRatio}`,
+      `display-mode standalone: ${window.matchMedia('(display-mode: standalone)').matches}`,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      `navigator.standalone: ${(navigator as any).standalone}`,
+      `env(safe-area-inset-bottom): ${safeAreaBottom}`,
+      `--app-height: ${getComputedStyle(document.documentElement).getPropertyValue('--app-height')}`,
+    ];
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:rgba(220,38,38,0.95);color:#fff;font:11px/1.5 monospace;padding:8px;white-space:pre-wrap;';
+    box.textContent = lines.join('\n');
+    document.body.appendChild(box);
+  }, 500);
+});
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(reg => {
