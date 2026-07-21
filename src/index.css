@@ -205,7 +205,10 @@ select.input {
    AUTH SCREEN
    ============================================================ */
 .auth-screen {
-  min-height: 100dvh;
+  /* height: 100% (not 100dvh) relies on the html/body/#root cascade —
+     100dvh alone has historically under-reported the real usable height
+     in an iOS standalone PWA, leaving a gap at the bottom */
+  height: 100%;
   display: flex; align-items: center; justify-content: center;
   padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
   background: var(--color-bg);
@@ -1265,7 +1268,7 @@ select.input {
    ============================================================ */
 .shared-error {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  min-height: 100dvh; gap: 16px;
+  height: 100%; gap: 16px;
   color: var(--color-text-secondary);
 }
 
