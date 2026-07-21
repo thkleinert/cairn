@@ -5,8 +5,8 @@ import { ImageLightbox } from './ImageLightbox';
 import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
 import {
-  X, Tag as TagIcon, ExternalLink, StickyNote,
-  Trash2, Save, MapPin, Plus, ImageIcon
+  X, ExternalLink,
+  Trash2, Save, MapPin, Plus
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
 import { format } from 'date-fns';
@@ -180,7 +180,7 @@ export function PlaceDetailSheet({
             full trip tag list to add more or create a new one */}
         {(assignedTags.length > 0 || !readOnly) && (
           <div className="detail-section">
-            <label className="detail-label"><TagIcon size={13} /> Tags</label>
+            <label className="detail-label">Tags</label>
             <div className="tag-chips">
               {assignedTags.map(tag => (
                 <button
@@ -208,7 +208,7 @@ export function PlaceDetailSheet({
         {/* Notes */}
         {(!readOnly || notes) && (
           <div className="detail-section">
-            <label className="detail-label"><StickyNote size={13} /> Notes</label>
+            <label className="detail-label">Notes</label>
             {readOnly ? (
               <p className="detail-static-text">{notes}</p>
             ) : (
@@ -226,9 +226,7 @@ export function PlaceDetailSheet({
         {/* Sources — multiple URLs, each a removable pill once added */}
         {(!readOnly || sourceUrls.length > 0) && (
           <div className="detail-section">
-            <label className="detail-label">
-              <ExternalLink size={13} /> Sources
-            </label>
+            <label className="detail-label">Sources</label>
             <div className="source-pills">
               {sourceUrls.map((url, i) => (
                 <span key={i} className="source-pill">
@@ -260,7 +258,7 @@ export function PlaceDetailSheet({
             swipeable full-screen viewer. */}
         {(images.length > 0 || !readOnly) && (
           <div className="detail-section">
-            <label className="detail-label"><ImageIcon size={13} /> Photos</label>
+            <label className="detail-label">Photos</label>
             <div className="image-gallery" ref={galleryRef}>
               {images.map((img, i) => (
                 <button
@@ -281,7 +279,7 @@ export function PlaceDetailSheet({
         )}
 
         {!readOnly && (
-          <div className="detail-actions">
+          <div className={dirty ? 'detail-actions' : 'sheet-danger-zone'}>
             {showDelete ? (
               <div className="delete-confirm">
                 <span>Delete this place?</span>

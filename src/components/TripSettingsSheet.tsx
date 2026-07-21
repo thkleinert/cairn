@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil, ImageIcon, Plus, Calendar, Type } from 'lucide-react';
+import { X, Trash2, UserPlus, UserX, Crown, Eye, Pencil, Plus } from 'lucide-react';
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
@@ -122,12 +122,12 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
         {isOwner && (
           <>
             <div className="detail-section">
-              <label className="detail-label"><Type size={13} /> Name</label>
+              <label className="detail-label">Name</label>
               <input className="input" value={name} onChange={e => setName(e.target.value)} onBlur={handleNameBlur} />
             </div>
 
             <div className="detail-section">
-              <label className="detail-label"><Calendar size={13} /> Dates</label>
+              <label className="detail-label">Dates</label>
               <div className="date-row">
                 <DateField label="Start" value={startDate} onChange={handleStartDateChange} />
                 <DateField label="End" value={endDate} onChange={handleEndDateChange} />
@@ -135,7 +135,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
             </div>
 
             <div className="detail-section">
-              <label className="detail-label"><ImageIcon size={13} /> Cover photo</label>
+              <label className="detail-label">Cover photo</label>
               {coverImageUrl ? (
                 <div className="cover-box">
                   <img src={coverImageUrl} alt="" className="cover-box-image" onError={() => {}} />
@@ -170,7 +170,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
         {/* Collaborators — invite by email with a role, no separate
             read-only link to manage */}
         <div className="detail-section">
-          <label className="detail-label"><Users size={13} /> Collaborators</label>
+          <label className="detail-label">Collaborators</label>
 
           <div className="collab-list">
             {members.map(m => (
@@ -232,17 +232,19 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
         </div>
 
         {isOwner && (
-          showDelete ? (
-            <div className="delete-confirm">
-              <span>Delete this trip and all places?</span>
-              <button className="btn-danger" onClick={onDelete}>Delete forever</button>
-              <button className="btn-secondary" onClick={() => setShowDelete(false)}>Cancel</button>
-            </div>
-          ) : (
-            <button className="btn-ghost btn-danger-ghost" onClick={() => setShowDelete(true)}>
-              <Trash2 size={16} /> Delete trip
-            </button>
-          )
+          <div className="sheet-danger-zone">
+            {showDelete ? (
+              <div className="delete-confirm">
+                <span>Delete this trip and all places?</span>
+                <button className="btn-danger" onClick={onDelete}>Delete forever</button>
+                <button className="btn-secondary" onClick={() => setShowDelete(false)}>Cancel</button>
+              </div>
+            ) : (
+              <button className="btn-ghost btn-danger-ghost" onClick={() => setShowDelete(true)}>
+                <Trash2 size={16} /> Delete trip
+              </button>
+            )}
+          </div>
         )}
       </div>
 
