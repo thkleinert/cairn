@@ -675,7 +675,7 @@ select.input {
 }
 
 .sheet-header-row {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: 8px;
   margin-bottom: 16px;
 }
 
@@ -772,33 +772,39 @@ select.input {
 .place-name {
   font-size: 20px; font-weight: 800;
   letter-spacing: -0.03em;
+}
+.sheet-header-row .place-name,
+.place-name-row .place-name {
+  flex: 1; min-width: 0; margin: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.place-name-row {
+  display: flex; align-items: center; gap: 8px;
   margin: 16px 0 4px;
 }
-.place-name-below { margin-top: 16px; }
 
 .place-address {
   display: flex; align-items: center; gap: 4px;
   font-size: 13px; color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+.visited-date-line {
+  font-size: 12.5px; color: var(--color-text-secondary);
   margin-bottom: 16px;
 }
 
-.visited-toggle {
-  display: flex; align-items: center; gap: 8px;
-  min-height: var(--tap-target);
-  padding: 0 16px;
-  border-radius: var(--radius-md);
-  border: 1.5px solid var(--color-border);
-  color: var(--color-text-secondary);
-  font-size: 15px; font-weight: 600;
-  width: 100%;
-  margin-bottom: 20px;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+/* Compact icon toggle next to the place name — replaces the old
+   full-width "Mark as visited" button */
+.visited-icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  color: var(--color-muted);
+  transition: color 0.15s, background 0.12s;
 }
-.visited-toggle--visited {
-  border-color: var(--color-text);
-  color: var(--color-text);
-  background: var(--color-success-bg);
-}
+.visited-icon-btn:active { background: var(--color-bg); }
+.visited-icon-btn--visited { color: var(--color-text); }
 
 /* Animated check — draws itself when marked visited */
 .check-ring { flex-shrink: 0; }
@@ -806,14 +812,14 @@ select.input {
   stroke: var(--color-muted);
   transition: stroke var(--dur-base);
 }
-.visited-toggle--visited .check-ring-circle { stroke: currentColor; }
+.visited-icon-btn--visited .check-ring-circle { stroke: currentColor; }
 .check-ring-path {
   stroke: currentColor;
   stroke-dasharray: 20;
   stroke-dashoffset: 20;
   transition: stroke-dashoffset var(--dur-base) ease-out 50ms;
 }
-.visited-toggle--visited .check-ring-path { stroke-dashoffset: 0; }
+.visited-icon-btn--visited .check-ring-path { stroke-dashoffset: 0; }
 
 .detail-section { margin-bottom: 18px; }
 .detail-label {
@@ -1441,7 +1447,6 @@ select.input {
 
 .tag-delete-confirm { color: var(--color-danger); }
 
-.visited-toggle--static { pointer-events: none; }
 .detail-static-text {
   font-size: 14px; line-height: 1.5;
   color: var(--color-text);

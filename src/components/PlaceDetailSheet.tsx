@@ -3,15 +3,15 @@ import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { ImageLightbox } from './ImageLightbox';
 import { QuickAddSheet } from './QuickAddSheet';
+import { TagPickerSheet } from './TagPickerSheet';
 import {
-  X, Tag as TagIcon, ExternalLink,
+  X, Tag as TagIcon, ExternalLink, StickyNote,
   Trash2, Save, MapPin, Plus, ImageIcon
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
-import { TAG_COLORS } from '../constants';
 import { format } from 'date-fns';
 
-// Check that draws itself when the parent gains .visited-toggle--visited
+// Check that draws itself when the parent gains .visited-icon-btn--visited
 function CheckRing() {
   return (
     <svg className="check-ring" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
@@ -55,11 +55,8 @@ export function PlaceDetailSheet({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [showAddSource, setShowAddSource] = useState(false);
+  const [showTagPicker, setShowTagPicker] = useState(false);
   const galleryRef = useRef<HTMLDivElement>(null);
-  const [showAddTag, setShowAddTag] = useState(false);
-  const [quickName, setQuickName] = useState('');
-  const [quickColor, setQuickColor] = useState(TAG_COLORS[0].value);
-  const [quickIcon, setQuickIcon] = useState('');
 
   useEffect(() => {
     setNotes(place.notes ?? '');
@@ -69,6 +66,7 @@ export function PlaceDetailSheet({
 
   const images: PlaceImage[] = place.images ?? [];
   const sourceUrls = place.source_urls ?? [];
+  const assignedTags = allTags.filter(t => selectedTags.includes(t.id));
 
   const handleSave = () => {
     onUpdate({ notes: notes || undefined });
@@ -119,25 +117,23 @@ export function PlaceDetailSheet({
     onUpdate({ source_urls: sourceUrls.filter((_, i) => i !== index) });
   };
 
-  const handleQuickCreate = async () => {
-    if (!quickName.trim() || !onCreateTag) return;
-    const tag = await onCreateTag(quickName.trim(), quickColor, quickIcon.trim() || undefined);
-    if (tag) {
-      setSelectedTags(prev => [...prev, tag.id]);
-      setDirty(true);
-    }
-    setQuickName('');
-    setQuickColor(TAG_COLORS[0].value);
-    setQuickIcon('');
-    setShowAddTag(false);
-  };
-
   const isVisited = place.status === 'visited';
-  const { sheetRef, handleProps } = useSwipeToClose(handleClose);
 
-  const displayTags = readOnly
-    ? allTags.filter(t => selectedTags.includes(t.id))
-    : allTags;
+  const visitedToggle = readOnly ? (
+    <div className={`visited-icon-btn ${isVisited ? 'visited-icon-btn--visited' : ''}`} role="status" aria-label={isVisited ? 'Visited' : 'Planned'}>
+      <CheckRing />
+    </div>
+  ) : (
+    <button
+      className={`visited-icon-btn ${isVisited ? 'visited-icon-btn--visited' : ''}`}
+      onClick={onToggleVisited}
+      aria-label={isVisited ? 'Mark as not visited' : 'Mark as visited'}
+    >
+      <CheckRing />
+    </button>
+  );
+
+  const { sheetRef, handleProps } = useSwipeToClose(handleClose);
 
   return (
     <div className="bottom-sheet-overlay" onClick={handleClose}>
@@ -161,41 +157,35 @@ export function PlaceDetailSheet({
         ) : (
           <div className="sheet-header-row">
             <h2 className="place-name">{place.name}</h2>
+            {visitedToggle}
             <button className="sheet-close" onClick={handleClose} aria-label="Close"><X size={20} /></button>
           </div>
         )}
 
-        {place.image_url && <h2 className="place-name place-name-below">{place.name}</h2>}
+        {place.image_url && (
+          <div className="place-name-row">
+            <h2 className="place-name">{place.name}</h2>
+            {visitedToggle}
+          </div>
+        )}
 
         {place.address && (
           <p className="place-address"><MapPin size={13} /> {place.address}</p>
         )}
-
-        {/* Status */}
-        {readOnly ? (
-          <div className={`visited-toggle ${isVisited ? 'visited-toggle--visited' : ''} visited-toggle--static`}>
-            <CheckRing />
-            {isVisited ? `Visited${place.visited_at ? ` · ${format(new Date(place.visited_at), 'MMM d, yyyy')}` : ''}` : 'Planned'}
-          </div>
-        ) : (
-          <button
-            className={`visited-toggle ${isVisited ? 'visited-toggle--visited' : ''}`}
-            onClick={onToggleVisited}
-          >
-            <CheckRing />
-            {isVisited ? `Visited${place.visited_at ? ` · ${format(new Date(place.visited_at), 'MMM d, yyyy')}` : ''}` : 'Mark as visited'}
-          </button>
+        {isVisited && place.visited_at && (
+          <p className="visited-date-line">Visited · {format(new Date(place.visited_at), 'MMM d, yyyy')}</p>
         )}
 
-        {/* Tags */}
-        {(displayTags.length > 0 || (!readOnly && onCreateTag)) && (
+        {/* Tags — only the ones already on this place; the + opens the
+            full trip tag list to add more or create a new one */}
+        {(assignedTags.length > 0 || !readOnly) && (
           <div className="detail-section">
             <label className="detail-label"><TagIcon size={13} /> Tags</label>
             <div className="tag-chips">
-              {displayTags.map(tag => (
+              {assignedTags.map(tag => (
                 <button
                   key={tag.id}
-                  className={`tag-chip ${selectedTags.includes(tag.id) ? 'tag-chip--active' : ''}`}
+                  className="tag-chip tag-chip--active"
                   style={{ '--tag-color': tag.color } as React.CSSProperties}
                   onClick={() => toggleTag(tag.id)}
                   disabled={readOnly}
@@ -206,60 +196,19 @@ export function PlaceDetailSheet({
                   {tag.name}
                 </button>
               ))}
-              {!readOnly && onCreateTag && !showAddTag && (
-                <button className="tag-chip tag-chip--add" onClick={() => setShowAddTag(true)} aria-label="New tag">
+              {!readOnly && (
+                <button className="tag-chip tag-chip--add" onClick={() => setShowTagPicker(true)} aria-label="Edit tags">
                   <Plus size={14} />
                 </button>
               )}
             </div>
-            {showAddTag && (
-              <div className="quick-tag-form">
-                <div className="tag-create-row">
-                  <div className="icon-input-wrap">
-                    <input
-                      className="input icon-input"
-                      placeholder="😀"
-                      maxLength={2}
-                      value={quickIcon}
-                      onChange={e => setQuickIcon(e.target.value)}
-                    />
-                  </div>
-                  <input
-                    className="input"
-                    placeholder="Tag name"
-                    value={quickName}
-                    onChange={e => setQuickName(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') handleQuickCreate();
-                      if (e.key === 'Escape') { setShowAddTag(false); setQuickIcon(''); }
-                    }}
-                    autoFocus
-                  />
-                </div>
-                <div className="color-presets">
-                  {TAG_COLORS.map(c => (
-                    <button
-                      key={c.value}
-                      className={`color-preset ${quickColor === c.value ? 'color-preset--active' : ''}`}
-                      style={{ background: c.value }}
-                      onClick={() => setQuickColor(c.value)}
-                      aria-label={c.name}
-                    />
-                  ))}
-                </div>
-                <div className="form-actions">
-                  <button className="btn-secondary" onClick={() => { setShowAddTag(false); setQuickIcon(''); }}>Cancel</button>
-                  <button className="btn-primary" onClick={handleQuickCreate} disabled={!quickName.trim()}>Add</button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
         {/* Notes */}
         {(!readOnly || notes) && (
           <div className="detail-section">
-            <label className="detail-label">Notes</label>
+            <label className="detail-label"><StickyNote size={13} /> Notes</label>
             {readOnly ? (
               <p className="detail-static-text">{notes}</p>
             ) : (
@@ -379,6 +328,16 @@ export function PlaceDetailSheet({
           title="Add source"
           onAddUrl={handleAddSource}
           onClose={() => setShowAddSource(false)}
+        />
+      )}
+
+      {showTagPicker && (
+        <TagPickerSheet
+          allTags={allTags}
+          selectedTagIds={selectedTags}
+          onToggleTag={toggleTag}
+          onCreateTag={onCreateTag}
+          onClose={() => setShowTagPicker(false)}
         />
       )}
     </div>
