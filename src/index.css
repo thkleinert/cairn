@@ -60,7 +60,9 @@ html {
   font-variant-numeric: tabular-nums;
   background: var(--color-surface);
   color: var(--color-text);
-  height: 100%;
+  /* JS-measured (see index.html) — CSS units alone (100dvh, 100%) can
+     report a shorter-than-real height in iOS standalone mode */
+  height: var(--app-height, 100%);
 }
 
 body {

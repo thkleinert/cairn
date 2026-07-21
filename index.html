@@ -14,9 +14,26 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>TripMap</title>
+    <script>
+      // iOS standalone PWAs can report a viewport shorter than the real
+      // screen via CSS units alone (100dvh, height:100%) — reserving space
+      // as if for browser chrome that doesn't exist in standalone mode.
+      // window.innerHeight doesn't have this bug, so measure it in JS and
+      // use that as the source of truth instead. Runs before the splash
+      // paints so there's no flash of the wrong size.
+      (function () {
+        function setAppHeight() {
+          document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+        }
+        setAppHeight();
+        window.addEventListener('resize', setAppHeight);
+        window.addEventListener('orientationchange', function () { setTimeout(setAppHeight, 100); });
+      })();
+    </script>
     <style>
       #splash {
-        position: fixed; inset: 0; z-index: 9999;
+        position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+        height: var(--app-height, 100dvh);
         background: #ffffff;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         gap: 20px;
