@@ -194,14 +194,20 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     });
   }, [selectedPlace]);
 
-  // Fit bounds once on initial load — never yank the viewport on add/remove
+  // Fit bounds once on initial load — never yank the viewport on add/remove.
+  // Extra bottom padding so markers don't land under the floating bottom
+  // nav, which overlays the now-full-bleed map rather than sitting beside it.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || places.length === 0 || didFitRef.current) return;
     didFitRef.current = true;
     const bounds = new mapboxgl.LngLatBounds();
     places.forEach(p => bounds.extend([p.longitude, p.latitude]));
-    map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 });
+    map.fitBounds(bounds, {
+      padding: { top: 80, bottom: 170, left: 80, right: 80 },
+      maxZoom: 13,
+      duration: 800,
+    });
   }, [places.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Places visited, in the actual order they were visited (not the list's
