@@ -6,8 +6,8 @@ export interface Trip {
   id: string;
   name: string;
   description?: string;
-  start_date?: string;
-  end_date?: string;
+  start_date?: string | null;
+  end_date?: string | null;
   status: TripStatus;
   share_token: string;
   cover_image_url?: string | null;

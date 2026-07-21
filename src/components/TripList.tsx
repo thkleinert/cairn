@@ -135,12 +135,13 @@ export function TripList({ userId, onSelectTrip }: Props) {
                 )}
                 <div className="trip-card-body">
                   <h2 className="trip-card-name">{trip.name}</h2>
-                  {trip.start_date && (
+                  {(trip.start_date || trip.end_date) && (
                     <div className="trip-card-meta">
                       <Calendar size={12} />
                       <span>
-                        {format(parseISO(trip.start_date), 'MMM d, yyyy')}
-                        {trip.end_date && ` – ${format(parseISO(trip.end_date), 'MMM d, yyyy')}`}
+                        {trip.start_date && format(parseISO(trip.start_date), 'MMM d, yyyy')}
+                        {trip.start_date && trip.end_date && ' – '}
+                        {trip.end_date && format(parseISO(trip.end_date), 'MMM d, yyyy')}
                       </span>
                     </div>
                   )}

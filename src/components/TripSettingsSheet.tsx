@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil, ImageIcon, Plus } from 'lucide-react';
+import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil, ImageIcon, Plus, Calendar } from 'lucide-react';
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
@@ -25,6 +25,8 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
 export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadCover, isOwner }: Props) {
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState(trip.name);
+  const [startDate, setStartDate] = useState(trip.start_date ?? '');
+  const [endDate, setEndDate] = useState(trip.end_date ?? '');
   const [coverImageUrl, setCoverImageUrl] = useState(trip.cover_image_url ?? '');
   const [showCoverSheet, setShowCoverSheet] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -49,7 +51,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   };
 
   const handleSave = () => {
-    onUpdate({ name });
+    onUpdate({ name, start_date: startDate || null, end_date: endDate || null });
     onClose();
   };
 
@@ -120,6 +122,20 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
             <div className="detail-section">
               <label className="detail-label">Name</label>
               <input className="input" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+
+            <div className="detail-section">
+              <label className="detail-label"><Calendar size={13} /> Dates</label>
+              <div className="date-row">
+                <label className="date-label">
+                  <span>Start</span>
+                  <input type="date" className="input" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                </label>
+                <label className="date-label">
+                  <span>End</span>
+                  <input type="date" className="input" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                </label>
+              </div>
             </div>
 
             <div className="detail-section">
