@@ -15,15 +15,22 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>TripMap</title>
     <script>
-      // iOS standalone PWAs can report a viewport shorter than the real
-      // screen via CSS units alone (100dvh, height:100%) — reserving space
-      // as if for browser chrome that doesn't exist in standalone mode.
-      // window.innerHeight doesn't have this bug, so measure it in JS and
-      // use that as the source of truth instead. Runs before the splash
-      // paints so there's no flash of the wrong size.
+      // Measured on a real device: in an iOS standalone PWA, window.innerHeight
+      // silently excludes the top safe-area inset (status bar) — 844 (real
+      // screen) - 797 (innerHeight) = 47, exactly this device's inset-top —
+      // even though fixed-position content still correctly extends up there.
+      // That 47px gap is the bug. screen.height is the true physical height
+      // and isn't short by that amount, so use it in standalone mode; a
+      // regular browser tab still uses innerHeight, correctly respecting
+      // Safari's own chrome. Runs before the splash paints so there's no
+      // flash of the wrong size.
       (function () {
+        function isStandalone() {
+          return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        }
         function setAppHeight() {
-          document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+          const height = isStandalone() ? window.screen.height : window.innerHeight;
+          document.documentElement.style.setProperty('--app-height', height + 'px');
         }
         setAppHeight();
         window.addEventListener('resize', setAppHeight);
