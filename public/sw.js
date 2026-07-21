@@ -1,4 +1,4 @@
-const CACHE = 'tripmap-v1';
+const CACHE = 'tripmap-v2';
 const STATIC = [
   '/',
   '/manifest.json',
@@ -23,10 +23,13 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const { request } = e;
 
-  // Navigation requests: network-first, fall back to cached shell
+  // Navigation requests: network-first, fall back to cached shell.
+  // cache: 'no-store' bypasses the browser's own HTTP cache (not just the
+  // SW's Cache API) — otherwise index.html can be served stale even when
+  // this network-first fetch technically "succeeds".
   if (request.mode === 'navigate') {
     e.respondWith(
-      fetch(request).catch(() => caches.match('/'))
+      fetch(request, { cache: 'no-store' }).catch(() => caches.match('/'))
     );
     return;
   }

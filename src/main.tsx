@@ -36,6 +36,15 @@ if ('serviceWorker' in navigator) {
           }
         });
       });
+
+      // A standalone/home-screen PWA doesn't re-fetch anything just from
+      // being brought back to the foreground — only a genuine reload does.
+      // Proactively check for a new service worker whenever the app
+      // becomes visible again, so the update toast above shows up without
+      // needing to fully quit and relaunch first.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
     }).catch(() => {});
   });
 }
