@@ -1143,26 +1143,43 @@ select.input {
    FORMS
    ============================================================ */
 .create-trip-form { display: flex; flex-direction: column; gap: 14px; }
-.date-row { display: flex; gap: 8px; }
+.date-row { display: flex; gap: 12px; }
 .date-label {
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;
   font-size: 13px; font-weight: 600; color: var(--color-text-secondary);
 }
-/* Native <input type="date"> (iOS Safari especially) can ignore a plain
-   width:100% and render at its own intrinsic size instead — the
-   container is a backstop (clips rather than pushing the sheet wider
-   than the screen), but tight padding was itself clipping content that
-   otherwise fit. Give the control's internal rendering more of the
-   available width to work with instead of fighting it further. */
-.date-label .input {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  font-size: 12px;
-  padding: 0 4px;
+
+/* The native date input is invisible and only exists to catch taps and
+   open the OS picker — it's absolutely positioned over the visible box
+   below, which is a plain styled div under our full control instead of
+   relying on the browser's own (unreliable) date-input rendering. */
+.date-field-wrap {
+  position: relative;
+  height: var(--tap-target);
 }
-.date-label { overflow: hidden; }
+.date-field-native {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  opacity: 0;
+  z-index: 1;
+}
+.date-field-display {
+  position: absolute; inset: 0;
+  display: flex; align-items: center;
+  padding: 0 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  pointer-events: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.date-field-display--empty { color: var(--color-muted); }
+.date-field-native:focus + .date-field-display {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(13,148,136,0.12);
+}
 .form-actions { display: flex; gap: 10px; }
 .form-actions > * { flex: 1; }
 

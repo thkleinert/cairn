@@ -4,6 +4,7 @@ import type { Trip } from '../types';
 import { useTrips } from '../hooks/useTrips';
 import { useAuth } from '../hooks/useAuth';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { DateField } from './DateField';
 import { format, parseISO } from 'date-fns';
 
 interface Props {
@@ -179,14 +180,8 @@ export function TripList({ userId, onSelectTrip }: Props) {
                 required
               />
               <div className="date-row">
-                <label className="date-label">
-                  <span>Start</span>
-                  <input type="date" className="input" value={startDate} onChange={e => setStartDate(e.target.value)} />
-                </label>
-                <label className="date-label">
-                  <span>End</span>
-                  <input type="date" className="input" value={endDate} onChange={e => setEndDate(e.target.value)} />
-                </label>
+                <DateField label="Start" value={startDate} onChange={setStartDate} />
+                <DateField label="End" value={endDate} onChange={setEndDate} />
               </div>
               {createError && <p className="error-text">{createError}</p>}
               <div className="form-actions">

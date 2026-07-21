@@ -5,6 +5,7 @@ import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { QuickAddSheet } from './QuickAddSheet';
+import { DateField } from './DateField';
 
 interface Props {
   trip: Trip;
@@ -128,14 +129,8 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
             <div className="detail-section">
               <label className="detail-label"><Calendar size={13} /> Dates</label>
               <div className="date-row">
-                <label className="date-label">
-                  <span>Start</span>
-                  <input type="date" className="input" value={startDate} onChange={e => handleStartDateChange(e.target.value)} />
-                </label>
-                <label className="date-label">
-                  <span>End</span>
-                  <input type="date" className="input" value={endDate} onChange={e => handleEndDateChange(e.target.value)} />
-                </label>
+                <DateField label="Start" value={startDate} onChange={handleStartDateChange} />
+                <DateField label="End" value={endDate} onChange={handleEndDateChange} />
               </div>
             </div>
 
