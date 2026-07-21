@@ -1,4 +1,4 @@
-const CACHE = 'tripmap-v2';
+const CACHE = 'cairn-v1';
 const STATIC = [
   '/',
   '/manifest.json',

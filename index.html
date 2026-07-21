@@ -8,12 +8,12 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="TripMap" />
+    <meta name="apple-mobile-web-app-title" content="Cairn" />
     <meta name="description" content="Plan and share your trips with an interactive map" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <title>TripMap</title>
+    <title>Cairn</title>
     <script>
       // Measured on a real device: in an iOS standalone PWA, window.innerHeight
       // silently excludes the top safe-area inset (status bar) — 844 (real
@@ -52,22 +52,24 @@
         font-family: -apple-system, system-ui, sans-serif; letter-spacing: -0.5px;
       }
       #splash-pin { fill: #0d9488; }
-      #splash-pin-hole { fill: #ffffff; }
       @media (prefers-color-scheme: dark) {
         #splash { background: #0e0f10; }
         #splash-name { color: #f2f3f4; }
         #splash-pin { fill: #14b8a6; }
-        #splash-pin-hole { fill: #0e0f10; }
       }
     </style>
   </head>
   <body>
     <div id="splash">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="76" height="76">
-        <path id="splash-pin" d="M40 8C26.2 8 15 19.2 15 33c0 18.8 25 42 25 42s25-23.2 25-42C65 19.2 53.8 8 40 8z"/>
-        <circle id="splash-pin-hole" cx="40" cy="33" r="12.5"/>
+        <g id="splash-pin">
+          <ellipse cx="40" cy="60" rx="27.5" ry="10.5" transform="rotate(-3 40 60)"/>
+          <ellipse cx="38.75" cy="43.75" rx="20" ry="8.25" transform="rotate(5 38.75 43.75)"/>
+          <ellipse cx="41.25" cy="30" rx="13.75" ry="6.25" transform="rotate(-6 41.25 30)"/>
+          <ellipse cx="40" cy="20" rx="7.5" ry="4.25" transform="rotate(4 40 20)"/>
+        </g>
       </svg>
-      <p id="splash-name">TripMap</p>
+      <p id="splash-name">Cairn</p>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

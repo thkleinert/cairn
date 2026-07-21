@@ -1,6 +1,6 @@
 {
-  "name": "TripMap \u2013 Trip Planner",
-  "short_name": "TripMap",
+  "name": "Cairn \u2013 Trip Planner",
+  "short_name": "Cairn",
   "description": "Plan and share your trips with an interactive map",
   "start_url": "/",
   "display": "standalone",

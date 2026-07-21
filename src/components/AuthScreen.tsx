@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MapPin } from 'lucide-react';
+import { CairnIcon } from './CairnIcon';
 import { useAuth } from '../hooks/useAuth';
 
 type Mode = 'signin' | 'signup' | 'reset';
@@ -61,8 +61,8 @@ export function AuthScreen() {
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo">
-          <MapPin size={32} color="var(--color-primary)" />
-          <h1>TripMap</h1>
+          <CairnIcon size={32} color="var(--color-primary)" />
+          <h1>Cairn</h1>
         </div>
         <p className="auth-subtitle">
           {mode === 'reset' ? 'Reset your password' : 'Plan your adventures together'}
