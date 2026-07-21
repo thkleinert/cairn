@@ -1,12 +1,39 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
 import type { Place, PlaceImage } from '../types';
 
 export function usePlaces(tripId: string | undefined) {
   const [places, setPlaces] = useState<Place[]>([]);
   const [loading, setLoading] = useState(true);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const healingRef = useRef<Set<string>>(new Set());
+
+  // Self-heal: a cover photo still pointing at Google's ephemeral session
+  // URL has already expired (that URL's bytes can't be fetched anymore),
+  // so re-resolve a fresh one via the place's google_place_id and persist
+  // it to our own storage this time. One attempt per place per session.
+  const selfHealCoverPhoto = useCallback(async (place: Place) => {
+    if (!isEphemeralGoogleUrl(place.image_url) || !place.google_place_id) return;
+    if (healingRef.current.has(place.id)) return;
+    healingRef.current.add(place.id);
+
+    const freshUrl = await fetchFreshGooglePhotoUrl(place.google_place_id);
+    if (!freshUrl) return;
+    const stableUrl = await persistGooglePhoto(place.trip_id, place.id, freshUrl);
+    if (!stableUrl) return;
+
+    const { data, error } = await supabase
+      .from('places')
+      .update({ image_url: stableUrl })
+      .eq('id', place.id)
+      .select()
+      .single();
+    if (!error && data) {
+      setPlaces(prev => prev.map(p => p.id === place.id ? { ...p, image_url: data.image_url } : p));
+    }
+  }, []);
 
   const fetchPlaces = useCallback(async () => {
     if (!tripId) { setLoading(false); return; }
@@ -29,7 +56,8 @@ export function usePlaces(tripId: string | undefined) {
     }));
     setPlaces(normalized as Place[]);
     setLoading(false);
-  }, [tripId]);
+    (normalized as Place[]).forEach(p => { selfHealCoverPhoto(p); });
+  }, [tripId, selfHealCoverPhoto]);
 
   useEffect(() => {
     if (!tripId) return;
@@ -70,6 +98,25 @@ export function usePlaces(tripId: string | undefined) {
       return null;
     }
     setPlaces(prev => [...prev, { ...data, tags: [], images: [] }]);
+
+    // The image_url passed in (if any) is a fresh but still-ephemeral
+    // Google session URL — persist it to our own storage right away so
+    // it doesn't just expire like the ones added before this existed
+    if (data.image_url) {
+      persistGooglePhoto(tripId, data.id, data.image_url).then(async stableUrl => {
+        if (!stableUrl) return;
+        const { data: updated, error: updateError } = await supabase
+          .from('places')
+          .update({ image_url: stableUrl })
+          .eq('id', data.id)
+          .select()
+          .single();
+        if (!updateError && updated) {
+          setPlaces(prev => prev.map(p => p.id === data.id ? { ...p, image_url: updated.image_url } : p));
+        }
+      });
+    }
+
     return data;
   };
 
