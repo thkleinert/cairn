@@ -64,5 +64,22 @@ export function useTrips(userId: string | undefined) {
     return true;
   };
 
-  return { trips, loading, createTrip, updateTrip, deleteTrip, refetch: fetchTrips };
+  // Reuses the place-images bucket — its RLS only checks trip membership
+  // via the first path segment, which a bare {trip_id}/cover-... path
+  // satisfies just as well as a place's own {trip_id}/{place_id}/... path
+  const uploadTripCover = async (tripId: string, file: File): Promise<string | null> => {
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `${tripId}/cover-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage
+      .from('place-images')
+      .upload(path, file, { contentType: file.type || 'image/jpeg' });
+    if (error) {
+      toast('Could not upload cover photo');
+      return null;
+    }
+    const { data } = supabase.storage.from('place-images').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  return { trips, loading, createTrip, updateTrip, deleteTrip, uploadTripCover, refetch: fetchTrips };
 }

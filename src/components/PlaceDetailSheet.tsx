@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { ImageLightbox } from './ImageLightbox';
+import { QuickAddSheet } from './QuickAddSheet';
 import {
   X, Tag as TagIcon, ExternalLink,
-  Trash2, Save, MapPin, Plus, ImageIcon, Upload
+  Trash2, Save, MapPin, Plus, ImageIcon
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
 import { TAG_COLORS } from '../constants';
@@ -48,16 +49,13 @@ export function PlaceDetailSheet({
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
 }: Props) {
   const [notes, setNotes] = useState(place.notes ?? '');
-  const [newSourceUrl, setNewSourceUrl] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>((place.tags ?? []).map(t => t.id));
   const [dirty, setDirty] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
-  const [newImageUrl, setNewImageUrl] = useState('');
-  const [addingImage, setAddingImage] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [showAddPhotos, setShowAddPhotos] = useState(false);
+  const [showAddSource, setShowAddSource] = useState(false);
   const galleryRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [showAddTag, setShowAddTag] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [quickColor, setQuickColor] = useState(TAG_COLORS[0].value);
@@ -92,39 +90,29 @@ export function PlaceDetailSheet({
     setDirty(true);
   };
 
-  const handleAddImage = async () => {
-    const url = newImageUrl.trim();
-    if (!url) return;
-    setAddingImage(true);
-    await onAddImage(url);
-    setNewImageUrl('');
-    setAddingImage(false);
+  const scrollGalleryToEnd = () => {
     setTimeout(() => {
       if (galleryRef.current) galleryRef.current.scrollLeft = galleryRef.current.scrollWidth;
     }, 100);
   };
 
-  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = '';
-    if (files.length === 0 || !onUploadImage) return;
-    setUploading(true);
-    for (const file of files) {
+  const handleAddImageUrl = async (url: string) => {
+    await onAddImage(url);
+    scrollGalleryToEnd();
+  };
+
+  const handleUploadImages = async (files: FileList) => {
+    if (!onUploadImage) return;
+    for (const file of Array.from(files)) {
       await onUploadImage(file);
     }
-    setUploading(false);
-    setTimeout(() => {
-      if (galleryRef.current) galleryRef.current.scrollLeft = galleryRef.current.scrollWidth;
-    }, 100);
+    scrollGalleryToEnd();
   };
 
   // Sources are immediate — persisted on every add/remove, not tied to the
   // notes/tags draft-and-save flow
-  const handleAddSource = () => {
-    const url = newSourceUrl.trim();
-    if (!url) return;
+  const handleAddSource = (url: string) => {
     onUpdate({ source_urls: [...sourceUrls, url] });
-    setNewSourceUrl('');
   };
 
   const handleRemoveSource = (index: number) => {
@@ -292,53 +280,36 @@ export function PlaceDetailSheet({
             <label className="detail-label">
               <ExternalLink size={13} /> Sources
             </label>
-            {sourceUrls.length > 0 && (
-              <div className="source-pills">
-                {sourceUrls.map((url, i) => (
-                  <span key={i} className="source-pill">
-                    <a href={url} target="_blank" rel="noopener noreferrer" className="source-pill-link">
-                      <ExternalLink size={11} /> {displayHost(url)}
-                    </a>
-                    {!readOnly && (
-                      <button
-                        className="source-pill-remove"
-                        onClick={() => handleRemoveSource(i)}
-                        aria-label={`Remove source ${displayHost(url)}`}
-                      >
-                        <X size={11} />
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </div>
-            )}
-            {!readOnly && (
-              <div className="add-image-row">
-                <input
-                  type="url"
-                  className="input"
-                  placeholder="https://…"
-                  value={newSourceUrl}
-                  onChange={e => setNewSourceUrl(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddSource()}
-                />
-                <button
-                  className="btn-icon"
-                  onClick={handleAddSource}
-                  disabled={!newSourceUrl.trim()}
-                  aria-label="Add source"
-                >
-                  <Plus size={20} />
+            <div className="source-pills">
+              {sourceUrls.map((url, i) => (
+                <span key={i} className="source-pill">
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="source-pill-link">
+                    <ExternalLink size={11} /> {displayHost(url)}
+                  </a>
+                  {!readOnly && (
+                    <button
+                      className="source-pill-remove"
+                      onClick={() => handleRemoveSource(i)}
+                      aria-label={`Remove source ${displayHost(url)}`}
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </span>
+              ))}
+              {!readOnly && (
+                <button className="source-pill source-pill--add" onClick={() => setShowAddSource(true)} aria-label="Add source">
+                  <Plus size={13} />
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
         {/* Photos — a small gallery for remembering shot ideas, separate
             from the auto-pulled cover photo above. Tap to open the
             swipeable full-screen viewer. */}
-        {images.length > 0 && (
+        {(images.length > 0 || !readOnly) && (
           <div className="detail-section">
             <label className="detail-label"><ImageIcon size={13} /> Photos</label>
             <div className="image-gallery" ref={galleryRef}>
@@ -351,52 +322,12 @@ export function PlaceDetailSheet({
                   <img src={img.url} alt="" className="gallery-thumb" onError={() => {}} />
                 </button>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* Add photos */}
-        {!readOnly && (
-          <div className="detail-section">
-            <label className="detail-label"><ImageIcon size={13} /> Add photos</label>
-            <div className="add-image-row">
-              <input
-                type="url"
-                className="input"
-                placeholder="https://…"
-                value={newImageUrl}
-                onChange={e => setNewImageUrl(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddImage()}
-              />
-              <button
-                className="btn-icon"
-                onClick={handleAddImage}
-                disabled={!newImageUrl.trim() || addingImage}
-                aria-label="Add from URL"
-              >
-                <Plus size={20} />
-              </button>
-            </div>
-            {onUploadImage && (
-              <>
-                <button
-                  className="btn-secondary upload-photos-btn"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  <Upload size={16} />
-                  {uploading ? 'Uploading…' : 'Upload from device'}
+              {!readOnly && (
+                <button className="gallery-thumb-btn gallery-thumb-btn--add" onClick={() => setShowAddPhotos(true)} aria-label="Add photos">
+                  <Plus size={20} />
                 </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="visually-hidden"
-                  onChange={handleFilesSelected}
-                />
-              </>
-            )}
+              )}
+            </div>
           </div>
         )}
 
@@ -430,6 +361,24 @@ export function PlaceDetailSheet({
           startIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
           onRemove={readOnly ? undefined : onRemoveImage}
+        />
+      )}
+
+      {showAddPhotos && (
+        <QuickAddSheet
+          title="Add photos"
+          onAddUrl={handleAddImageUrl}
+          onUpload={onUploadImage ? handleUploadImages : undefined}
+          uploadMultiple
+          onClose={() => setShowAddPhotos(false)}
+        />
+      )}
+
+      {showAddSource && (
+        <QuickAddSheet
+          title="Add source"
+          onAddUrl={handleAddSource}
+          onClose={() => setShowAddSource(false)}
         />
       )}
     </div>

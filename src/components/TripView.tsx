@@ -24,7 +24,7 @@ type ViewMode = 'map' | 'list';
 export function TripView({ trip, userId, onBack }: Props) {
   const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
-  const { updateTrip, deleteTrip } = useTrips(userId);
+  const { updateTrip, deleteTrip, uploadTripCover } = useTrips(userId);
 
   // Selection is an id — the place object is always derived fresh from `places`,
   // so realtime refetches and edits never leave the sheet stale.
@@ -195,6 +195,7 @@ export function TripView({ trip, userId, onBack }: Props) {
           onClose={() => setOpenSheet('none')}
           onUpdate={handleUpdateTrip}
           onDelete={handleDeleteTrip}
+          onUploadCover={(file) => uploadTripCover(trip.id, file)}
           isOwner={isOwner}
         />
       )}

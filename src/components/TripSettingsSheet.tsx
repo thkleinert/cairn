@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil, ImageIcon } from 'lucide-react';
+import { X, Copy, Check, Users, Trash2, UserPlus, UserX, Crown, Eye, Pencil, ImageIcon, Plus } from 'lucide-react';
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { QuickAddSheet } from './QuickAddSheet';
 
 interface Props {
   trip: Trip;
@@ -11,6 +12,7 @@ interface Props {
   onClose: () => void;
   onUpdate: (updates: Partial<Trip>) => void;
   onDelete: () => void;
+  onUploadCover: (file: File) => Promise<string | null>;
   isOwner: boolean;
 }
 
@@ -20,11 +22,12 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
   viewer: <Eye size={13} />,
 };
 
-export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }: Props) {
+export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadCover, isOwner }: Props) {
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState(trip.name);
   const [status, setStatus] = useState(trip.status);
   const [coverImageUrl, setCoverImageUrl] = useState(trip.cover_image_url ?? '');
+  const [showCoverSheet, setShowCoverSheet] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
 
   const [inviteEmail, setInviteEmail] = useState('');
@@ -47,8 +50,27 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
   };
 
   const handleSave = () => {
-    onUpdate({ name, status, cover_image_url: coverImageUrl.trim() || null });
+    onUpdate({ name, status });
     onClose();
+  };
+
+  // Cover photo persists immediately on selection, unlike name/status
+  // which wait for the explicit Save below
+  const handleSetCoverUrl = (url: string) => {
+    setCoverImageUrl(url);
+    onUpdate({ cover_image_url: url });
+  };
+
+  const handleUploadCover = async (files: FileList) => {
+    const file = files[0];
+    if (!file) return;
+    const url = await onUploadCover(file);
+    if (url) handleSetCoverUrl(url);
+  };
+
+  const handleRemoveCover = () => {
+    setCoverImageUrl('');
+    onUpdate({ cover_image_url: null });
   };
 
   const handleInvite = async () => {
@@ -116,16 +138,33 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
 
             <div className="detail-section">
               <label className="detail-label"><ImageIcon size={13} /> Cover photo</label>
-              {coverImageUrl && (
-                <img src={coverImageUrl} alt="" className="cover-preview" onError={() => {}} />
+              {coverImageUrl ? (
+                <div className="cover-box">
+                  <img src={coverImageUrl} alt="" className="cover-box-image" onError={() => {}} />
+                  <button
+                    className="cover-box-action cover-box-action--edit"
+                    onClick={() => setShowCoverSheet(true)}
+                    aria-label="Change cover photo"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    className="cover-box-action cover-box-action--remove"
+                    onClick={handleRemoveCover}
+                    aria-label="Remove cover photo"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="cover-box cover-box--empty"
+                  onClick={() => setShowCoverSheet(true)}
+                  aria-label="Add cover photo"
+                >
+                  <Plus size={22} />
+                </button>
               )}
-              <input
-                type="url"
-                className="input"
-                placeholder="https://…"
-                value={coverImageUrl}
-                onChange={e => setCoverImageUrl(e.target.value)}
-              />
             </div>
 
             <button className="btn-primary u-mb16" onClick={handleSave}>
@@ -221,6 +260,15 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, isOwner }
           )
         )}
       </div>
+
+      {showCoverSheet && (
+        <QuickAddSheet
+          title="Cover photo"
+          onAddUrl={(url) => handleSetCoverUrl(url)}
+          onUpload={handleUploadCover}
+          onClose={() => setShowCoverSheet(false)}
+        />
+      )}
     </div>
   );
 }
