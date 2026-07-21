@@ -288,13 +288,15 @@ select.input {
 }
 .trip-list-header--compact .trip-list-title { font-size: 17px; }
 
-/* Short ink rule draws in under the title — echoes the route-line
-   motif used on the cards, adds a designed flourish without color */
+/* Short rule draws in under the title — echoes the route-line motif
+   used on the cards. Carries the one accent touch on this screen; the
+   title itself stays neutral, matching how the accent is reserved for
+   actions elsewhere rather than headings. */
 .trip-list-rule {
   display: block;
   width: 28px; height: 3px;
   margin-top: 8px;
-  background: var(--color-text);
+  background: var(--color-primary);
   border-radius: 2px;
   transform-origin: left;
   animation: ruleGrow 500ms var(--glide) 150ms backwards;

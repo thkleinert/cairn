@@ -1,6 +1,7 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import type { Place, Tag } from '../types';
+import { buildVisitedRouteGeoJSON, type RouteFeatureCollection } from '../lib/routing';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
 
@@ -10,6 +11,33 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
 const LIGHT_STYLE = 'mapbox://styles/mapbox/streets-v12';
 const DARK_STYLE = 'mapbox://styles/mapbox/navigation-night-v1';
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+const ROUTE_SOURCE_ID = 'visited-route';
+const EMPTY_ROUTE: RouteFeatureCollection = { type: 'FeatureCollection', features: [] };
+
+// Re-added every time the style (re)loads, since setStyle wipes custom
+// sources/layers — idempotent, so calling it redundantly is harmless.
+function ensureRouteLayers(map: mapboxgl.Map) {
+  if (map.getSource(ROUTE_SOURCE_ID)) return;
+  const ink = darkQuery.matches ? '#f2f3f4' : '#131416';
+  map.addSource(ROUTE_SOURCE_ID, { type: 'geojson', data: EMPTY_ROUTE });
+  map.addLayer({
+    id: 'visited-route-real',
+    type: 'line',
+    source: ROUTE_SOURCE_ID,
+    filter: ['==', ['get', 'real'], true],
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': ink, 'line-width': 2.5, 'line-opacity': 0.55 },
+  });
+  map.addLayer({
+    id: 'visited-route-inferred',
+    type: 'line',
+    source: ROUTE_SOURCE_ID,
+    filter: ['==', ['get', 'real'], false],
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': ink, 'line-width': 2, 'line-opacity': 0.4, 'line-dasharray': [2, 2] },
+  });
+}
 
 interface Props {
   places: Place[];
@@ -78,8 +106,15 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     };
     darkQuery.addEventListener('change', onSchemeChange);
 
+    // setStyle (initial load, or the scheme-change above) wipes any custom
+    // source/layers — re-add them every time the style finishes (re)loading
+    const map = mapRef.current;
+    const onStyleData = () => ensureRouteLayers(map);
+    map.on('styledata', onStyleData);
+
     return () => {
       darkQuery.removeEventListener('change', onSchemeChange);
+      map.off('styledata', onStyleData);
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -168,6 +203,50 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     places.forEach(p => bounds.extend([p.longitude, p.latitude]));
     map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 });
   }, [places.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Places visited, in the actual order they were visited (not the list's
+  // manual sort order) — the sequence the route line traces
+  const visitedPlaces = useMemo(() => {
+    return places
+      .filter(p => p.status === 'visited' && p.visited_at)
+      .sort((a, b) => new Date(a.visited_at!).getTime() - new Date(b.visited_at!).getTime());
+  }, [places]);
+
+  // Stable primitive key — only refetch routes when the visited set,
+  // order, or coordinates actually change, not on unrelated place edits
+  const visitedKey = visitedPlaces.map(p => `${p.id}:${p.longitude},${p.latitude}`).join('|');
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const applyEmpty = () => {
+      ensureRouteLayers(map);
+      (map.getSource(ROUTE_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined)?.setData(EMPTY_ROUTE);
+    };
+
+    if (visitedPlaces.length < 2) {
+      if (map.isStyleLoaded()) applyEmpty();
+      else map.once('load', applyEmpty);
+      return;
+    }
+
+    let cancelled = false;
+    const points: [number, number][] = visitedPlaces.map(p => [p.longitude, p.latitude]);
+
+    buildVisitedRouteGeoJSON(points).then(geojson => {
+      if (cancelled) return;
+      const apply = () => {
+        ensureRouteLayers(map);
+        (map.getSource(ROUTE_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined)?.setData(geojson);
+      };
+      if (map.isStyleLoaded()) apply();
+      else map.once('load', apply);
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visitedKey]);
 
   return <div ref={containerRef} className="map-container" />;
 }
