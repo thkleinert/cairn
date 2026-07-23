@@ -640,27 +640,36 @@ select.input {
 .search-clear { color: var(--color-muted); padding: 4px; }
 
 .predictions-list {
-  /* Capped by whichever is smallest: 45% of the viewport, an absolute
-     320px ceiling, or however much room is actually left between the
-     bar's bottom anchor and the top safe area (status bar / notch),
-     with a 20px buffer so it never grows into it. That last term
-     subtracts everything else sharing the shell's vertical budget:
-     the bar's own 14px bottom offset, the 54px input row, the 2px
-     shell border, the 1px divider, and this list's own 18px top
-     padding (14+20+54+2+1+18 = 109). Whatever doesn't fit scrolls.
+  /* Capped by whichever is smaller: an absolute 320px ceiling (just
+     to keep it from looking huge on a tall screen with no keyboard),
+     or however much room is actually left between the bar's bottom
+     anchor and the top safe area (status bar / notch) — the real
+     safety constraint. That term subtracts everything else sharing
+     the shell's vertical budget: the bar's own 14px bottom offset,
+     the 54px input row, the 2px shell border, the 1px divider, and
+     this list's own 18px top padding, plus a generous 48px buffer so
+     it stops well clear of the status bar rather than just touching
+     it (14+54+2+1+18+48 = 137). Whatever doesn't fit scrolls.
+
+     There used to be a third "45% of the viewport" term here too, but
+     it was a confound: since it scales off the same shrunk height,
+     it could end up smaller than the real safe-area budget without
+     actually being derived from the status bar's position, capping
+     things more aggressively than necessary in some cases while
+     contributing nothing to actual safety in others. The two terms
+     below are enough on their own.
 
      Deliberately var(--app-height), not 100vh: iOS Safari's `vh` unit
      doesn't shrink when the on-screen keyboard opens, even though the
-     keyboard covers a third or more of the screen — every term below
-     would silently permit far more height than is actually free, and
-     the shell grows straight up into the status bar. --app-height is
-     the same window.innerHeight-driven value index.html already
-     maintains for exactly this class of bug (see its comment above),
-     and it does update on keyboard show/hide. */
+     keyboard covers a third or more of the screen — this would
+     silently permit far more height than is actually free, and the
+     shell grows straight up into the status bar. --app-height is the
+     same window.innerHeight-driven value index.html already maintains
+     for exactly this class of bug (see its comment above), and it
+     does update on keyboard show/hide. */
   max-height: min(
-    calc(var(--app-height, 100vh) * 0.45),
     320px,
-    calc(var(--app-height, 100vh) - env(safe-area-inset-bottom) - env(safe-area-inset-top) - 109px)
+    calc(var(--app-height, 100vh) - env(safe-area-inset-bottom) - env(safe-area-inset-top) - 137px)
   );
   overflow-y: auto;
   /* Clears the shell's rounded top corners — without this the first
