@@ -483,23 +483,19 @@ select.input {
   border: 1px solid var(--color-border);
   box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
   animation: pillSlideUp 0.4s var(--glide);
-  transition: width 0.35s var(--spring);
+  transition: opacity 0.15s;
 }
 
 @keyframes pillSlideUp {
   from { transform: translateY(20px); opacity: 0; }
 }
 
-.bottombar-pill--search {
-  width: min(calc(100vw - 32px), 480px);
-  align-items: center;
-  padding: 0 6px 0 16px;
+.bottombar-pill--hidden {
+  opacity: 0;
+  pointer-events: none;
 }
-.bottombar-pill--search > * { animation: searchGrow 0.3s var(--glide) backwards; animation-delay: 0.08s; }
 
-@keyframes searchGrow {
-  from { opacity: 0; transform: scale(0.94); }
-}
+.fab-spacer { width: 44px; flex-shrink: 0; }
 
 .search-close {
   flex-shrink: 0;
@@ -529,18 +525,51 @@ select.input {
 }
 .bottombar-tab--active svg { transform: scale(1.1) translateY(-1px); }
 
-.fab {
+/* The + bubble morphs in place into the search bar — it starts exactly
+   where the FAB sits (bottom-anchored + centered, matching the pill)
+   and grows outward from that single point, staying pill-shaped the
+   whole time since border-radius never changes. */
+.search-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  transform: translateX(-50%);
+  z-index: 1;
+  pointer-events: auto;
+  display: flex; align-items: center;
   width: 44px; height: 44px;
-  align-self: center;
+  border-radius: 99px;
   background: var(--color-primary);
   color: var(--color-on-primary);
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 10px rgba(13,148,136,0.35);
-  flex-shrink: 0;
-  transition: transform 0.18s var(--spring-bounce), box-shadow 0.15s;
+  overflow: hidden;
+  transition: width 0.4s var(--spring), height 0.4s var(--spring),
+    background 0.25s, color 0.15s, box-shadow 0.25s, padding 0.25s;
 }
-.fab:active { transform: scale(0.88); box-shadow: 0 1px 5px rgba(13,148,136,0.2); }
+.search-bubble:active { transform: translateX(-50%) scale(0.94); }
+
+.search-bubble--open {
+  width: min(calc(100vw - 32px), 480px);
+  height: 54px;
+  padding: 0 6px 0 16px;
+  gap: 4px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
+}
+.search-bubble--open:active { transform: translateX(-50%); }
+.search-bubble--open > * { animation: searchGrow 0.3s var(--glide) backwards; animation-delay: 0.15s; }
+
+@keyframes searchGrow {
+  from { opacity: 0; transform: scale(0.94); }
+}
+
+.search-bubble-trigger {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: inherit;
+}
 
 /* ============================================================
    PLACE SEARCH — lives inside the bottom pill once it grows open

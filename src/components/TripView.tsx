@@ -124,9 +124,29 @@ export function TripView({ trip, userId, onBack }: Props) {
         <div className="search-backdrop" onClick={() => setShowSearch(false)} />
       )}
 
-      {/* Bottom bar — floating island pill that grows into the search bar */}
+      {/* Bottom bar — Map/List pill stays put; the + bubble morphs into the search bar in place */}
       <div className="trip-bottombar">
-        <div className={`bottombar-pill ${showSearch ? 'bottombar-pill--search' : ''}`}>
+        <div className={`bottombar-pill ${showSearch ? 'bottombar-pill--hidden' : ''}`}>
+          <button
+            className={`bottombar-tab ${viewMode === 'map' ? 'bottombar-tab--active' : ''}`}
+            onClick={() => setViewMode('map')}
+          >
+            <Map size={20} />
+            <span>Map</span>
+          </button>
+
+          <div className="fab-spacer" />
+
+          <button
+            className={`bottombar-tab ${viewMode === 'list' ? 'bottombar-tab--active' : ''}`}
+            onClick={() => setViewMode('list')}
+          >
+            <List size={20} />
+            <span>List</span>
+          </button>
+        </div>
+
+        <div className={`search-bubble ${showSearch ? 'search-bubble--open' : ''}`}>
           {showSearch ? (
             <>
               <PlaceSearch onSelect={handleAddPlace} />
@@ -135,27 +155,9 @@ export function TripView({ trip, userId, onBack }: Props) {
               </button>
             </>
           ) : (
-            <>
-              <button
-                className={`bottombar-tab ${viewMode === 'map' ? 'bottombar-tab--active' : ''}`}
-                onClick={() => setViewMode('map')}
-              >
-                <Map size={20} />
-                <span>Map</span>
-              </button>
-
-              <button className="fab" onClick={() => setShowSearch(true)} aria-label="Add place">
-                <Plus size={22} />
-              </button>
-
-              <button
-                className={`bottombar-tab ${viewMode === 'list' ? 'bottombar-tab--active' : ''}`}
-                onClick={() => setViewMode('list')}
-              >
-                <List size={20} />
-                <span>List</span>
-              </button>
-            </>
+            <button className="search-bubble-trigger" onClick={() => setShowSearch(true)} aria-label="Add place">
+              <Plus size={22} />
+            </button>
           )}
         </div>
       </div>
