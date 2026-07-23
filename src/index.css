@@ -535,15 +535,15 @@ select.input {
   transform: translateX(-50%);
   z-index: 1;
   pointer-events: auto;
-  display: flex; align-items: center;
-  width: 44px; height: 44px;
+  display: flex; align-items: stretch;
+  width: 44px; min-height: 44px;
   border-radius: 99px;
   border: 2px solid transparent;
   background: var(--color-primary);
   color: var(--color-on-primary);
   box-shadow: 0 2px 10px rgba(13,148,136,0.35);
   overflow: hidden;
-  transition: width 0.6s var(--spring), height 0.6s var(--spring),
+  transition: width 0.6s var(--spring), min-height 0.6s var(--spring),
     bottom 0.6s var(--spring), padding 0.4s, background 0.25s, color 0.15s,
     border-color 0.25s, box-shadow 0.25s;
 }
@@ -551,17 +551,13 @@ select.input {
 
 .search-bubble--open {
   width: min(calc(100vw - 32px), 480px);
-  height: 54px;
+  min-height: 54px;
   bottom: calc(env(safe-area-inset-bottom) + 14px);
   padding: 0 4px;
   background: var(--color-surface);
   color: var(--color-text);
   border-color: var(--color-primary);
   box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
-  /* Predictions grow upward from above the bar — they need to escape
-     this box's bounds, not be clipped by the overflow:hidden that
-     otherwise contains the +-icon during the grow transition. */
-  overflow: visible;
 }
 .search-bubble--open:active { transform: translateX(-50%); }
 .search-bubble--open > * { animation: searchGrow 0.3s var(--glide) backwards; animation-delay: 0.25s; }
@@ -579,11 +575,37 @@ select.input {
 /* ============================================================
    PLACE SEARCH — lives inside the bottom pill once it grows open
    ============================================================ */
-.place-search { position: relative; flex: 1; min-width: 0; }
+.place-search {
+  position: relative;
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+}
+
+/* Grid-row trick: animating grid-template-rows between 0fr and 1fr
+   smoothly reveals content sized to its own natural height, without
+   ever transitioning to/from `auto` (which CSS can't animate). The
+   outer shell has no fixed height beyond a min-height, so as this
+   grows, the whole shell naturally grows with it — one continuous
+   box, no separately floating card to align against the bar below. */
+.predictions-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s var(--glide);
+}
+.predictions-grid--open { grid-template-rows: 1fr; }
+
+.predictions-grid-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.predictions-grid--open .predictions-grid-inner {
+  border-bottom: 1px solid var(--color-border);
+}
 
 .search-input-wrap {
   display: flex; align-items: center;
-  height: 100%;
+  height: 54px;
+  flex-shrink: 0;
   background: var(--color-surface);
   padding: 0 10px;
   gap: 8px;
@@ -599,21 +621,11 @@ select.input {
 .search-clear { color: var(--color-muted); padding: 4px; }
 
 .predictions-list {
-  position: absolute; bottom: calc(100% + 10px); top: auto; left: 0; right: 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.16);
-  z-index: 100;
-  max-height: 300px;
+  max-height: min(45vh, 320px);
   overflow-y: auto;
-  animation: predictionsGrow 0.2s var(--glide);
-  transform-origin: bottom center;
-}
-
-@keyframes predictionsGrow {
-  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  /* Clears the shell's rounded top corners — without this the first
+     row's text collides with the curve and gets clipped. */
+  padding-top: 18px;
 }
 
 .prediction-item {

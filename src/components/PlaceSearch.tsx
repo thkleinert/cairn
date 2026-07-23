@@ -120,9 +120,33 @@ export function PlaceSearch({ onSelect }: Props) {
     setOpen(false);
   };
 
+  const showPredictions = open && predictions.length > 0;
+
   return (
     <div className="place-search">
       <div ref={divRef} style={{ display: 'none' }} />
+      {/* Grid-row trick: animates smoothly between 0 and content height
+          without ever transitioning to/from `auto`, so the outer shell
+          (which has no fixed height of its own beyond a min-height) can
+          grow to fit this in normal layout flow — no separate floating
+          card, no manual alignment against the bar below. */}
+      <div className={`predictions-grid ${showPredictions ? 'predictions-grid--open' : ''}`}>
+        <div className="predictions-grid-inner">
+          {showPredictions && (
+            <ul className="predictions-list">
+              {predictions.map(p => (
+                <li key={p.place_id}>
+                  <button className="prediction-item" onClick={() => handleSelect(p)}>
+                    <span className="prediction-main">{p.structured_formatting.main_text}</span>
+                    <span className="prediction-sub">{p.structured_formatting.secondary_text}</span>
+                  </button>
+                </li>
+              ))}
+              <li className="predictions-attribution">powered by Google</li>
+            </ul>
+          )}
+        </div>
+      </div>
       <div className="search-input-wrap">
         <Search size={18} className="search-icon" />
         <input
@@ -140,19 +164,6 @@ export function PlaceSearch({ onSelect }: Props) {
           </button>
         )}
       </div>
-      {open && predictions.length > 0 && (
-        <ul className="predictions-list">
-          {predictions.map(p => (
-            <li key={p.place_id}>
-              <button className="prediction-item" onClick={() => handleSelect(p)}>
-                <span className="prediction-main">{p.structured_formatting.main_text}</span>
-                <span className="prediction-sub">{p.structured_formatting.secondary_text}</span>
-              </button>
-            </li>
-          ))}
-          <li className="predictions-attribution">powered by Google</li>
-        </ul>
-      )}
     </div>
   );
 }
