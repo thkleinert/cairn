@@ -595,7 +595,6 @@ select.input {
   transition: border-color 0.15s;
 }
 .search-input-wrap:focus-within {
-  border-color: var(--color-primary);
   background: var(--color-surface);
 }
 
