@@ -500,8 +500,10 @@ select.input {
 .search-close {
   flex-shrink: 0;
   width: 40px; height: 40px;
-  color: var(--color-text-secondary);
+  color: var(--color-on-primary);
+  opacity: 0.85;
 }
+.search-close:active { opacity: 1; }
 
 .search-backdrop {
   position: fixed; inset: 0;
@@ -543,23 +545,19 @@ select.input {
   color: var(--color-on-primary);
   box-shadow: 0 2px 10px rgba(13,148,136,0.35);
   overflow: hidden;
-  transition: width 0.4s var(--spring), height 0.4s var(--spring),
-    background 0.25s, color 0.15s, box-shadow 0.25s, padding 0.25s;
+  transition: width 0.6s var(--spring), height 0.6s var(--spring), padding 0.4s;
 }
 .search-bubble:active { transform: translateX(-50%) scale(0.94); }
 
 .search-bubble--open {
   width: min(calc(100vw - 32px), 480px);
   height: 54px;
-  padding: 0 6px 0 16px;
+  padding: 0 6px 0 8px;
   gap: 4px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
+  box-shadow: 0 4px 24px rgba(13,148,136,0.28), 0 1px 6px rgba(13,148,136,0.16);
 }
 .search-bubble--open:active { transform: translateX(-50%); }
-.search-bubble--open > * { animation: searchGrow 0.3s var(--glide) backwards; animation-delay: 0.15s; }
+.search-bubble--open > * { animation: searchGrow 0.3s var(--glide) backwards; animation-delay: 0.25s; }
 
 @keyframes searchGrow {
   from { opacity: 0; transform: scale(0.94); }
