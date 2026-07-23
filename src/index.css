@@ -640,7 +640,19 @@ select.input {
 .search-clear { color: var(--color-muted); padding: 4px; }
 
 .predictions-list {
-  max-height: min(45vh, 320px);
+  /* Capped by whichever is smallest: 45% of the viewport, an absolute
+     320px ceiling, or however much room is actually left between the
+     bar's bottom anchor and the top safe area (status bar / notch),
+     with a 20px buffer so it never grows into it. That last term
+     subtracts everything else sharing the shell's vertical budget:
+     the bar's own 14px bottom offset, the 54px input row, the 2px
+     shell border, the 1px divider, and this list's own 18px top
+     padding (14+20+54+2+1+18 = 109). Whatever doesn't fit scrolls. */
+  max-height: min(
+    45vh,
+    320px,
+    calc(100vh - env(safe-area-inset-bottom) - env(safe-area-inset-top) - 109px)
+  );
   overflow-y: auto;
   /* Clears the shell's rounded top corners — without this the first
      row's text collides with the curve and gets clipped. */
