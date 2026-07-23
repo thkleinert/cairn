@@ -497,12 +497,6 @@ select.input {
 
 .fab-spacer { width: 44px; flex-shrink: 0; }
 
-.search-close {
-  flex-shrink: 0;
-  width: 40px; height: 40px;
-  color: var(--color-text-secondary);
-}
-
 .search-backdrop {
   position: fixed; inset: 0;
   background: var(--color-overlay);
@@ -559,12 +553,15 @@ select.input {
   width: min(calc(100vw - 32px), 480px);
   height: 54px;
   bottom: calc(env(safe-area-inset-bottom) + 14px);
-  padding: 0 6px 0 8px;
-  gap: 4px;
+  padding: 0 4px;
   background: var(--color-surface);
   color: var(--color-text);
   border-color: var(--color-primary);
   box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
+  /* Predictions grow upward from above the bar — they need to escape
+     this box's bounds, not be clipped by the overflow:hidden that
+     otherwise contains the +-icon during the grow transition. */
+  overflow: visible;
 }
 .search-bubble--open:active { transform: translateX(-50%); }
 .search-bubble--open > * { animation: searchGrow 0.3s var(--glide) backwards; animation-delay: 0.25s; }
@@ -586,16 +583,10 @@ select.input {
 
 .search-input-wrap {
   display: flex; align-items: center;
-  height: var(--tap-target);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  padding: 0 12px;
-  gap: 8px;
-  transition: border-color 0.15s;
-}
-.search-input-wrap:focus-within {
+  height: 100%;
   background: var(--color-surface);
+  padding: 0 10px;
+  gap: 8px;
 }
 
 .search-icon { color: var(--color-muted); flex-shrink: 0; }

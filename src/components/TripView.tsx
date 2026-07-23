@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, X } from 'lucide-react';
+import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
 import type { Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTags } from '../hooks/useTags';
@@ -148,12 +148,7 @@ export function TripView({ trip, userId, onBack }: Props) {
 
         <div className={`search-bubble ${showSearch ? 'search-bubble--open' : ''}`}>
           {showSearch ? (
-            <>
-              <PlaceSearch onSelect={handleAddPlace} />
-              <button className="btn-icon search-close" onClick={() => setShowSearch(false)} aria-label="Cancel search">
-                <X size={18} />
-              </button>
-            </>
+            <PlaceSearch onSelect={handleAddPlace} />
           ) : (
             <button className="search-bubble-trigger" onClick={() => setShowSearch(true)} aria-label="Add place">
               <Plus size={22} />
