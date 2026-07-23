@@ -500,10 +500,8 @@ select.input {
 .search-close {
   flex-shrink: 0;
   width: 40px; height: 40px;
-  color: var(--color-on-primary);
-  opacity: 0.85;
+  color: var(--color-text-secondary);
 }
-.search-close:active { opacity: 1; }
 
 .search-backdrop {
   position: fixed; inset: 0;
@@ -534,27 +532,39 @@ select.input {
 .search-bubble {
   position: absolute;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  /* The pill is 54px tall and bottom-anchored at safe-area+14px, so its
+     vertical center sits 27px above that baseline. This bubble is only
+     44px tall at rest, so its own bottom offset needs +5px (44/2 vs
+     54/2) to land on the same center — otherwise it visibly sits lower
+     than the pill it replaces. */
+  bottom: calc(env(safe-area-inset-bottom) + 19px);
   transform: translateX(-50%);
   z-index: 1;
   pointer-events: auto;
   display: flex; align-items: center;
   width: 44px; height: 44px;
   border-radius: 99px;
+  border: 2px solid transparent;
   background: var(--color-primary);
   color: var(--color-on-primary);
   box-shadow: 0 2px 10px rgba(13,148,136,0.35);
   overflow: hidden;
-  transition: width 0.6s var(--spring), height 0.6s var(--spring), padding 0.4s;
+  transition: width 0.6s var(--spring), height 0.6s var(--spring),
+    bottom 0.6s var(--spring), padding 0.4s, background 0.25s, color 0.15s,
+    border-color 0.25s, box-shadow 0.25s;
 }
 .search-bubble:active { transform: translateX(-50%) scale(0.94); }
 
 .search-bubble--open {
   width: min(calc(100vw - 32px), 480px);
   height: 54px;
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
   padding: 0 6px 0 8px;
   gap: 4px;
-  box-shadow: 0 4px 24px rgba(13,148,136,0.28), 0 1px 6px rgba(13,148,136,0.16);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
 }
 .search-bubble--open:active { transform: translateX(-50%); }
 .search-bubble--open > * { animation: searchGrow 0.3s var(--glide) backwards; animation-delay: 0.25s; }
