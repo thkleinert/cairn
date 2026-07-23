@@ -647,11 +647,20 @@ select.input {
      subtracts everything else sharing the shell's vertical budget:
      the bar's own 14px bottom offset, the 54px input row, the 2px
      shell border, the 1px divider, and this list's own 18px top
-     padding (14+20+54+2+1+18 = 109). Whatever doesn't fit scrolls. */
+     padding (14+20+54+2+1+18 = 109). Whatever doesn't fit scrolls.
+
+     Deliberately var(--app-height), not 100vh: iOS Safari's `vh` unit
+     doesn't shrink when the on-screen keyboard opens, even though the
+     keyboard covers a third or more of the screen — every term below
+     would silently permit far more height than is actually free, and
+     the shell grows straight up into the status bar. --app-height is
+     the same window.innerHeight-driven value index.html already
+     maintains for exactly this class of bug (see its comment above),
+     and it does update on keyboard show/hide. */
   max-height: min(
-    45vh,
+    calc(var(--app-height, 100vh) * 0.45),
     320px,
-    calc(100vh - env(safe-area-inset-bottom) - env(safe-area-inset-top) - 109px)
+    calc(var(--app-height, 100vh) - env(safe-area-inset-bottom) - env(safe-area-inset-top) - 109px)
   );
   overflow-y: auto;
   /* Clears the shell's rounded top corners — without this the first
