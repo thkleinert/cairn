@@ -537,7 +537,17 @@ select.input {
   pointer-events: auto;
   display: flex; align-items: stretch;
   width: 44px; min-height: 44px;
-  border-radius: 99px;
+  /* Deliberately 27px, not something oversized like 99px. A large value
+     only *looks* like a full capsule because CSS auto-shrinks radii that
+     would overlap — but that shrink is per-edge: once the box is much
+     taller than it is at rest (predictions open), 99px no longer exceeds
+     half the height, so it renders as a literal, much-softer 99px corner
+     instead of a true cap. 27px is exactly half of the bar's resting
+     54px height, so it forms a perfect capsule when short (27+27=54, right
+     at the shrink threshold) and a small, fixed, consistent corner curve
+     when tall — the ends keep the same shape regardless of how tall the
+     middle grows, instead of the corners softening as content is added. */
+  border-radius: 27px;
   border: 2px solid transparent;
   background: var(--color-primary);
   color: var(--color-on-primary);
@@ -567,7 +577,14 @@ select.input {
 }
 
 .search-bubble-trigger {
-  width: 100%; height: 100%;
+  /* width/height:100% don't reliably resolve here — the parent's cross
+     size comes from min-height, not a definite height, so percentage
+     sizing (and align-items:stretch) has nothing solid to resolve
+     against and the button was collapsing to the icon's own 22px
+     content size instead of filling the 44px bubble. Absolute+inset
+     sidesteps that ambiguity by sizing directly off the rendered box. */
+  position: absolute;
+  inset: 0;
   display: flex; align-items: center; justify-content: center;
   color: inherit;
 }
@@ -615,7 +632,9 @@ select.input {
 
 .search-input {
   flex: 1; border: none; outline: none; background: none;
-  font-size: 15px; color: var(--color-text);
+  /* iOS Safari auto-zooms the page on focus for any input under 16px —
+     16px is the threshold that suppresses it entirely. */
+  font-size: 16px; color: var(--color-text);
 }
 
 .search-clear { color: var(--color-muted); padding: 4px; }
