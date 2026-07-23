@@ -27,7 +27,16 @@ export function PlaceSearch({ onSelect }: Props) {
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
   const sessionToken = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
   const divRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Deliberately not autoFocus: focusing immediately pops the keyboard up
+  // while the bottom pill is still mid-grow, and the two animations fight
+  // each other. Wait for the pill's grow transition (0.35s) to settle first.
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 350);
+    return () => clearTimeout(t);
+  }, []);
 
   const initServices = useCallback(() => {
     if (!window.google?.maps?.places) return;
@@ -117,13 +126,13 @@ export function PlaceSearch({ onSelect }: Props) {
       <div className="search-input-wrap">
         <Search size={18} className="search-icon" />
         <input
+          ref={inputRef}
           type="text"
           className="search-input"
           placeholder="Search places…"
           value={query}
           onChange={e => handleInput(e.target.value)}
           onFocus={() => predictions.length > 0 && setOpen(true)}
-          autoFocus
         />
         {query && (
           <button className="search-clear" onClick={clear} aria-label="Clear">
