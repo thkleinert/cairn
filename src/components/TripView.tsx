@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
+import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, X } from 'lucide-react';
 import type { Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTags } from '../hooks/useTags';
@@ -119,38 +119,44 @@ export function TripView({ trip, userId, onBack }: Props) {
         )}
       </div>
 
-      {/* Search overlay */}
+      {/* Backdrop — dims the map/list behind the search pill; tap to cancel */}
       {showSearch && (
-        <div className="search-overlay">
-          <PlaceSearch onSelect={handleAddPlace} />
-          <button className="btn-secondary search-cancel" onClick={() => setShowSearch(false)}>
-            Cancel
-          </button>
-        </div>
+        <div className="search-backdrop" onClick={() => setShowSearch(false)} />
       )}
 
-      {/* Bottom bar — floating island pill */}
+      {/* Bottom bar — floating island pill that grows into the search bar */}
       <div className="trip-bottombar">
-        <div className="bottombar-pill">
-          <button
-            className={`bottombar-tab ${viewMode === 'map' ? 'bottombar-tab--active' : ''}`}
-            onClick={() => setViewMode('map')}
-          >
-            <Map size={20} />
-            <span>Map</span>
-          </button>
+        <div className={`bottombar-pill ${showSearch ? 'bottombar-pill--search' : ''}`}>
+          {showSearch ? (
+            <>
+              <PlaceSearch onSelect={handleAddPlace} />
+              <button className="btn-icon search-close" onClick={() => setShowSearch(false)} aria-label="Cancel search">
+                <X size={18} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className={`bottombar-tab ${viewMode === 'map' ? 'bottombar-tab--active' : ''}`}
+                onClick={() => setViewMode('map')}
+              >
+                <Map size={20} />
+                <span>Map</span>
+              </button>
 
-          <button className="fab" onClick={() => setShowSearch(true)} aria-label="Add place">
-            <Plus size={22} />
-          </button>
+              <button className="fab" onClick={() => setShowSearch(true)} aria-label="Add place">
+                <Plus size={22} />
+              </button>
 
-          <button
-            className={`bottombar-tab ${viewMode === 'list' ? 'bottombar-tab--active' : ''}`}
-            onClick={() => setViewMode('list')}
-          >
-            <List size={20} />
-            <span>List</span>
-          </button>
+              <button
+                className={`bottombar-tab ${viewMode === 'list' ? 'bottombar-tab--active' : ''}`}
+                onClick={() => setViewMode('list')}
+              >
+                <List size={20} />
+                <span>List</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

@@ -483,10 +483,35 @@ select.input {
   border: 1px solid var(--color-border);
   box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
   animation: pillSlideUp 0.4s var(--glide);
+  transition: width 0.35s var(--spring);
 }
 
 @keyframes pillSlideUp {
   from { transform: translateY(20px); opacity: 0; }
+}
+
+.bottombar-pill--search {
+  width: min(calc(100vw - 32px), 480px);
+  align-items: center;
+  padding: 0 6px 0 16px;
+}
+.bottombar-pill--search > * { animation: searchGrow 0.3s var(--glide) backwards; animation-delay: 0.08s; }
+
+@keyframes searchGrow {
+  from { opacity: 0; transform: scale(0.94); }
+}
+
+.search-close {
+  flex-shrink: 0;
+  width: 40px; height: 40px;
+  color: var(--color-text-secondary);
+}
+
+.search-backdrop {
+  position: fixed; inset: 0;
+  background: var(--color-overlay);
+  z-index: 9;
+  animation: fadeIn 0.18s ease;
 }
 
 .bottombar-tab {
@@ -518,19 +543,9 @@ select.input {
 .fab:active { transform: scale(0.88); box-shadow: 0 1px 5px rgba(13,148,136,0.2); }
 
 /* ============================================================
-   SEARCH OVERLAY
+   PLACE SEARCH — lives inside the bottom pill once it grows open
    ============================================================ */
-.search-overlay {
-  position: absolute; top: 0; left: 0; right: 0;
-  z-index: 20;
-  padding: calc(12px + env(safe-area-inset-top)) 12px 12px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  display: flex; flex-direction: column; gap: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-}
-
-.place-search { position: relative; }
+.place-search { position: relative; flex: 1; min-width: 0; }
 
 .search-input-wrap {
   display: flex; align-items: center;
@@ -557,15 +572,21 @@ select.input {
 .search-clear { color: var(--color-muted); padding: 4px; }
 
 .predictions-list {
-  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  position: absolute; bottom: calc(100% + 10px); top: auto; left: 0; right: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.16);
   z-index: 100;
   max-height: 300px;
   overflow-y: auto;
+  animation: predictionsGrow 0.2s var(--glide);
+  transform-origin: bottom center;
+}
+
+@keyframes predictionsGrow {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
 }
 
 .prediction-item {
@@ -581,8 +602,6 @@ select.input {
 
 .prediction-main { font-size: 15px; font-weight: 600; }
 .prediction-sub { font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
-
-.search-cancel { margin-top: 4px; }
 
 /* ============================================================
    BOTTOM SHEETS

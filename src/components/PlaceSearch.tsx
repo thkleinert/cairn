@@ -123,6 +123,7 @@ export function PlaceSearch({ onSelect }: Props) {
           value={query}
           onChange={e => handleInput(e.target.value)}
           onFocus={() => predictions.length > 0 && setOpen(true)}
+          autoFocus
         />
         {query && (
           <button className="search-clear" onClick={clear} aria-label="Clear">
