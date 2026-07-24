@@ -35,6 +35,29 @@
         setAppHeight();
         window.addEventListener('resize', setAppHeight);
         window.addEventListener('orientationchange', function () { setTimeout(setAppHeight, 100); });
+
+        // --app-height (above) is driven by innerHeight/screen.height, and on
+        // iOS NEITHER of those shrinks when the on-screen keyboard opens — only
+        // window.visualViewport.height reflects the keyboard. So anything sized
+        // against --app-height while the keyboard is up thinks it has the whole
+        // screen to work with. --visual-height tracks the genuinely-visible area
+        // instead (screen minus keyboard), for keyboard-aware UI like the
+        // place-search suggestions, which must never grow up behind the status
+        // bar when the keyboard has eaten the bottom half of the screen.
+        // window's own resize event doesn't fire on iOS keyboard toggles;
+        // visualViewport's does, so it's the source of truth here.
+        function setVisualHeight() {
+          var vv = window.visualViewport;
+          var height = vv ? vv.height : window.innerHeight;
+          document.documentElement.style.setProperty('--visual-height', height + 'px');
+        }
+        setVisualHeight();
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', setVisualHeight);
+          window.visualViewport.addEventListener('scroll', setVisualHeight);
+        }
+        window.addEventListener('resize', setVisualHeight);
+        window.addEventListener('orientationchange', function () { setTimeout(setVisualHeight, 100); });
       })();
     </script>
     <style>
