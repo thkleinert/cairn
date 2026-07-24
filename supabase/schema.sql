@@ -402,3 +402,283 @@ create index trip_members_user_id_idx on public.trip_members(user_id);
 create index places_trip_id_idx on public.places(trip_id);
 create index places_google_place_id_idx on public.places(google_place_id);
 create index tags_trip_id_idx on public.tags(trip_id);
+
+-- ============================================================
+-- PLACE COMMENTS  (feature/place-comments prototype)
+-- ------------------------------------------------------------
+-- A per-place discussion thread so collaborators can talk through a spot
+-- ("should we book this?") separately from the single-author notes field.
+-- Any trip member may read and post; you may only delete your own comment
+-- (the trip owner may delete any, to moderate). Apply this whole block, then
+-- flip USE_MOCK to false in src/hooks/useComments.ts to go live.
+-- ============================================================
+
+create table public.place_comments (
+  id         uuid primary key default uuid_generate_v4(),
+  place_id   uuid not null references public.places(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  body       text not null check (char_length(body) between 1 and 2000),
+  created_at timestamptz not null default now()
+);
+
+create index place_comments_place_id_idx on public.place_comments(place_id, created_at);
+
+alter table public.place_comments enable row level security;
+
+-- Membership is checked through the parent place's trip, mirroring places/tags.
+create policy "place_comments_select" on public.place_comments for select
+  using (
+    exists (select 1 from public.places p
+      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+  );
+
+create policy "place_comments_insert" on public.place_comments for insert
+  with check (
+    user_id = public.auth_uid()
+    and exists (select 1 from public.places p
+      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+  );
+
+-- Author can delete their own; trip owner can delete anyone's (moderation).
+create policy "place_comments_delete" on public.place_comments for delete
+  using (
+    user_id = public.auth_uid()
+    or exists (
+      select 1 from public.places p
+      join public.trips t on t.id = p.trip_id
+      where p.id = place_id and t.owner_id = public.auth_uid()
+    )
+  );
+
+-- Returns a place's comments with each author's email (reads auth.users via
+-- SECURITY DEFINER, same pattern as get_trip_members).
+create or replace function public.get_place_comments(p_place_id uuid)
+returns table (
+  id         uuid,
+  place_id   uuid,
+  user_id    uuid,
+  email      text,
+  body       text,
+  created_at timestamptz
+)
+language sql security definer stable
+set search_path = public, auth
+as $$
+  select c.id, c.place_id, c.user_id, u.email, c.body, c.created_at
+  from public.place_comments c
+  join auth.users u on u.id = c.user_id
+  join public.places p on p.id = c.place_id
+  where c.place_id = p_place_id
+    and public.is_trip_member(p.trip_id, auth.uid())
+  order by c.created_at;
+$$;
+
+grant execute on function public.get_place_comments(uuid) to authenticated;
+
+-- Inserts a comment as the caller and returns it with the author email joined,
+-- so the client can append it to the thread without a second round-trip.
+create or replace function public.add_place_comment(
+  p_place_id uuid,
+  p_body     text
+)
+returns table (
+  id         uuid,
+  place_id   uuid,
+  user_id    uuid,
+  email      text,
+  body       text,
+  created_at timestamptz
+)
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid uuid;
+  v_id  uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+
+  if not exists (
+    select 1 from public.places p
+    where p.id = p_place_id and public.is_trip_member(p.trip_id, v_uid)
+  ) then
+    raise exception 'Not a member of this trip';
+  end if;
+
+  insert into public.place_comments (place_id, user_id, body)
+  values (p_place_id, v_uid, p_body)
+  returning place_comments.id into v_id;
+
+  return query
+    select c.id, c.place_id, c.user_id, u.email, c.body, c.created_at
+    from public.place_comments c
+    join auth.users u on u.id = c.user_id
+    where c.id = v_id;
+end;
+$$;
+
+grant execute on function public.add_place_comment(uuid, text) to authenticated;
+
+-- ============================================================
+-- ACTIVITY FEED  (feature/place-comments prototype)
+-- ------------------------------------------------------------
+-- Powers the in-app notification bell: a row is recorded whenever someone adds
+-- a place or posts a comment, and each user sees activity from every trip they
+-- belong to (except their own actions).
+--
+-- An item leaves a user's inbox if EITHER it predates their "mark all read"
+-- cursor (activity_seen) OR it was individually dismissed (activity_dismissed)
+-- — by tapping through to its place or swiping it away, which are the same
+-- action. The feed itself is never cleared — it's a rolling window
+-- (get_activity returns the newest 50); dismissed items simply drop out.
+--
+-- Apply this block, then flip USE_MOCK to false in
+-- src/hooks/useNotifications.ts to go live.
+-- ============================================================
+
+create table public.activity (
+  id         uuid primary key default uuid_generate_v4(),
+  trip_id    uuid not null references public.trips(id) on delete cascade,
+  actor_id   uuid not null references auth.users(id) on delete cascade,
+  type       text not null check (type in ('place_added', 'comment_added')),
+  place_id   uuid references public.places(id) on delete cascade,
+  comment_id uuid references public.place_comments(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index activity_trip_id_idx on public.activity(trip_id, created_at desc);
+
+-- Per-user "mark all read" cursor: everything at or before this is read.
+create table public.activity_seen (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  seen_at timestamptz not null default now()
+);
+
+-- Per-user, per-item dismissals — recorded whether the user tapped through to
+-- the place or swiped the row away (one and the same action). Hides the item
+-- from that user's feed; the shared activity row itself stays for other trip
+-- members.
+create table public.activity_dismissed (
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  activity_id  uuid not null references public.activity(id) on delete cascade,
+  dismissed_at timestamptz not null default now(),
+  primary key (user_id, activity_id)
+);
+
+alter table public.activity enable row level security;
+alter table public.activity_seen enable row level security;
+alter table public.activity_dismissed enable row level security;
+
+create policy "activity_dismissed_all" on public.activity_dismissed for all
+  using (user_id = public.auth_uid())
+  with check (user_id = public.auth_uid());
+
+create policy "activity_select" on public.activity for select
+  using (public.is_trip_member(trip_id, public.auth_uid()));
+
+create policy "activity_seen_all" on public.activity_seen for all
+  using (user_id = public.auth_uid())
+  with check (user_id = public.auth_uid());
+
+-- Record a row whenever a place is added…
+create or replace function public.log_place_added()
+returns trigger language plpgsql security definer as $$
+begin
+  insert into public.activity (trip_id, actor_id, type, place_id)
+  values (new.trip_id, coalesce(new.added_by, auth.uid()), 'place_added', new.id);
+  return new;
+end;
+$$;
+
+create trigger place_added_activity after insert on public.places
+  for each row execute function public.log_place_added();
+
+-- …and whenever a comment is posted.
+create or replace function public.log_comment_added()
+returns trigger language plpgsql security definer as $$
+declare
+  v_trip uuid;
+begin
+  select trip_id into v_trip from public.places where id = new.place_id;
+  insert into public.activity (trip_id, actor_id, type, place_id, comment_id)
+  values (v_trip, new.user_id, 'comment_added', new.place_id, new.id);
+  return new;
+end;
+$$;
+
+create trigger comment_added_activity after insert on public.place_comments
+  for each row execute function public.log_comment_added();
+
+-- Inbox for the current user: active (not-yet-dismissed) activity across their
+-- trips, other people's actions only, newest first, with author email +
+-- place/trip names joined in. Dismissed items are filtered out entirely — the
+-- feed only ever shows what still needs attention.
+create or replace function public.get_activity()
+returns table (
+  id          uuid,
+  type        text,
+  actor_email text,
+  trip_id     uuid,
+  trip_name   text,
+  place_id    uuid,
+  place_name  text,
+  snippet     text,
+  created_at  timestamptz
+)
+language sql security definer stable
+set search_path = public, auth
+as $$
+  select
+    a.id,
+    a.type,
+    u.email,
+    a.trip_id,
+    t.name,
+    a.place_id,
+    p.name,
+    c.body,
+    a.created_at
+  from public.activity a
+  join auth.users u on u.id = a.actor_id
+  join public.trips t on t.id = a.trip_id
+  left join public.places p on p.id = a.place_id
+  left join public.place_comments c on c.id = a.comment_id
+  left join public.activity_seen s on s.user_id = auth.uid()
+  left join public.activity_dismissed d on d.activity_id = a.id and d.user_id = auth.uid()
+  where public.is_trip_member(a.trip_id, auth.uid())
+    and a.actor_id <> auth.uid()
+    and not coalesce(a.created_at <= s.seen_at, false)  -- not marked-all-read
+    and d.activity_id is null                            -- not dismissed
+  order by a.created_at desc
+  limit 50;
+$$;
+
+grant execute on function public.get_activity() to authenticated;
+
+-- Dismiss a single item for this user — tapping through to its place or
+-- swiping it away, which are the same action.
+create or replace function public.dismiss_activity(p_activity_id uuid)
+returns void
+language sql security definer
+set search_path = public, auth
+as $$
+  insert into public.activity_dismissed (user_id, activity_id)
+  values (auth.uid(), p_activity_id)
+  on conflict (user_id, activity_id) do nothing;
+$$;
+
+grant execute on function public.dismiss_activity(uuid) to authenticated;
+
+-- Mark everything up to now as seen — the "Mark all read" button.
+create or replace function public.mark_activity_seen()
+returns void
+language sql security definer
+set search_path = public, auth
+as $$
+  insert into public.activity_seen (user_id, seen_at)
+  values (auth.uid(), now())
+  on conflict (user_id) do update set seen_at = now();
+$$;
+
+grant execute on function public.mark_activity_seen() to authenticated;

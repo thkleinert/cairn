@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
 import type { Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
@@ -16,19 +16,24 @@ interface Props {
   trip: Trip;
   userId: string;
   onBack: () => void;
+  // Optional deep-link target — e.g. jumping in from an activity notification.
+  initialPlaceId?: string;
+  initialOpenComments?: boolean;
+  openNonce?: number;
 }
 
 type Sheet = 'none' | 'tag-filter' | 'settings';
 type ViewMode = 'map' | 'list';
 
-export function TripView({ trip, userId, onBack }: Props) {
+export function TripView({ trip, userId, onBack, initialPlaceId, initialOpenComments, openNonce }: Props) {
   const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   const { updateTrip, deleteTrip, uploadTripCover } = useTrips(userId);
 
   // Selection is an id — the place object is always derived fresh from `places`,
   // so realtime refetches and edits never leave the sheet stale.
-  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(initialPlaceId ?? null);
+  const [jumpToComments, setJumpToComments] = useState(!!initialOpenComments);
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [openSheet, setOpenSheet] = useState<Sheet>('none');
   const [viewMode, setViewMode] = useState<ViewMode>('map');
@@ -36,6 +41,14 @@ export function TripView({ trip, userId, onBack }: Props) {
 
   const selectedPlace = places.find(p => p.id === selectedPlaceId) ?? null;
   const isOwner = trip.owner_id === userId;
+
+  // Re-open the deep-linked place whenever a new jump target arrives (nonce
+  // changes even if the id repeats), without fighting a manual close.
+  useEffect(() => {
+    if (!initialPlaceId) return;
+    setSelectedPlaceId(initialPlaceId);
+    setJumpToComments(!!initialOpenComments);
+  }, [openNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEscapeClose(() => setShowSearch(false));
 
@@ -162,7 +175,9 @@ export function TripView({ trip, userId, onBack }: Props) {
         <PlaceDetailSheet
           place={selectedPlace}
           allTags={tags}
-          onClose={() => setSelectedPlaceId(null)}
+          scrollToComments={jumpToComments}
+          onCommentsShown={() => setJumpToComments(false)}
+          onClose={() => { setSelectedPlaceId(null); setJumpToComments(false); }}
           onToggleVisited={() => toggleVisited(selectedPlace.id, selectedPlace.status)}
           onUpdate={(updates) => updatePlace(selectedPlace.id, updates)}
           onDelete={handleDeletePlace}

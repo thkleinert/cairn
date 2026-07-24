@@ -910,6 +910,21 @@ select.input {
   letter-spacing: 0.06em; color: var(--color-text-secondary);
   margin-bottom: 8px;
 }
+/* Collapsible section header — the label doubles as the toggle button. */
+.detail-label--toggle {
+  display: flex; align-items: center; gap: 5px;
+  width: 100%;
+  cursor: pointer;
+  /* nudge the caret into the label's left margin so the text still
+     lines up with the other, non-collapsible section labels */
+  margin-left: -19px;
+}
+.section-caret {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  transition: transform 0.2s var(--spring);
+}
+.section-caret--open { transform: rotate(90deg); }
 .detail-textarea { min-height: 80px; }
 
 .source-pills {
@@ -1046,6 +1061,85 @@ select.input {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   font-size: 14px; color: var(--color-danger);
 }
+
+/* ============================================================
+   PLACE COMMENTS — a discussion thread on the place detail sheet
+   ============================================================ */
+.comments-empty {
+  font-size: 14px; color: var(--color-text-secondary);
+  padding: 2px 0 10px;
+}
+
+.comment-thread {
+  display: flex; flex-direction: column; gap: 12px;
+  margin-bottom: 12px;
+}
+
+.comment-row {
+  display: flex; align-items: flex-end; gap: 8px;
+  max-width: 88%;
+}
+.comment-row--mine {
+  flex-direction: row-reverse;
+  margin-left: auto;
+}
+
+.comment-avatar {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 700;
+}
+
+.comment-bubble {
+  background: var(--color-bg);
+  border-radius: 14px;
+  padding: 8px 12px 10px;
+  min-width: 0;
+}
+.comment-row--mine .comment-bubble {
+  background: var(--color-primary-light);
+}
+
+.comment-meta {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 2px;
+}
+.comment-author {
+  font-size: 12.5px; font-weight: 700; color: var(--color-text);
+}
+.comment-time {
+  font-size: 11.5px; color: var(--color-text-secondary);
+}
+.comment-delete {
+  margin-left: 2px;
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  color: var(--color-muted);
+}
+.comment-delete:active { background: rgba(0,0,0,0.08); color: var(--color-text); }
+
+.comment-body {
+  font-size: 14px; line-height: 1.45; color: var(--color-text);
+  word-break: break-word;
+}
+
+.comment-compose {
+  display: flex; align-items: center; gap: 8px;
+}
+.comment-input { flex: 1; }
+.comment-send {
+  flex-shrink: 0;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  transition: transform 0.15s var(--spring-bounce), opacity 0.15s;
+}
+.comment-send:active { transform: scale(0.9); }
+.comment-send:disabled { opacity: 0.4; }
 
 /* ============================================================
    TAGS
@@ -1558,6 +1652,104 @@ select.input {
   color: var(--color-danger);
   text-align: right;
 }
+
+/* ============================================================
+   NOTIFICATIONS — bell + badge, and the activity sheet
+   ============================================================ */
+.notif-bell { position: relative; }
+.notif-dot-badge {
+  /* sits at the bell's upper-right so it just touches the glyph */
+  position: absolute; top: 8px; right: 10px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  /* ring in the header colour so the dot reads as a clean cutout */
+  border: 2px solid var(--color-surface);
+  box-sizing: content-box;
+}
+
+.notif-mark-all {
+  flex-shrink: 0;
+  font-size: 13px; font-weight: 600;
+  color: var(--color-primary);
+  padding: 4px 2px;
+}
+.notif-mark-all:active { opacity: 0.6; }
+
+.notif-list {
+  display: flex; flex-direction: column;
+}
+/* Each row sits above two colour lanes it slides over when swiped. */
+.notif-swipe {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
+}
+.notif-list li:last-child { border-bottom: none; }
+
+.notif-lane {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 20px;
+  font-size: 14px; font-weight: 600; color: #fff;
+  /* Kept transparent until the row is dragged far enough to reveal it. */
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.notif-lane.is-active { opacity: 1; }
+/* delete is revealed by a left-swipe (right side shows). */
+.notif-lane--delete { justify-content: flex-end; background: var(--color-danger); }
+
+.notif-row {
+  position: relative; z-index: 1;
+  width: 100%;
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 4px;
+  text-align: left;
+  background: var(--color-surface);
+  touch-action: pan-y;
+}
+
+.notif-icon {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+}
+.notif-icon--place_added { background: var(--color-primary); }
+.notif-icon--comment_added { background: #6366f1; }
+
+.notif-body { flex: 1; min-width: 0; }
+.notif-text {
+  font-size: 14px; line-height: 1.4; color: var(--color-text-secondary);
+}
+.notif-text strong { color: var(--color-text); font-weight: 600; }
+.notif-snippet {
+  margin-top: 3px;
+  font-size: 13px; line-height: 1.4; color: var(--color-text-secondary);
+  font-style: italic;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.notif-time {
+  margin-top: 4px;
+  font-size: 12px; color: var(--color-muted);
+}
+
+.notif-swipe-hint {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px; color: var(--color-muted);
+}
+
+.notif-empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; text-align: center;
+  padding: 32px 20px 24px;
+}
+.notif-empty p { font-size: 15px; color: var(--color-text); }
+.notif-empty-hint { font-size: 13px; color: var(--color-text-secondary); }
 
 .predictions-attribution {
   padding: 6px 14px;

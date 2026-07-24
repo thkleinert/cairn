@@ -25,6 +25,10 @@ function getTripIdFromPath(): string | null {
 function AuthedApp() {
   const { user, loading, passwordRecovery, updatePassword } = useAuth();
   const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
+  // A place to auto-open once a trip is entered (e.g. jumping in from an
+  // activity notification). Bumped nonce so re-selecting the same place from
+  // the feed re-triggers the open even if the id hasn't changed.
+  const [pendingPlace, setPendingPlace] = useState<{ id: string; openComments: boolean; nonce: number } | null>(null);
   const [restoringTrip, setRestoringTrip] = useState(() => getTripIdFromPath() !== null);
   const shareToken = getShareToken();
 
@@ -59,8 +63,12 @@ function AuthedApp() {
       <TripView
         trip={activeTrip}
         userId={user.id}
+        initialPlaceId={pendingPlace?.id}
+        initialOpenComments={pendingPlace?.openComments}
+        openNonce={pendingPlace?.nonce}
         onBack={() => {
           setActiveTrip(null);
+          setPendingPlace(null);
           window.history.pushState(null, '', '/');
         }}
       />
@@ -70,8 +78,13 @@ function AuthedApp() {
   return (
     <TripList
       userId={user.id}
-      onSelectTrip={(trip) => {
+      onSelectTrip={(trip, target) => {
         setActiveTrip(trip);
+        setPendingPlace(
+          target?.placeId
+            ? { id: target.placeId, openComments: !!target.openComments, nonce: Date.now() }
+            : null
+        );
         window.history.pushState(null, '', `/trip/${trip.id}`);
       }}
     />

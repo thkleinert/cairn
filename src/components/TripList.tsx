@@ -1,15 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, MapPin, LogOut, Calendar } from 'lucide-react';
+import { Plus, MapPin, LogOut, Calendar, Bell } from 'lucide-react';
 import type { Trip } from '../types';
 import { useTrips } from '../hooks/useTrips';
 import { useAuth } from '../hooks/useAuth';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useNotifications, type Notification } from '../hooks/useNotifications';
+import { NotificationsSheet } from './NotificationsSheet';
 import { DateField } from './DateField';
 import { format, parseISO } from 'date-fns';
 
 interface Props {
   userId: string;
-  onSelectTrip: (trip: Trip) => void;
+  onSelectTrip: (trip: Trip, target?: { placeId?: string; openComments?: boolean }) => void;
 }
 
 // Deterministic per-trip seed so each card's route motif is stable across renders
@@ -46,7 +48,25 @@ export function TripList({ userId, onSelectTrip }: Props) {
   const [createError, setCreateError] = useState('');
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [compact, setCompact] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const scrollRef = useRef<HTMLUListElement>(null);
+
+  const { notifications, unreadCount, dismissNotification, markAllRead } = useNotifications();
+
+  // Tapping a notification dismisses just that one and jumps to its place;
+  // opening/closing the panel no longer dismisses anything on its own — that's
+  // what the explicit "Mark all read" button is for.
+  const handleActivityClick = (n: Notification) => {
+    dismissNotification(n.id);
+    setShowNotifications(false);
+    const trip = trips.find(t => t.id === n.trip_id);
+    if (trip) {
+      onSelectTrip(trip, {
+        placeId: n.place_id,
+        openComments: n.type === 'comment_added',
+      });
+    }
+  };
 
   useEscapeClose(() => setShowCreate(false));
 
@@ -99,6 +119,14 @@ export function TripList({ userId, onSelectTrip }: Props) {
           <span className="trip-list-rule" aria-hidden="true" />
         </div>
         <div className="trip-list-actions">
+          <button
+            className="btn-icon notif-bell"
+            onClick={() => setShowNotifications(true)}
+            aria-label={unreadCount > 0 ? 'Activity, unread' : 'Activity'}
+          >
+            <Bell size={20} />
+            {unreadCount > 0 && <span className="notif-dot-badge" aria-hidden="true" />}
+          </button>
           <button
             className={`btn-icon ${confirmSignOut ? 'btn-icon--danger' : ''}`}
             onClick={handleSignOut}
@@ -158,6 +186,17 @@ export function TripList({ userId, onSelectTrip }: Props) {
           <Plus size={26} />
         </button>
       </div>
+
+      {showNotifications && (
+        <NotificationsSheet
+          notifications={notifications}
+          unreadCount={unreadCount}
+          onSelect={handleActivityClick}
+          onDismiss={dismissNotification}
+          onMarkAllRead={markAllRead}
+          onClose={() => setShowNotifications(false)}
+        />
+      )}
 
       {showCreate && (
         <div className="bottom-sheet-overlay" onClick={() => setShowCreate(false)}>
