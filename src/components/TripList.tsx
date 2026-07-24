@@ -4,14 +4,14 @@ import type { Trip } from '../types';
 import { useTrips } from '../hooks/useTrips';
 import { useAuth } from '../hooks/useAuth';
 import { useEscapeClose } from '../hooks/useEscapeClose';
-import { useNotifications } from '../hooks/useNotifications';
+import { useNotifications, type Notification } from '../hooks/useNotifications';
 import { NotificationsSheet } from './NotificationsSheet';
 import { DateField } from './DateField';
 import { format, parseISO } from 'date-fns';
 
 interface Props {
   userId: string;
-  onSelectTrip: (trip: Trip) => void;
+  onSelectTrip: (trip: Trip, target?: { placeId?: string; openComments?: boolean }) => void;
 }
 
 // Deterministic per-trip seed so each card's route motif is stable across renders
@@ -51,13 +51,21 @@ export function TripList({ userId, onSelectTrip }: Props) {
   const [showNotifications, setShowNotifications] = useState(false);
   const scrollRef = useRef<HTMLUListElement>(null);
 
-  const { notifications, unreadCount, markAllRead } = useNotifications();
+  const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
 
-  // Show the panel with unread items still marked, then clear them on close —
-  // so you can see what's new while it's open, and the badge is gone after.
-  const closeNotifications = () => {
+  // Tapping a notification marks just that one read and jumps to its place;
+  // opening/closing the panel no longer marks anything on its own — that's
+  // what the explicit "Mark all read" button is for.
+  const handleActivityClick = (n: Notification) => {
+    markRead(n.id);
     setShowNotifications(false);
-    markAllRead();
+    const trip = trips.find(t => t.id === n.trip_id);
+    if (trip) {
+      onSelectTrip(trip, {
+        placeId: n.place_id,
+        openComments: n.type === 'comment_added',
+      });
+    }
   };
 
   useEscapeClose(() => setShowCreate(false));
@@ -184,7 +192,10 @@ export function TripList({ userId, onSelectTrip }: Props) {
       {showNotifications && (
         <NotificationsSheet
           notifications={notifications}
-          onClose={closeNotifications}
+          unreadCount={unreadCount}
+          onSelect={handleActivityClick}
+          onMarkAllRead={markAllRead}
+          onClose={() => setShowNotifications(false)}
         />
       )}
 

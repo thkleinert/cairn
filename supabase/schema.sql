@@ -525,8 +525,14 @@ grant execute on function public.add_place_comment(uuid, text) to authenticated;
 -- ------------------------------------------------------------
 -- Powers the in-app notification bell: a row is recorded whenever someone adds
 -- a place or posts a comment, and each user sees activity from every trip they
--- belong to (except their own actions). "Unread" is anything newer than the
--- user's last-seen cursor. Apply this block, then flip USE_MOCK to false in
+-- belong to (except their own actions).
+--
+-- An item counts as read if EITHER it predates the user's "mark all read"
+-- cursor (activity_seen) OR it was individually tapped (activity_reads). The
+-- feed itself is never cleared — it's a rolling window (get_activity returns
+-- the newest 50); read items simply stop contributing to the unread badge.
+--
+-- Apply this block, then flip USE_MOCK to false in
 -- src/hooks/useNotifications.ts to go live.
 -- ============================================================
 
@@ -542,14 +548,27 @@ create table public.activity (
 
 create index activity_trip_id_idx on public.activity(trip_id, created_at desc);
 
--- Per-user "I've seen everything up to here" cursor for unread counting.
+-- Per-user "mark all read" cursor: everything at or before this is read.
 create table public.activity_seen (
   user_id uuid primary key references auth.users(id) on delete cascade,
   seen_at timestamptz not null default now()
 );
 
+-- Per-item read receipts, for tapping a single notification read.
+create table public.activity_reads (
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  activity_id uuid not null references public.activity(id) on delete cascade,
+  read_at     timestamptz not null default now(),
+  primary key (user_id, activity_id)
+);
+
 alter table public.activity enable row level security;
 alter table public.activity_seen enable row level security;
+alter table public.activity_reads enable row level security;
+
+create policy "activity_reads_all" on public.activity_reads for all
+  using (user_id = public.auth_uid())
+  with check (user_id = public.auth_uid());
 
 create policy "activity_select" on public.activity for select
   using (public.is_trip_member(trip_id, public.auth_uid()));
@@ -588,8 +607,8 @@ create trigger comment_added_activity after insert on public.place_comments
   for each row execute function public.log_comment_added();
 
 -- Feed for the current user: activity across their trips, other people's
--- actions only, newest first, with author email + place/trip names joined in
--- and a per-row read flag derived from their last-seen cursor.
+-- actions only, newest first, with author email + place/trip names joined in.
+-- `read` is true if the item predates the mark-all cursor OR was tapped.
 create or replace function public.get_activity()
 returns table (
   id          uuid,
@@ -597,6 +616,7 @@ returns table (
   actor_email text,
   trip_id     uuid,
   trip_name   text,
+  place_id    uuid,
   place_name  text,
   snippet     text,
   created_at  timestamptz,
@@ -611,16 +631,18 @@ as $$
     u.email,
     a.trip_id,
     t.name,
+    a.place_id,
     p.name,
     c.body,
     a.created_at,
-    coalesce(a.created_at <= s.seen_at, false)
+    coalesce(a.created_at <= s.seen_at, false) or r.activity_id is not null
   from public.activity a
   join auth.users u on u.id = a.actor_id
   join public.trips t on t.id = a.trip_id
   left join public.places p on p.id = a.place_id
   left join public.place_comments c on c.id = a.comment_id
   left join public.activity_seen s on s.user_id = auth.uid()
+  left join public.activity_reads r on r.activity_id = a.id and r.user_id = auth.uid()
   where public.is_trip_member(a.trip_id, auth.uid())
     and a.actor_id <> auth.uid()
   order by a.created_at desc
@@ -629,7 +651,20 @@ $$;
 
 grant execute on function public.get_activity() to authenticated;
 
--- Mark everything up to now as seen (called when the bell panel closes).
+-- Mark a single item read — called when you tap through to its place.
+create or replace function public.mark_activity_read(p_activity_id uuid)
+returns void
+language sql security definer
+set search_path = public, auth
+as $$
+  insert into public.activity_reads (user_id, activity_id)
+  values (auth.uid(), p_activity_id)
+  on conflict (user_id, activity_id) do nothing;
+$$;
+
+grant execute on function public.mark_activity_read(uuid) to authenticated;
+
+-- Mark everything up to now as seen — the "Mark all read" button.
 create or replace function public.mark_activity_seen()
 returns void
 language sql security definer

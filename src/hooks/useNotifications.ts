@@ -9,6 +9,7 @@ export interface Notification {
   actor_email: string;
   trip_id: string;
   trip_name: string;
+  place_id: string;
   place_name: string;
   snippet?: string;   // comment body, for comment_added
   created_at: string;
@@ -23,44 +24,81 @@ export interface Notification {
 const USE_MOCK = true;
 // ─────────────────────────────────────────────────────────────────────────
 
+// Module-level so read state survives the TripList remounting (e.g. after you
+// navigate into a trip and back). In the live path this is persisted per-user
+// in activity_reads / activity_seen instead; this Set is mock-only.
+const mockReadIds = new Set<string>();
+
 function minutesAgo(mins: number): string {
   return new Date(Date.now() - mins * 60_000).toISOString();
 }
 
-function buildMock(): Notification[] {
-  return [
+// For the prototype, resolve the mock activity against the user's REAL first
+// trip and its REAL places, so tapping a notification actually jumps to a
+// place that exists. Falls back to placeholder ids if there's no data yet.
+async function buildMock(): Promise<Notification[]> {
+  const { data: trips } = await supabase
+    .from('trips')
+    .select('id, name')
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const trip = trips?.[0];
+  if (!trip) return [];
+
+  const { data: places } = await supabase
+    .from('places')
+    .select('id, name')
+    .eq('trip_id', trip.id)
+    .order('position')
+    .limit(3);
+  if (!places || places.length === 0) return [];
+
+  // Prefer a place with "comment-worthy" character for the comment item;
+  // otherwise just use whatever's there.
+  const commentPlace = places.find(p => /khao sok/i.test(p.name)) ?? places[0];
+  const others = places.filter(p => p.id !== commentPlace.id);
+
+  const out: Notification[] = [
     {
-      id: 'n1',
-      type: 'place_added',
-      actor_email: 'jamie@example.com',
-      trip_id: 'mock-trip',
-      trip_name: 'Thailand 2026',
-      place_name: 'Railay Beach',
-      created_at: minutesAgo(4),
-      read: false,
-    },
-    {
-      id: 'n2',
+      id: 'n-comment',
       type: 'comment_added',
       actor_email: 'jamie@example.com',
-      trip_id: 'mock-trip',
-      trip_name: 'Thailand 2026',
-      place_name: 'Khao Sok National Park',
+      trip_id: trip.id,
+      trip_name: trip.name,
+      place_id: commentPlace.id,
+      place_name: commentPlace.name,
       snippet: 'Heard the sunrise canoe tour is the move for wildlife — gibbons + hornbills.',
-      created_at: minutesAgo(58),
+      created_at: minutesAgo(6),
       read: false,
     },
-    {
-      id: 'n3',
+  ];
+  if (others[0]) {
+    out.push({
+      id: 'n-place-1',
       type: 'place_added',
       actor_email: 'jamie@example.com',
-      trip_id: 'mock-trip',
-      trip_name: 'Thailand 2026',
-      place_name: 'Wat Arun',
+      trip_id: trip.id,
+      trip_name: trip.name,
+      place_id: others[0].id,
+      place_name: others[0].name,
+      created_at: minutesAgo(52),
+      read: false,
+    });
+  }
+  if (others[1]) {
+    out.push({
+      id: 'n-place-2',
+      type: 'place_added',
+      actor_email: 'jamie@example.com',
+      trip_id: trip.id,
+      trip_name: trip.name,
+      place_id: others[1].id,
+      place_name: others[1].name,
       created_at: minutesAgo(60 * 5),
       read: true,
-    },
-  ];
+    });
+  }
+  return out;
 }
 
 export function useNotifications() {
@@ -70,7 +108,8 @@ export function useNotifications() {
   const load = useCallback(async () => {
     setLoading(true);
     if (USE_MOCK) {
-      setNotifications(buildMock());
+      const built = await buildMock();
+      setNotifications(built.map(n => (mockReadIds.has(n.id) ? { ...n, read: true } : n)));
       setLoading(false);
       return;
     }
@@ -85,11 +124,23 @@ export function useNotifications() {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
+  // Mark a single item read — used when you tap through to its place.
+  const markRead = async (id: string) => {
+    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
+    if (USE_MOCK) { mockReadIds.add(id); return; }
+    await supabase.rpc('mark_activity_read', { p_activity_id: id });
+  };
+
+  // Clear everything at once — the dedicated "Mark all read" affordance,
+  // no navigation involved.
   const markAllRead = async () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setNotifications(prev => {
+      if (USE_MOCK) prev.forEach(n => mockReadIds.add(n.id));
+      return prev.map(n => ({ ...n, read: true }));
+    });
     if (USE_MOCK) return;
     await supabase.rpc('mark_activity_seen');
   };
 
-  return { notifications, unreadCount, loading, markAllRead, reload: load };
+  return { notifications, unreadCount, loading, markRead, markAllRead, reload: load };
 }

@@ -56,11 +56,15 @@ interface Props {
   onRemoveImage: (imageId: string) => void;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
   readOnly?: boolean;
+  // When opened from a comment notification, expand + scroll to the thread.
+  scrollToComments?: boolean;
+  onCommentsShown?: () => void;
 }
 
 export function PlaceDetailSheet({
   place, allTags, onClose, onToggleVisited, onUpdate, onDelete,
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
+  scrollToComments = false, onCommentsShown,
 }: Props) {
   const [notes, setNotes] = useState(place.notes ?? '');
   const [selectedTags, setSelectedTags] = useState<string[]>((place.tags ?? []).map(t => t.id));
@@ -73,8 +77,9 @@ export function PlaceDetailSheet({
   const [commentDraft, setCommentDraft] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(true);
   const galleryRef = useRef<HTMLDivElement>(null);
+  const discussionRef = useRef<HTMLDivElement>(null);
 
-  const { comments, currentUserId, addComment, deleteComment } = useComments(place.id);
+  const { comments, currentUserId, loading: commentsLoading, addComment, deleteComment } = useComments(place.id);
 
   const handleAddComment = async () => {
     const body = commentDraft.trim();
@@ -82,6 +87,21 @@ export function PlaceDetailSheet({
     setCommentDraft('');
     await addComment(body);
   };
+
+  // Arriving from a comment notification: make sure the thread is expanded,
+  // then scroll it into view once it has rendered. Waits out the sheet's
+  // slide-up (0.45s) — scrolling a still-animating, transformed container
+  // doesn't take. Instant scroll (not smooth): a smooth scroll kicked off
+  // as the sheet settles gets dropped. Fires once per open.
+  useEffect(() => {
+    if (!scrollToComments || commentsLoading) return;
+    setCommentsOpen(true);
+    const t = setTimeout(() => {
+      discussionRef.current?.scrollIntoView({ block: 'start' });
+      onCommentsShown?.();
+    }, 500);
+    return () => clearTimeout(t);
+  }, [scrollToComments, commentsLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setNotes(place.notes ?? '');
@@ -306,7 +326,7 @@ export function PlaceDetailSheet({
         {/* Discussion — a multi-author thread for talking a place through,
             distinct from the single-author Notes field above. Collapsible
             so a long thread doesn't bury the rest of the sheet. */}
-        <div className="detail-section">
+        <div className="detail-section" ref={discussionRef}>
           <button
             className="detail-label detail-label--toggle"
             onClick={() => setCommentsOpen(o => !o)}

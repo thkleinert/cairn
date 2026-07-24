@@ -6,6 +6,9 @@ import type { Notification } from '../hooks/useNotifications';
 
 interface Props {
   notifications: Notification[];
+  unreadCount: number;
+  onSelect: (n: Notification) => void;
+  onMarkAllRead: () => void;
   onClose: () => void;
 }
 
@@ -13,7 +16,7 @@ function authorName(email: string): string {
   return email.split('@')[0];
 }
 
-export function NotificationsSheet({ notifications, onClose }: Props) {
+export function NotificationsSheet({ notifications, unreadCount, onSelect, onMarkAllRead, onClose }: Props) {
   const { sheetRef, handleProps } = useSwipeToClose(onClose);
   useEscapeClose(onClose);
 
@@ -28,7 +31,14 @@ export function NotificationsSheet({ notifications, onClose }: Props) {
         aria-label="Activity"
       >
         <div className="bottom-sheet-handle" {...handleProps} />
-        <h2 className="bottom-sheet-title">Activity</h2>
+        <div className="sheet-header-row">
+          <h2 className="bottom-sheet-title">Activity</h2>
+          {unreadCount > 0 && (
+            <button className="notif-mark-all" onClick={onMarkAllRead}>
+              Mark all read
+            </button>
+          )}
+        </div>
 
         {notifications.length === 0 ? (
           <div className="notif-empty">
@@ -39,24 +49,29 @@ export function NotificationsSheet({ notifications, onClose }: Props) {
         ) : (
           <ul className="notif-list">
             {notifications.map(n => (
-              <li key={n.id} className={`notif-row ${n.read ? '' : 'notif-row--unread'}`}>
-                <span className={`notif-icon notif-icon--${n.type}`}>
-                  {n.type === 'place_added' ? <MapPin size={16} /> : <MessageCircle size={16} />}
-                </span>
-                <div className="notif-body">
-                  <p className="notif-text">
-                    <strong>{authorName(n.actor_email)}</strong>
-                    {n.type === 'place_added' ? ' added ' : ' commented on '}
-                    <strong>{n.place_name}</strong>
-                    {' in '}
-                    {n.trip_name}
-                  </p>
-                  {n.snippet && <p className="notif-snippet">“{n.snippet}”</p>}
-                  <p className="notif-time">
-                    {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
-                  </p>
-                </div>
-                {!n.read && <span className="notif-dot" aria-label="Unread" />}
+              <li key={n.id}>
+                <button
+                  className={`notif-row ${n.read ? '' : 'notif-row--unread'}`}
+                  onClick={() => onSelect(n)}
+                >
+                  <span className={`notif-icon notif-icon--${n.type}`}>
+                    {n.type === 'place_added' ? <MapPin size={16} /> : <MessageCircle size={16} />}
+                  </span>
+                  <div className="notif-body">
+                    <p className="notif-text">
+                      <strong>{authorName(n.actor_email)}</strong>
+                      {n.type === 'place_added' ? ' added ' : ' commented on '}
+                      <strong>{n.place_name}</strong>
+                      {' in '}
+                      {n.trip_name}
+                    </p>
+                    {n.snippet && <p className="notif-snippet">“{n.snippet}”</p>}
+                    <p className="notif-time">
+                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                    </p>
+                  </div>
+                  {!n.read && <span className="notif-dot" aria-label="Unread" />}
+                </button>
               </li>
             ))}
           </ul>

@@ -1670,16 +1670,27 @@ select.input {
   box-sizing: content-box;
 }
 
+.notif-mark-all {
+  flex-shrink: 0;
+  font-size: 13px; font-weight: 600;
+  color: var(--color-primary);
+  padding: 4px 2px;
+}
+.notif-mark-all:active { opacity: 0.6; }
+
 .notif-list {
   display: flex; flex-direction: column;
 }
 .notif-row {
+  width: 100%;
   display: flex; align-items: flex-start; gap: 12px;
   padding: 12px 4px;
   border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  transition: background 0.12s;
 }
-.notif-row:last-child { border-bottom: none; }
-.notif-row--unread { }
+.notif-list li:last-child .notif-row { border-bottom: none; }
+.notif-row:active { background: var(--color-bg); }
 
 .notif-icon {
   flex-shrink: 0;
