@@ -402,3 +402,120 @@ create index trip_members_user_id_idx on public.trip_members(user_id);
 create index places_trip_id_idx on public.places(trip_id);
 create index places_google_place_id_idx on public.places(google_place_id);
 create index tags_trip_id_idx on public.tags(trip_id);
+
+-- ============================================================
+-- PLACE COMMENTS  (feature/place-comments prototype)
+-- ------------------------------------------------------------
+-- A per-place discussion thread so collaborators can talk through a spot
+-- ("should we book this?") separately from the single-author notes field.
+-- Any trip member may read and post; you may only delete your own comment
+-- (the trip owner may delete any, to moderate). Apply this whole block, then
+-- flip USE_MOCK to false in src/hooks/useComments.ts to go live.
+-- ============================================================
+
+create table public.place_comments (
+  id         uuid primary key default uuid_generate_v4(),
+  place_id   uuid not null references public.places(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  body       text not null check (char_length(body) between 1 and 2000),
+  created_at timestamptz not null default now()
+);
+
+create index place_comments_place_id_idx on public.place_comments(place_id, created_at);
+
+alter table public.place_comments enable row level security;
+
+-- Membership is checked through the parent place's trip, mirroring places/tags.
+create policy "place_comments_select" on public.place_comments for select
+  using (
+    exists (select 1 from public.places p
+      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+  );
+
+create policy "place_comments_insert" on public.place_comments for insert
+  with check (
+    user_id = public.auth_uid()
+    and exists (select 1 from public.places p
+      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+  );
+
+-- Author can delete their own; trip owner can delete anyone's (moderation).
+create policy "place_comments_delete" on public.place_comments for delete
+  using (
+    user_id = public.auth_uid()
+    or exists (
+      select 1 from public.places p
+      join public.trips t on t.id = p.trip_id
+      where p.id = place_id and t.owner_id = public.auth_uid()
+    )
+  );
+
+-- Returns a place's comments with each author's email (reads auth.users via
+-- SECURITY DEFINER, same pattern as get_trip_members).
+create or replace function public.get_place_comments(p_place_id uuid)
+returns table (
+  id         uuid,
+  place_id   uuid,
+  user_id    uuid,
+  email      text,
+  body       text,
+  created_at timestamptz
+)
+language sql security definer stable
+set search_path = public, auth
+as $$
+  select c.id, c.place_id, c.user_id, u.email, c.body, c.created_at
+  from public.place_comments c
+  join auth.users u on u.id = c.user_id
+  join public.places p on p.id = c.place_id
+  where c.place_id = p_place_id
+    and public.is_trip_member(p.trip_id, auth.uid())
+  order by c.created_at;
+$$;
+
+grant execute on function public.get_place_comments(uuid) to authenticated;
+
+-- Inserts a comment as the caller and returns it with the author email joined,
+-- so the client can append it to the thread without a second round-trip.
+create or replace function public.add_place_comment(
+  p_place_id uuid,
+  p_body     text
+)
+returns table (
+  id         uuid,
+  place_id   uuid,
+  user_id    uuid,
+  email      text,
+  body       text,
+  created_at timestamptz
+)
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid uuid;
+  v_id  uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+
+  if not exists (
+    select 1 from public.places p
+    where p.id = p_place_id and public.is_trip_member(p.trip_id, v_uid)
+  ) then
+    raise exception 'Not a member of this trip';
+  end if;
+
+  insert into public.place_comments (place_id, user_id, body)
+  values (p_place_id, v_uid, p_body)
+  returning place_comments.id into v_id;
+
+  return query
+    select c.id, c.place_id, c.user_id, u.email, c.body, c.created_at
+    from public.place_comments c
+    join auth.users u on u.id = c.user_id
+    where c.id = v_id;
+end;
+$$;
+
+grant execute on function public.add_place_comment(uuid, text) to authenticated;

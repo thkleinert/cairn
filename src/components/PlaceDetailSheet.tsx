@@ -1,15 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useComments } from '../hooks/useComments';
 import { ImageLightbox } from './ImageLightbox';
 import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
 import {
   X, ExternalLink,
-  Trash2, Save, MapPin, Plus
+  Trash2, Save, MapPin, Plus, SendHorizontal
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
+import { TAG_COLORS } from '../constants';
+
+// Deterministic avatar tint per author, so each person keeps one colour
+// across the thread — same idea as tag colours, hashed off the email.
+function avatarColor(email: string): string {
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) hash = (hash * 31 + email.charCodeAt(i)) | 0;
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length].value;
+}
+
+function authorName(email: string): string {
+  return email.split('@')[0];
+}
 
 // Check that draws itself when the parent gains .visited-icon-btn--visited
 function CheckRing() {
@@ -56,7 +70,17 @@ export function PlaceDetailSheet({
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [showAddSource, setShowAddSource] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
   const galleryRef = useRef<HTMLDivElement>(null);
+
+  const { comments, currentUserId, addComment, deleteComment } = useComments(place.id);
+
+  const handleAddComment = async () => {
+    const body = commentDraft.trim();
+    if (!body) return;
+    setCommentDraft('');
+    await addComment(body);
+  };
 
   useEffect(() => {
     setNotes(place.notes ?? '');
@@ -277,6 +301,73 @@ export function PlaceDetailSheet({
             </div>
           </div>
         )}
+
+        {/* Discussion — a multi-author thread for talking a place through,
+            distinct from the single-author Notes field above. */}
+        <div className="detail-section">
+          <label className="detail-label">
+            Discussion{comments.length > 0 ? ` · ${comments.length}` : ''}
+          </label>
+
+          {comments.length === 0 ? (
+            <p className="comments-empty">
+              {readOnly ? 'No comments yet.' : 'Start the conversation about this place.'}
+            </p>
+          ) : (
+            <ul className="comment-thread">
+              {comments.map(c => {
+                const mine = c.user_id === currentUserId;
+                return (
+                  <li key={c.id} className={`comment-row ${mine ? 'comment-row--mine' : ''}`}>
+                    {!mine && (
+                      <span className="comment-avatar" style={{ background: avatarColor(c.email) }}>
+                        {authorName(c.email)[0].toUpperCase()}
+                      </span>
+                    )}
+                    <div className="comment-bubble">
+                      <div className="comment-meta">
+                        <span className="comment-author">{mine ? 'You' : authorName(c.email)}</span>
+                        <span className="comment-time">
+                          {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                        </span>
+                        {mine && !readOnly && (
+                          <button
+                            className="comment-delete"
+                            onClick={() => deleteComment(c.id)}
+                            aria-label="Delete comment"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                      <p className="comment-body">{c.body}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {!readOnly && (
+            <div className="comment-compose">
+              <input
+                className="input comment-input"
+                placeholder="Add a comment…"
+                value={commentDraft}
+                onChange={e => setCommentDraft(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddComment()}
+              />
+              <button
+                className="comment-send"
+                onClick={handleAddComment}
+                disabled={!commentDraft.trim()}
+                aria-label="Post comment"
+              >
+                <SendHorizontal size={18} />
+              </button>
+            </div>
+          )}
+        </div>
 
         {!readOnly && (
           <div className={dirty ? 'detail-actions' : 'sheet-danger-zone'}>

@@ -1048,6 +1048,85 @@ select.input {
 }
 
 /* ============================================================
+   PLACE COMMENTS — a discussion thread on the place detail sheet
+   ============================================================ */
+.comments-empty {
+  font-size: 14px; color: var(--color-text-secondary);
+  padding: 2px 0 10px;
+}
+
+.comment-thread {
+  display: flex; flex-direction: column; gap: 12px;
+  margin-bottom: 12px;
+}
+
+.comment-row {
+  display: flex; align-items: flex-end; gap: 8px;
+  max-width: 88%;
+}
+.comment-row--mine {
+  flex-direction: row-reverse;
+  margin-left: auto;
+}
+
+.comment-avatar {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 700;
+}
+
+.comment-bubble {
+  background: var(--color-bg);
+  border-radius: 14px;
+  padding: 8px 12px 10px;
+  min-width: 0;
+}
+.comment-row--mine .comment-bubble {
+  background: var(--color-primary-light);
+}
+
+.comment-meta {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 2px;
+}
+.comment-author {
+  font-size: 12.5px; font-weight: 700; color: var(--color-text);
+}
+.comment-time {
+  font-size: 11.5px; color: var(--color-text-secondary);
+}
+.comment-delete {
+  margin-left: 2px;
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  color: var(--color-muted);
+}
+.comment-delete:active { background: rgba(0,0,0,0.08); color: var(--color-text); }
+
+.comment-body {
+  font-size: 14px; line-height: 1.45; color: var(--color-text);
+  word-break: break-word;
+}
+
+.comment-compose {
+  display: flex; align-items: center; gap: 8px;
+}
+.comment-input { flex: 1; }
+.comment-send {
+  flex-shrink: 0;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  transition: transform 0.15s var(--spring-bounce), opacity 0.15s;
+}
+.comment-send:active { transform: scale(0.9); }
+.comment-send:disabled { opacity: 0.4; }
+
+/* ============================================================
    TAGS
    ============================================================ */
 .tag-chips { display: flex; flex-wrap: wrap; gap: 8px; }

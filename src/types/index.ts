@@ -49,6 +49,15 @@ export interface PlaceImage {
   created_at: string;
 }
 
+export interface PlaceComment {
+  id: string;
+  place_id: string;
+  user_id: string;
+  email: string;
+  body: string;
+  created_at: string;
+}
+
 export interface Place {
   id: string;
   trip_id: string;
