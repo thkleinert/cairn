@@ -554,19 +554,31 @@ create table public.activity_seen (
   seen_at timestamptz not null default now()
 );
 
--- Per-item read receipts, for tapping a single notification read.
+-- Per-item read receipts (tapping through / left-swipe) and per-user
+-- dismissals (right-swipe delete). Both hide the item from that user's feed;
+-- the shared activity row itself stays for other trip members.
 create table public.activity_reads (
   user_id     uuid not null references auth.users(id) on delete cascade,
   activity_id uuid not null references public.activity(id) on delete cascade,
   read_at     timestamptz not null default now(),
   primary key (user_id, activity_id)
 );
+create table public.activity_dismissed (
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  activity_id  uuid not null references public.activity(id) on delete cascade,
+  dismissed_at timestamptz not null default now(),
+  primary key (user_id, activity_id)
+);
 
 alter table public.activity enable row level security;
 alter table public.activity_seen enable row level security;
 alter table public.activity_reads enable row level security;
+alter table public.activity_dismissed enable row level security;
 
 create policy "activity_reads_all" on public.activity_reads for all
+  using (user_id = public.auth_uid())
+  with check (user_id = public.auth_uid());
+create policy "activity_dismissed_all" on public.activity_dismissed for all
   using (user_id = public.auth_uid())
   with check (user_id = public.auth_uid());
 
@@ -606,9 +618,10 @@ $$;
 create trigger comment_added_activity after insert on public.place_comments
   for each row execute function public.log_comment_added();
 
--- Feed for the current user: activity across their trips, other people's
--- actions only, newest first, with author email + place/trip names joined in.
--- `read` is true if the item predates the mark-all cursor OR was tapped.
+-- Inbox for the current user: active (unread AND not dismissed) activity
+-- across their trips, other people's actions only, newest first, with author
+-- email + place/trip names joined in. Read or deleted items are filtered out
+-- entirely — the feed only ever shows what still needs attention.
 create or replace function public.get_activity()
 returns table (
   id          uuid,
@@ -619,8 +632,7 @@ returns table (
   place_id    uuid,
   place_name  text,
   snippet     text,
-  created_at  timestamptz,
-  read        boolean
+  created_at  timestamptz
 )
 language sql security definer stable
 set search_path = public, auth
@@ -634,8 +646,7 @@ as $$
     a.place_id,
     p.name,
     c.body,
-    a.created_at,
-    coalesce(a.created_at <= s.seen_at, false) or r.activity_id is not null
+    a.created_at
   from public.activity a
   join auth.users u on u.id = a.actor_id
   join public.trips t on t.id = a.trip_id
@@ -643,15 +654,19 @@ as $$
   left join public.place_comments c on c.id = a.comment_id
   left join public.activity_seen s on s.user_id = auth.uid()
   left join public.activity_reads r on r.activity_id = a.id and r.user_id = auth.uid()
+  left join public.activity_dismissed d on d.activity_id = a.id and d.user_id = auth.uid()
   where public.is_trip_member(a.trip_id, auth.uid())
     and a.actor_id <> auth.uid()
+    and not coalesce(a.created_at <= s.seen_at, false)  -- not marked-all-read
+    and r.activity_id is null                            -- not individually read
+    and d.activity_id is null                            -- not dismissed
   order by a.created_at desc
   limit 50;
 $$;
 
 grant execute on function public.get_activity() to authenticated;
 
--- Mark a single item read — called when you tap through to its place.
+-- Mark a single item read — tapping through to its place, or a left-swipe.
 create or replace function public.mark_activity_read(p_activity_id uuid)
 returns void
 language sql security definer
@@ -663,6 +678,19 @@ as $$
 $$;
 
 grant execute on function public.mark_activity_read(uuid) to authenticated;
+
+-- Dismiss (delete) a single item for this user — a right-swipe.
+create or replace function public.dismiss_activity(p_activity_id uuid)
+returns void
+language sql security definer
+set search_path = public, auth
+as $$
+  insert into public.activity_dismissed (user_id, activity_id)
+  values (auth.uid(), p_activity_id)
+  on conflict (user_id, activity_id) do nothing;
+$$;
+
+grant execute on function public.dismiss_activity(uuid) to authenticated;
 
 -- Mark everything up to now as seen — the "Mark all read" button.
 create or replace function public.mark_activity_seen()

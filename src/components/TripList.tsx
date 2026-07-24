@@ -51,7 +51,7 @@ export function TripList({ userId, onSelectTrip }: Props) {
   const [showNotifications, setShowNotifications] = useState(false);
   const scrollRef = useRef<HTMLUListElement>(null);
 
-  const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const { notifications, unreadCount, markRead, deleteNotification, markAllRead } = useNotifications();
 
   // Tapping a notification marks just that one read and jumps to its place;
   // opening/closing the panel no longer marks anything on its own — that's
@@ -122,12 +122,10 @@ export function TripList({ userId, onSelectTrip }: Props) {
           <button
             className="btn-icon notif-bell"
             onClick={() => setShowNotifications(true)}
-            aria-label={unreadCount > 0 ? `Activity, ${unreadCount} unread` : 'Activity'}
+            aria-label={unreadCount > 0 ? 'Activity, unread' : 'Activity'}
           >
             <Bell size={20} />
-            {unreadCount > 0 && (
-              <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
-            )}
+            {unreadCount > 0 && <span className="notif-dot-badge" aria-hidden="true" />}
           </button>
           <button
             className={`btn-icon ${confirmSignOut ? 'btn-icon--danger' : ''}`}
@@ -194,6 +192,8 @@ export function TripList({ userId, onSelectTrip }: Props) {
           notifications={notifications}
           unreadCount={unreadCount}
           onSelect={handleActivityClick}
+          onRead={markRead}
+          onDelete={deleteNotification}
           onMarkAllRead={markAllRead}
           onClose={() => setShowNotifications(false)}
         />

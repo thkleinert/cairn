@@ -13,21 +13,23 @@ export interface Notification {
   place_name: string;
   snippet?: string;   // comment body, for comment_added
   created_at: string;
-  read: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // PROTOTYPE FLAG. While true, the activity feed is local placeholder data and
-// "mark all read" only mutates local state — nothing hits Supabase. Flip to
-// false once the `activity` table + trigger + get_activity RPC in
-// supabase/schema.sql are applied; the live implementation below takes over.
+// read/delete only mutate local state — nothing hits Supabase. Flip to false
+// once the activity tables + RPCs in supabase/schema.sql are applied; the
+// live implementation below takes over.
 const USE_MOCK = true;
 // ─────────────────────────────────────────────────────────────────────────
 
-// Module-level so read state survives the TripList remounting (e.g. after you
-// navigate into a trip and back). In the live path this is persisted per-user
-// in activity_reads / activity_seen instead; this Set is mock-only.
+// This is an inbox, not a feed: reading OR deleting removes an item from the
+// list, so everything shown is always unread/active. Module-level sets keep
+// those decisions across TripList remounts (e.g. after you navigate into a
+// trip and back). The live path persists them per-user in
+// activity_reads / activity_dismissed / activity_seen instead.
 const mockReadIds = new Set<string>();
+const mockDeletedIds = new Set<string>();
 
 function minutesAgo(mins: number): string {
   return new Date(Date.now() - mins * 60_000).toISOString();
@@ -69,7 +71,6 @@ async function buildMock(): Promise<Notification[]> {
       place_name: commentPlace.name,
       snippet: 'Heard the sunrise canoe tour is the move for wildlife — gibbons + hornbills.',
       created_at: minutesAgo(6),
-      read: false,
     },
   ];
   if (others[0]) {
@@ -82,7 +83,6 @@ async function buildMock(): Promise<Notification[]> {
       place_id: others[0].id,
       place_name: others[0].name,
       created_at: minutesAgo(52),
-      read: false,
     });
   }
   if (others[1]) {
@@ -95,10 +95,10 @@ async function buildMock(): Promise<Notification[]> {
       place_id: others[1].id,
       place_name: others[1].name,
       created_at: minutesAgo(60 * 5),
-      read: true,
     });
   }
-  return out;
+  // Anything already read or deleted this session stays gone.
+  return out.filter(n => !mockReadIds.has(n.id) && !mockDeletedIds.has(n.id));
 }
 
 export function useNotifications() {
@@ -108,13 +108,12 @@ export function useNotifications() {
   const load = useCallback(async () => {
     setLoading(true);
     if (USE_MOCK) {
-      const built = await buildMock();
-      setNotifications(built.map(n => (mockReadIds.has(n.id) ? { ...n, read: true } : n)));
+      setNotifications(await buildMock());
       setLoading(false);
       return;
     }
-    // Live: activity across every trip the user belongs to, newest first,
-    // excluding the user's own actions, with a per-user read cursor.
+    // Live: unread, non-dismissed activity across every trip the user belongs
+    // to, newest first, excluding the user's own actions.
     const { data } = await supabase.rpc('get_activity');
     setNotifications((data as Notification[]) ?? []);
     setLoading(false);
@@ -122,25 +121,35 @@ export function useNotifications() {
 
   useEffect(() => { load(); }, [load]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Everything in the list is active/unread — reading or deleting removes it.
+  const unreadCount = notifications.length;
 
-  // Mark a single item read — used when you tap through to its place.
+  const drop = (id: string) => setNotifications(prev => prev.filter(n => n.id !== id));
+
+  // Mark one read — via tapping through to its place, or a left-swipe.
   const markRead = async (id: string) => {
-    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
+    drop(id);
     if (USE_MOCK) { mockReadIds.add(id); return; }
     await supabase.rpc('mark_activity_read', { p_activity_id: id });
   };
 
-  // Clear everything at once — the dedicated "Mark all read" affordance,
-  // no navigation involved.
+  // Delete one outright — a right-swipe. (Per-user dismissal; the underlying
+  // activity row stays for other trip members.)
+  const deleteNotification = async (id: string) => {
+    drop(id);
+    if (USE_MOCK) { mockDeletedIds.add(id); return; }
+    await supabase.rpc('dismiss_activity', { p_activity_id: id });
+  };
+
+  // Clear the whole list at once — the "Mark all read" button.
   const markAllRead = async () => {
     setNotifications(prev => {
       if (USE_MOCK) prev.forEach(n => mockReadIds.add(n.id));
-      return prev.map(n => ({ ...n, read: true }));
+      return [];
     });
     if (USE_MOCK) return;
     await supabase.rpc('mark_activity_seen');
   };
 
-  return { notifications, unreadCount, loading, markRead, markAllRead, reload: load };
+  return { notifications, unreadCount, loading, markRead, deleteNotification, markAllRead, reload: load };
 }

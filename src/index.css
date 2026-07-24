@@ -1657,15 +1657,13 @@ select.input {
    NOTIFICATIONS — bell + badge, and the activity sheet
    ============================================================ */
 .notif-bell { position: relative; }
-.notif-badge {
-  position: absolute; top: 2px; right: 2px;
-  min-width: 16px; height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
+.notif-dot-badge {
+  /* sits at the bell's upper-right so it just touches the glyph */
+  position: absolute; top: 8px; right: 10px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
   background: var(--color-danger);
-  color: #fff;
-  font-size: 10px; font-weight: 700; line-height: 16px;
-  text-align: center;
+  /* ring in the header colour so the dot reads as a clean cutout */
   border: 2px solid var(--color-surface);
   box-sizing: content-box;
 }
@@ -1681,16 +1679,39 @@ select.input {
 .notif-list {
   display: flex; flex-direction: column;
 }
+/* Each row sits above two colour lanes it slides over when swiped. */
+.notif-swipe {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
+}
+.notif-list li:last-child { border-bottom: none; }
+
+.notif-lane {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 20px;
+  font-size: 14px; font-weight: 600; color: #fff;
+  /* Both lanes stack (inset:0); keep the inactive one fully transparent so
+     it never tints the active one showing through beneath it. */
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.notif-lane.is-active { opacity: 1; }
+/* read is revealed by a right-swipe (content moves right → left side shows);
+   delete by a left-swipe (right side shows). */
+.notif-lane--read { justify-content: flex-start; background: var(--color-primary); }
+.notif-lane--delete { justify-content: flex-end; background: var(--color-danger); }
+
 .notif-row {
+  position: relative; z-index: 1;
   width: 100%;
   display: flex; align-items: flex-start; gap: 12px;
   padding: 12px 4px;
-  border-bottom: 1px solid var(--color-border);
   text-align: left;
-  transition: background 0.12s;
+  background: var(--color-surface);
+  touch-action: pan-y;
 }
-.notif-list li:last-child .notif-row { border-bottom: none; }
-.notif-row:active { background: var(--color-bg); }
 
 .notif-icon {
   flex-shrink: 0;
@@ -1718,11 +1739,11 @@ select.input {
   margin-top: 4px;
   font-size: 12px; color: var(--color-muted);
 }
-.notif-dot {
-  flex-shrink: 0;
-  align-self: center;
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--color-primary);
+
+.notif-swipe-hint {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px; color: var(--color-muted);
 }
 
 .notif-empty {
