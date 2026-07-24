@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { MapPin, MessageCircle, Bell, Check, Trash2 } from 'lucide-react';
+import { MapPin, MessageCircle, Bell, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -9,8 +9,7 @@ interface Props {
   notifications: Notification[];
   unreadCount: number;
   onSelect: (n: Notification) => void;
-  onRead: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDismiss: (id: string) => void;
   onMarkAllRead: () => void;
   onClose: () => void;
 }
@@ -21,20 +20,20 @@ function authorName(email: string): string {
 
 const THRESHOLD = 80; // px of horizontal travel to commit a swipe action
 
-// A single notification row that can be swiped: right past the threshold marks
-// it read, left past the threshold deletes it. A short drag that doesn't cross
-// the threshold snaps back; a plain tap (no real drag) falls through to
-// onSelect. Behind the row sit the two coloured action lanes it slides over.
+// A single notification row that can be swiped left past the threshold to
+// dismiss it — the item just leaves the inbox, same as tapping through to its
+// place. A short drag that doesn't cross the threshold snaps back; a rightward
+// drag is ignored; a plain tap (no real drag) falls through to onSelect. Behind
+// the row sits the dismiss lane it slides over.
 function SwipeableNotification({
-  n, onSelect, onRead, onDelete,
+  n, onSelect, onDismiss,
 }: {
   n: Notification;
   onSelect: (n: Notification) => void;
-  onRead: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDismiss: (id: string) => void;
 }) {
   const [dx, setDx] = useState(0);
-  const [exiting, setExiting] = useState<null | 'read' | 'delete'>(null);
+  const [exiting, setExiting] = useState(false);
   const startX = useRef(0);
   const dragging = useRef(false);
   const swiped = useRef(false);
@@ -51,37 +50,34 @@ function SwipeableNotification({
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (!dragging.current) return;
-    const delta = e.clientX - startX.current;
+    // Left-only: clamp rightward drag to 0 so the row never reveals empty space.
+    const delta = Math.min(0, e.clientX - startX.current);
     if (Math.abs(delta) > 6) swiped.current = true;
     dxRef.current = delta;
     setDx(delta);
   };
 
-  const finish = (dir: 'read' | 'delete') => {
-    setExiting(dir);
+  const finish = () => {
+    setExiting(true);
     // let the row slide off, then hand off to the parent to actually remove it
-    setTimeout(() => (dir === 'read' ? onRead(n.id) : onDelete(n.id)), 180);
+    setTimeout(() => onDismiss(n.id), 180);
   };
 
   const onPointerUp = () => {
     dragging.current = false;
     const delta = dxRef.current;
     dxRef.current = 0;
-    if (delta >= THRESHOLD) finish('read');
-    else if (delta <= -THRESHOLD) finish('delete');
+    if (delta <= -THRESHOLD) finish();
     else setDx(0);
   };
 
-  const translate = exiting === 'read' ? 600 : exiting === 'delete' ? -600 : dx;
-  const revealing = translate > 0 ? 'read' : translate < 0 ? 'delete' : null;
+  const translate = exiting ? -600 : dx;
+  const revealing = translate < 0;
 
   return (
     <li className="notif-swipe">
-      <div className={`notif-lane notif-lane--read ${revealing === 'read' ? 'is-active' : ''}`}>
-        <Check size={18} /> Read
-      </div>
-      <div className={`notif-lane notif-lane--delete ${revealing === 'delete' ? 'is-active' : ''}`}>
-        Delete <Trash2 size={18} />
+      <div className={`notif-lane notif-lane--delete ${revealing ? 'is-active' : ''}`}>
+        Dismiss <Trash2 size={18} />
       </div>
       <button
         className="notif-row"
@@ -116,7 +112,7 @@ function SwipeableNotification({
 }
 
 export function NotificationsSheet({
-  notifications, unreadCount, onSelect, onRead, onDelete, onMarkAllRead, onClose,
+  notifications, unreadCount, onSelect, onDismiss, onMarkAllRead, onClose,
 }: Props) {
   const { sheetRef, handleProps } = useSwipeToClose(onClose);
   useEscapeClose(onClose);
@@ -155,12 +151,11 @@ export function NotificationsSheet({
                   key={n.id}
                   n={n}
                   onSelect={onSelect}
-                  onRead={onRead}
-                  onDelete={onDelete}
+                  onDismiss={onDismiss}
                 />
               ))}
             </ul>
-            <p className="notif-swipe-hint">Swipe right to mark read · left to delete</p>
+            <p className="notif-swipe-hint">Swipe left to dismiss</p>
           </>
         )}
       </div>

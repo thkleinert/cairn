@@ -527,10 +527,11 @@ grant execute on function public.add_place_comment(uuid, text) to authenticated;
 -- a place or posts a comment, and each user sees activity from every trip they
 -- belong to (except their own actions).
 --
--- An item counts as read if EITHER it predates the user's "mark all read"
--- cursor (activity_seen) OR it was individually tapped (activity_reads). The
--- feed itself is never cleared — it's a rolling window (get_activity returns
--- the newest 50); read items simply stop contributing to the unread badge.
+-- An item leaves a user's inbox if EITHER it predates their "mark all read"
+-- cursor (activity_seen) OR it was individually dismissed (activity_dismissed)
+-- — by tapping through to its place or swiping it away, which are the same
+-- action. The feed itself is never cleared — it's a rolling window
+-- (get_activity returns the newest 50); dismissed items simply drop out.
 --
 -- Apply this block, then flip USE_MOCK to false in
 -- src/hooks/useNotifications.ts to go live.
@@ -554,15 +555,10 @@ create table public.activity_seen (
   seen_at timestamptz not null default now()
 );
 
--- Per-item read receipts (tapping through / left-swipe) and per-user
--- dismissals (right-swipe delete). Both hide the item from that user's feed;
--- the shared activity row itself stays for other trip members.
-create table public.activity_reads (
-  user_id     uuid not null references auth.users(id) on delete cascade,
-  activity_id uuid not null references public.activity(id) on delete cascade,
-  read_at     timestamptz not null default now(),
-  primary key (user_id, activity_id)
-);
+-- Per-user, per-item dismissals — recorded whether the user tapped through to
+-- the place or swiped the row away (one and the same action). Hides the item
+-- from that user's feed; the shared activity row itself stays for other trip
+-- members.
 create table public.activity_dismissed (
   user_id      uuid not null references auth.users(id) on delete cascade,
   activity_id  uuid not null references public.activity(id) on delete cascade,
@@ -572,12 +568,8 @@ create table public.activity_dismissed (
 
 alter table public.activity enable row level security;
 alter table public.activity_seen enable row level security;
-alter table public.activity_reads enable row level security;
 alter table public.activity_dismissed enable row level security;
 
-create policy "activity_reads_all" on public.activity_reads for all
-  using (user_id = public.auth_uid())
-  with check (user_id = public.auth_uid());
 create policy "activity_dismissed_all" on public.activity_dismissed for all
   using (user_id = public.auth_uid())
   with check (user_id = public.auth_uid());
@@ -618,10 +610,10 @@ $$;
 create trigger comment_added_activity after insert on public.place_comments
   for each row execute function public.log_comment_added();
 
--- Inbox for the current user: active (unread AND not dismissed) activity
--- across their trips, other people's actions only, newest first, with author
--- email + place/trip names joined in. Read or deleted items are filtered out
--- entirely — the feed only ever shows what still needs attention.
+-- Inbox for the current user: active (not-yet-dismissed) activity across their
+-- trips, other people's actions only, newest first, with author email +
+-- place/trip names joined in. Dismissed items are filtered out entirely — the
+-- feed only ever shows what still needs attention.
 create or replace function public.get_activity()
 returns table (
   id          uuid,
@@ -653,12 +645,10 @@ as $$
   left join public.places p on p.id = a.place_id
   left join public.place_comments c on c.id = a.comment_id
   left join public.activity_seen s on s.user_id = auth.uid()
-  left join public.activity_reads r on r.activity_id = a.id and r.user_id = auth.uid()
   left join public.activity_dismissed d on d.activity_id = a.id and d.user_id = auth.uid()
   where public.is_trip_member(a.trip_id, auth.uid())
     and a.actor_id <> auth.uid()
     and not coalesce(a.created_at <= s.seen_at, false)  -- not marked-all-read
-    and r.activity_id is null                            -- not individually read
     and d.activity_id is null                            -- not dismissed
   order by a.created_at desc
   limit 50;
@@ -666,20 +656,8 @@ $$;
 
 grant execute on function public.get_activity() to authenticated;
 
--- Mark a single item read — tapping through to its place, or a left-swipe.
-create or replace function public.mark_activity_read(p_activity_id uuid)
-returns void
-language sql security definer
-set search_path = public, auth
-as $$
-  insert into public.activity_reads (user_id, activity_id)
-  values (auth.uid(), p_activity_id)
-  on conflict (user_id, activity_id) do nothing;
-$$;
-
-grant execute on function public.mark_activity_read(uuid) to authenticated;
-
--- Dismiss (delete) a single item for this user — a right-swipe.
+-- Dismiss a single item for this user — tapping through to its place or
+-- swiping it away, which are the same action.
 create or replace function public.dismiss_activity(p_activity_id uuid)
 returns void
 language sql security definer

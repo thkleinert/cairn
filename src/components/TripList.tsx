@@ -51,13 +51,13 @@ export function TripList({ userId, onSelectTrip }: Props) {
   const [showNotifications, setShowNotifications] = useState(false);
   const scrollRef = useRef<HTMLUListElement>(null);
 
-  const { notifications, unreadCount, markRead, deleteNotification, markAllRead } = useNotifications();
+  const { notifications, unreadCount, dismissNotification, markAllRead } = useNotifications();
 
-  // Tapping a notification marks just that one read and jumps to its place;
-  // opening/closing the panel no longer marks anything on its own — that's
+  // Tapping a notification dismisses just that one and jumps to its place;
+  // opening/closing the panel no longer dismisses anything on its own — that's
   // what the explicit "Mark all read" button is for.
   const handleActivityClick = (n: Notification) => {
-    markRead(n.id);
+    dismissNotification(n.id);
     setShowNotifications(false);
     const trip = trips.find(t => t.id === n.trip_id);
     if (trip) {
@@ -192,8 +192,7 @@ export function TripList({ userId, onSelectTrip }: Props) {
           notifications={notifications}
           unreadCount={unreadCount}
           onSelect={handleActivityClick}
-          onRead={markRead}
-          onDelete={deleteNotification}
+          onDismiss={dismissNotification}
           onMarkAllRead={markAllRead}
           onClose={() => setShowNotifications(false)}
         />
