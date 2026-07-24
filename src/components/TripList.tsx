@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, MapPin, LogOut, Calendar } from 'lucide-react';
+import { Plus, MapPin, LogOut, Calendar, Bell } from 'lucide-react';
 import type { Trip } from '../types';
 import { useTrips } from '../hooks/useTrips';
 import { useAuth } from '../hooks/useAuth';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useNotifications } from '../hooks/useNotifications';
+import { NotificationsSheet } from './NotificationsSheet';
 import { DateField } from './DateField';
 import { format, parseISO } from 'date-fns';
 
@@ -46,7 +48,17 @@ export function TripList({ userId, onSelectTrip }: Props) {
   const [createError, setCreateError] = useState('');
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [compact, setCompact] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const scrollRef = useRef<HTMLUListElement>(null);
+
+  const { notifications, unreadCount, markAllRead } = useNotifications();
+
+  // Show the panel with unread items still marked, then clear them on close —
+  // so you can see what's new while it's open, and the badge is gone after.
+  const closeNotifications = () => {
+    setShowNotifications(false);
+    markAllRead();
+  };
 
   useEscapeClose(() => setShowCreate(false));
 
@@ -99,6 +111,16 @@ export function TripList({ userId, onSelectTrip }: Props) {
           <span className="trip-list-rule" aria-hidden="true" />
         </div>
         <div className="trip-list-actions">
+          <button
+            className="btn-icon notif-bell"
+            onClick={() => setShowNotifications(true)}
+            aria-label={unreadCount > 0 ? `Activity, ${unreadCount} unread` : 'Activity'}
+          >
+            <Bell size={20} />
+            {unreadCount > 0 && (
+              <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
+            )}
+          </button>
           <button
             className={`btn-icon ${confirmSignOut ? 'btn-icon--danger' : ''}`}
             onClick={handleSignOut}
@@ -158,6 +180,13 @@ export function TripList({ userId, onSelectTrip }: Props) {
           <Plus size={26} />
         </button>
       </div>
+
+      {showNotifications && (
+        <NotificationsSheet
+          notifications={notifications}
+          onClose={closeNotifications}
+        />
+      )}
 
       {showCreate && (
         <div className="bottom-sheet-overlay" onClick={() => setShowCreate(false)}>

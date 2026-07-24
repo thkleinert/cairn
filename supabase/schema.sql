@@ -519,3 +519,125 @@ end;
 $$;
 
 grant execute on function public.add_place_comment(uuid, text) to authenticated;
+
+-- ============================================================
+-- ACTIVITY FEED  (feature/place-comments prototype)
+-- ------------------------------------------------------------
+-- Powers the in-app notification bell: a row is recorded whenever someone adds
+-- a place or posts a comment, and each user sees activity from every trip they
+-- belong to (except their own actions). "Unread" is anything newer than the
+-- user's last-seen cursor. Apply this block, then flip USE_MOCK to false in
+-- src/hooks/useNotifications.ts to go live.
+-- ============================================================
+
+create table public.activity (
+  id         uuid primary key default uuid_generate_v4(),
+  trip_id    uuid not null references public.trips(id) on delete cascade,
+  actor_id   uuid not null references auth.users(id) on delete cascade,
+  type       text not null check (type in ('place_added', 'comment_added')),
+  place_id   uuid references public.places(id) on delete cascade,
+  comment_id uuid references public.place_comments(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index activity_trip_id_idx on public.activity(trip_id, created_at desc);
+
+-- Per-user "I've seen everything up to here" cursor for unread counting.
+create table public.activity_seen (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  seen_at timestamptz not null default now()
+);
+
+alter table public.activity enable row level security;
+alter table public.activity_seen enable row level security;
+
+create policy "activity_select" on public.activity for select
+  using (public.is_trip_member(trip_id, public.auth_uid()));
+
+create policy "activity_seen_all" on public.activity_seen for all
+  using (user_id = public.auth_uid())
+  with check (user_id = public.auth_uid());
+
+-- Record a row whenever a place is added…
+create or replace function public.log_place_added()
+returns trigger language plpgsql security definer as $$
+begin
+  insert into public.activity (trip_id, actor_id, type, place_id)
+  values (new.trip_id, coalesce(new.added_by, auth.uid()), 'place_added', new.id);
+  return new;
+end;
+$$;
+
+create trigger place_added_activity after insert on public.places
+  for each row execute function public.log_place_added();
+
+-- …and whenever a comment is posted.
+create or replace function public.log_comment_added()
+returns trigger language plpgsql security definer as $$
+declare
+  v_trip uuid;
+begin
+  select trip_id into v_trip from public.places where id = new.place_id;
+  insert into public.activity (trip_id, actor_id, type, place_id, comment_id)
+  values (v_trip, new.user_id, 'comment_added', new.place_id, new.id);
+  return new;
+end;
+$$;
+
+create trigger comment_added_activity after insert on public.place_comments
+  for each row execute function public.log_comment_added();
+
+-- Feed for the current user: activity across their trips, other people's
+-- actions only, newest first, with author email + place/trip names joined in
+-- and a per-row read flag derived from their last-seen cursor.
+create or replace function public.get_activity()
+returns table (
+  id          uuid,
+  type        text,
+  actor_email text,
+  trip_id     uuid,
+  trip_name   text,
+  place_name  text,
+  snippet     text,
+  created_at  timestamptz,
+  read        boolean
+)
+language sql security definer stable
+set search_path = public, auth
+as $$
+  select
+    a.id,
+    a.type,
+    u.email,
+    a.trip_id,
+    t.name,
+    p.name,
+    c.body,
+    a.created_at,
+    coalesce(a.created_at <= s.seen_at, false)
+  from public.activity a
+  join auth.users u on u.id = a.actor_id
+  join public.trips t on t.id = a.trip_id
+  left join public.places p on p.id = a.place_id
+  left join public.place_comments c on c.id = a.comment_id
+  left join public.activity_seen s on s.user_id = auth.uid()
+  where public.is_trip_member(a.trip_id, auth.uid())
+    and a.actor_id <> auth.uid()
+  order by a.created_at desc
+  limit 50;
+$$;
+
+grant execute on function public.get_activity() to authenticated;
+
+-- Mark everything up to now as seen (called when the bell panel closes).
+create or replace function public.mark_activity_seen()
+returns void
+language sql security definer
+set search_path = public, auth
+as $$
+  insert into public.activity_seen (user_id, seen_at)
+  values (auth.uid(), now())
+  on conflict (user_id) do update set seen_at = now();
+$$;
+
+grant execute on function public.mark_activity_seen() to authenticated;

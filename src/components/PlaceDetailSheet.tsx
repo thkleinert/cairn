@@ -7,7 +7,7 @@ import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
 import {
   X, ExternalLink,
-  Trash2, Save, MapPin, Plus, SendHorizontal
+  Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -71,6 +71,7 @@ export function PlaceDetailSheet({
   const [showAddSource, setShowAddSource] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
+  const [commentsOpen, setCommentsOpen] = useState(true);
   const galleryRef = useRef<HTMLDivElement>(null);
 
   const { comments, currentUserId, addComment, deleteComment } = useComments(place.id);
@@ -303,13 +304,19 @@ export function PlaceDetailSheet({
         )}
 
         {/* Discussion — a multi-author thread for talking a place through,
-            distinct from the single-author Notes field above. */}
+            distinct from the single-author Notes field above. Collapsible
+            so a long thread doesn't bury the rest of the sheet. */}
         <div className="detail-section">
-          <label className="detail-label">
+          <button
+            className="detail-label detail-label--toggle"
+            onClick={() => setCommentsOpen(o => !o)}
+            aria-expanded={commentsOpen}
+          >
+            <ChevronRight size={14} className={`section-caret ${commentsOpen ? 'section-caret--open' : ''}`} />
             Discussion{comments.length > 0 ? ` · ${comments.length}` : ''}
-          </label>
+          </button>
 
-          {comments.length === 0 ? (
+          {!commentsOpen ? null : comments.length === 0 ? (
             <p className="comments-empty">
               {readOnly ? 'No comments yet.' : 'Start the conversation about this place.'}
             </p>
@@ -348,7 +355,7 @@ export function PlaceDetailSheet({
             </ul>
           )}
 
-          {!readOnly && (
+          {commentsOpen && !readOnly && (
             <div className="comment-compose">
               <input
                 className="input comment-input"
