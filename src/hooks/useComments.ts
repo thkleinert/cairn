@@ -8,7 +8,7 @@ import type { PlaceComment } from '../types';
 // this can be demoed without the `place_comments` table existing yet. Flip to
 // false once the schema in supabase/schema.sql has been applied, and the live
 // Supabase implementation below takes over unchanged.
-const USE_MOCK = true;
+const USE_MOCK = false;
 // ─────────────────────────────────────────────────────────────────────────
 
 function minutesAgo(mins: number): string {
