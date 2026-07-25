@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, MapPin, LogOut, Calendar, Bell } from 'lucide-react';
+import { Plus, MapPin, LogOut, Calendar, Bell, Users } from 'lucide-react';
 import type { Trip } from '../types';
 import { useTrips } from '../hooks/useTrips';
 import { useAuth } from '../hooks/useAuth';
@@ -163,7 +163,14 @@ export function TripList({ userId, onSelectTrip }: Props) {
                   </div>
                 )}
                 <div className="trip-card-body">
-                  <h2 className="trip-card-name">{trip.name}</h2>
+                  <div className="trip-card-title-row">
+                    <h2 className="trip-card-name">{trip.name}</h2>
+                    {trip.is_shared && (
+                      <span className="trip-card-shared">
+                        <Users size={12} /> Shared
+                      </span>
+                    )}
+                  </div>
                   {(trip.start_date || trip.end_date) && (
                     <div className="trip-card-meta">
                       <Calendar size={12} />

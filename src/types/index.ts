@@ -14,6 +14,9 @@ export interface Trip {
   owner_id: string;
   created_at: string;
   updated_at: string;
+  // Client-side: true when the trip has more than one member (you shared it,
+  // or it was shared with you). Derived in useTrips, not a DB column.
+  is_shared?: boolean;
 }
 
 export interface TripMember {
