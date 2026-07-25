@@ -700,7 +700,17 @@ select.input {
    BOTTOM SHEETS
    ============================================================ */
 .bottom-sheet-overlay {
-  position: fixed; inset: 0;
+  /* Sized to --visual-height (window.visualViewport, see index.html), NOT
+     inset:0. A sheet with an autofocused input (New Trip, Add Place) opens the
+     keyboard; on iOS the layout viewport — and so a plain inset:0 / bottom:0 —
+     doesn't shrink for it, leaving the bottom-aligned sheet stranded behind the
+     keyboard at the bottom of the page. --visual-height does track the keyboard,
+     so anchoring top:0 with that height puts the overlay's bottom at the top of
+     the keyboard, and the sheet sits just above it. Same var the search
+     predictions cap already trusts for the real visible area. */
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--visual-height, 100dvh);
   background: var(--color-overlay);
   z-index: 50;
   display: flex; flex-direction: column; justify-content: flex-end;
