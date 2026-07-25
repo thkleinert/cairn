@@ -86,7 +86,16 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
       setInviteSuccess(`${inviteEmail.trim()} added as ${inviteRole}`);
       setInviteEmail('');
     } catch (e) {
-      setInviteError(e instanceof Error ? e.message : 'Failed to invite');
+      // Supabase throws a PostgrestError (a plain object, not an Error), so
+      // pull .message off either shape rather than falling back to a generic
+      // string — the RPC's messages ("No account found with email …", etc.)
+      // are what the user actually needs to see.
+      const message =
+        e instanceof Error ? e.message
+        : typeof e === 'object' && e !== null && 'message' in e
+          ? String((e as { message: unknown }).message)
+          : 'Failed to invite';
+      setInviteError(message);
     } finally {
       setInviting(false);
     }
