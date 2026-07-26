@@ -11,7 +11,6 @@ create table public.trips (
   description text,
   start_date  date,
   end_date    date,
-  status      text not null default 'planning' check (status in ('planning','ongoing','completed')),
   share_token uuid unique default uuid_generate_v4(),
   cover_image_url text,
   owner_id    uuid not null references auth.users(id) on delete cascade,
@@ -93,7 +92,9 @@ create trigger places_updated_at before update on public.places
 -- ============================================================
 
 create or replace function public.add_trip_owner_as_member()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer
+set search_path = public
+as $$
 begin
   insert into public.trip_members (trip_id, user_id, role)
   values (new.id, new.owner_id, 'owner');
@@ -109,10 +110,23 @@ create trigger trip_created after insert on public.trips
 -- ============================================================
 
 create or replace function public.is_trip_member(trip uuid, usr uuid)
-returns boolean language sql security definer stable as $$
+returns boolean language sql security definer stable
+set search_path = public
+as $$
   select exists (
     select 1 from public.trip_members
     where trip_id = trip and user_id = usr
+  );
+$$;
+
+-- Writes require owner or editor; viewers are genuinely read-only.
+create or replace function public.is_trip_editor(trip uuid, usr uuid)
+returns boolean language sql security definer stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.trip_members
+    where trip_id = trip and user_id = usr and role in ('owner', 'editor')
   );
 $$;
 
@@ -188,8 +202,16 @@ create policy "trip_insert" on public.trips for insert
   with check (owner_id = public.auth_uid());
 
 create policy "trip_update" on public.trips for update
-  using (public.is_trip_member(id, public.auth_uid()))
-  with check (public.is_trip_member(id, public.auth_uid()));
+  using (public.is_trip_editor(id, public.auth_uid()))
+  with check (public.is_trip_editor(id, public.auth_uid()));
+
+-- Editors may change trip *content* only. owner_id and share_token sit outside
+-- this column grant, so a PATCH touching them is rejected outright — without
+-- this, any member could seize ownership by writing owner_id. (updated_at is
+-- written by a trigger, which column grants don't constrain.)
+revoke update on table public.trips from anon, authenticated;
+grant update (name, description, start_date, end_date, cover_image_url)
+  on public.trips to authenticated;
 
 create policy "trip_delete" on public.trips for delete
   using (owner_id = public.auth_uid());
@@ -219,21 +241,21 @@ create policy "tm_delete" on public.trip_members for delete
 create policy "tags_select" on public.tags for select
   using (public.is_trip_member(trip_id, public.auth_uid()));
 create policy "tags_insert" on public.tags for insert
-  with check (public.is_trip_member(trip_id, public.auth_uid()));
+  with check (public.is_trip_editor(trip_id, public.auth_uid()));
 create policy "tags_update" on public.tags for update
-  using (public.is_trip_member(trip_id, public.auth_uid()));
+  using (public.is_trip_editor(trip_id, public.auth_uid()));
 create policy "tags_delete" on public.tags for delete
-  using (public.is_trip_member(trip_id, public.auth_uid()));
+  using (public.is_trip_editor(trip_id, public.auth_uid()));
 
 -- places
 create policy "places_select" on public.places for select
   using (public.is_trip_member(trip_id, public.auth_uid()));
 create policy "places_insert" on public.places for insert
-  with check (public.is_trip_member(trip_id, public.auth_uid()));
+  with check (public.is_trip_editor(trip_id, public.auth_uid()));
 create policy "places_update" on public.places for update
-  using (public.is_trip_member(trip_id, public.auth_uid()));
+  using (public.is_trip_editor(trip_id, public.auth_uid()));
 create policy "places_delete" on public.places for delete
-  using (public.is_trip_member(trip_id, public.auth_uid()));
+  using (public.is_trip_editor(trip_id, public.auth_uid()));
 
 -- place_tags
 create policy "place_tags_select" on public.place_tags for select
@@ -244,12 +266,12 @@ create policy "place_tags_select" on public.place_tags for select
 create policy "place_tags_insert" on public.place_tags for insert
   with check (
     exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+      where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
   );
 create policy "place_tags_delete" on public.place_tags for delete
   using (
     exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+      where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
   );
 
 -- ============================================================
@@ -316,8 +338,10 @@ begin
     raise exception 'Role must be editor or viewer';
   end if;
 
+  -- Alias the table: this function RETURNS TABLE(id ...), so a bare `id`
+  -- reference is ambiguous between that output column and trips.id.
   if not exists (
-    select 1 from public.trips where id = p_trip_id and owner_id = v_uid
+    select 1 from public.trips t where t.id = p_trip_id and t.owner_id = v_uid
   ) then
     raise exception 'Only the trip owner can invite collaborators';
   end if;
@@ -378,20 +402,201 @@ $$;
 grant execute on function public.remove_collaborator(uuid, uuid) to authenticated;
 
 -- ============================================================
+-- TRIP INVITES — pending memberships via a copyable link
+-- ------------------------------------------------------------
+-- Inviting an email that already has an account adds them straight to
+-- trip_members. Inviting one that doesn't creates a token-based invite; the
+-- owner shares the link, and whoever opens it and signs in redeems the token
+-- (acceptance is by token, email is just a label of who it was meant for).
+-- ============================================================
+
+create table public.trip_invites (
+  id          uuid primary key default uuid_generate_v4(),
+  trip_id     uuid not null references public.trips(id) on delete cascade,
+  email       text,
+  role        text not null default 'editor' check (role in ('editor', 'viewer')),
+  token       uuid not null unique default uuid_generate_v4(),
+  invited_by  uuid not null references auth.users(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  accepted_at timestamptz,
+  accepted_by uuid references auth.users(id) on delete set null,
+  expires_at  timestamptz not null default (now() + interval '30 days')
+);
+create index trip_invites_trip_id_idx on public.trip_invites(trip_id);
+
+alter table public.trip_invites enable row level security;
+
+-- Tokens are bearer credentials: only the owner (who hands the link out) may
+-- read them — a viewer-role member must not be able to lift a pending editor
+-- token and pass it to an outsider. All writes go through the SECURITY
+-- DEFINER RPCs below; the accept screen's token lookup is its own RPC.
+create policy "trip_invites_select" on public.trip_invites for select
+  using (
+    exists (select 1 from public.trips t
+      where t.id = trip_id and t.owner_id = public.auth_uid())
+  );
+
+-- Create an invite. Existing account -> added immediately; otherwise a
+-- pending token invite (reusing an open one for the same email if present).
+create or replace function public.create_trip_invite(
+  p_trip_id uuid,
+  p_email   text,
+  p_role    text default 'editor'
+)
+returns jsonb
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid    uuid;
+  v_target uuid;
+  v_token  uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+  if p_role not in ('editor', 'viewer') then
+    raise exception 'Role must be editor or viewer';
+  end if;
+  if not exists (
+    select 1 from public.trips t where t.id = p_trip_id and t.owner_id = v_uid
+  ) then
+    raise exception 'Only the trip owner can invite collaborators';
+  end if;
+
+  select u.id into v_target from auth.users u where lower(u.email) = lower(p_email);
+
+  if v_target is not null then
+    if v_target = v_uid then raise exception 'You are already the owner of this trip'; end if;
+    insert into public.trip_members (trip_id, user_id, role)
+    values (p_trip_id, v_target, p_role)
+    on conflict (trip_id, user_id) do update set role = excluded.role;
+    return jsonb_build_object('status', 'added', 'email', p_email, 'role', p_role);
+  end if;
+
+  select token into v_token
+  from public.trip_invites
+  where trip_id = p_trip_id and lower(email) = lower(p_email) and accepted_at is null
+  limit 1;
+
+  if v_token is null then
+    insert into public.trip_invites (trip_id, email, role, invited_by)
+    values (p_trip_id, p_email, p_role, v_uid)
+    returning token into v_token;
+  else
+    update public.trip_invites set role = p_role where token = v_token;
+  end if;
+
+  return jsonb_build_object('status', 'invited', 'email', p_email, 'role', p_role, 'token', v_token);
+end;
+$$;
+
+grant execute on function public.create_trip_invite(uuid, text, text) to authenticated;
+
+-- Public token lookup for the accept screen (name/role/inviter, no row access).
+create or replace function public.get_trip_invite(p_token uuid)
+returns table (
+  trip_id       uuid,
+  trip_name     text,
+  role          text,
+  inviter_email text,
+  accepted      boolean
+)
+language sql security definer stable
+set search_path = public, auth
+as $$
+  select i.trip_id, t.name, i.role, u.email, (i.accepted_at is not null)
+  from public.trip_invites i
+  join public.trips t on t.id = i.trip_id
+  join auth.users u on u.id = i.invited_by
+  where i.token = p_token;
+$$;
+
+grant execute on function public.get_trip_invite(uuid) to anon, authenticated;
+
+-- Redeem an invite for the signed-in user; idempotent if already a member.
+create or replace function public.accept_trip_invite(p_token uuid)
+returns uuid
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid uuid;
+  v_inv public.trip_invites;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+
+  select * into v_inv from public.trip_invites where token = p_token;
+  if not found then raise exception 'Invite not found'; end if;
+
+  if exists (
+    select 1 from public.trip_members where trip_id = v_inv.trip_id and user_id = v_uid
+  ) then
+    return v_inv.trip_id;
+  end if;
+
+  if v_inv.accepted_at is not null then
+    raise exception 'This invite has already been used';
+  end if;
+
+  if v_inv.expires_at < now() then
+    raise exception 'This invite has expired';
+  end if;
+
+  insert into public.trip_members (trip_id, user_id, role)
+  values (v_inv.trip_id, v_uid, v_inv.role)
+  on conflict (trip_id, user_id) do nothing;
+
+  update public.trip_invites
+    set accepted_at = now(), accepted_by = v_uid
+  where token = p_token;
+
+  return v_inv.trip_id;
+end;
+$$;
+
+grant execute on function public.accept_trip_invite(uuid) to authenticated;
+
+-- Revoke a pending invite (owner only).
+create or replace function public.revoke_trip_invite(p_token uuid)
+returns void
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+  delete from public.trip_invites i
+  using public.trips t
+  where i.token = p_token and t.id = i.trip_id and t.owner_id = v_uid;
+end;
+$$;
+
+grant execute on function public.revoke_trip_invite(uuid) to authenticated;
+
+-- ============================================================
 -- PUBLIC SHARE VIEW (bypasses RLS via share token)
 -- ============================================================
 
-create or replace view public.public_trip_view as
+-- security_invoker is load-bearing: without it the view executes as its owner,
+-- BYPASSING trips RLS — any anon-key holder could dump every trip including
+-- every share_token. With it, callers only see what trips RLS grants them.
+-- No grants: nothing in the frontend reads this view.
+create or replace view public.public_trip_view
+  with (security_invoker = true) as
   select
     t.id,
     t.name,
     t.description,
     t.start_date,
     t.end_date,
-    t.status,
     t.share_token,
     t.cover_image_url
   from public.trips t;
+
+revoke select on public.public_trip_view from anon, authenticated;
 
 -- ============================================================
 -- INDEXES
@@ -402,6 +607,18 @@ create index trip_members_user_id_idx on public.trip_members(user_id);
 create index places_trip_id_idx on public.places(trip_id);
 create index places_google_place_id_idx on public.places(google_place_id);
 create index tags_trip_id_idx on public.tags(trip_id);
+
+-- ============================================================
+-- REALTIME
+-- ------------------------------------------------------------
+-- usePlaces/useTags subscribe to postgres_changes on these tables; without
+-- this the channels connect and simply never fire (collaborators never see
+-- each other's edits live). replica identity full so DELETE events carry the
+-- trip_id the client-side filter needs.
+-- ============================================================
+alter table public.places replica identity full;
+alter table public.tags replica identity full;
+alter publication supabase_realtime add table public.places, public.tags;
 
 -- ============================================================
 -- PLACE COMMENTS  (feature/place-comments prototype)
@@ -581,12 +798,21 @@ create policy "activity_seen_all" on public.activity_seen for all
   using (user_id = public.auth_uid())
   with check (user_id = public.auth_uid());
 
--- Record a row whenever a place is added…
+-- Record a row whenever a place is added… A logging trigger must never fail
+-- the write it observes: when the actor can't be attributed (service-role
+-- inserts, SQL editor, imports) skip the activity row instead of violating
+-- activity.actor_id NOT NULL and rolling back the place insert itself.
 create or replace function public.log_place_added()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_actor uuid;
 begin
+  v_actor := coalesce(new.added_by, auth.uid());
+  if v_actor is null then return new; end if;
   insert into public.activity (trip_id, actor_id, type, place_id)
-  values (new.trip_id, coalesce(new.added_by, auth.uid()), 'place_added', new.id);
+  values (new.trip_id, v_actor, 'place_added', new.id);
   return new;
 end;
 $$;
@@ -596,7 +822,9 @@ create trigger place_added_activity after insert on public.places
 
 -- …and whenever a comment is posted.
 create or replace function public.log_comment_added()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer
+set search_path = public, auth
+as $$
 declare
   v_trip uuid;
 begin

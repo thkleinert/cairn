@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useNotifications, type Notification } from '../hooks/useNotifications';
 import { NotificationsSheet } from './NotificationsSheet';
+import { toast } from '../lib/toast';
 import { DateField } from './DateField';
 import { format, parseISO } from 'date-fns';
 
@@ -55,17 +56,22 @@ export function TripList({ userId, onSelectTrip }: Props) {
 
   // Tapping a notification dismisses just that one and jumps to its place;
   // opening/closing the panel no longer dismisses anything on its own — that's
-  // what the explicit "Mark all read" button is for.
+  // what the explicit "Mark all read" button is for. Resolve the trip BEFORE
+  // dismissing: if it isn't navigable (list still loading, or you've since
+  // left the trip), destroying the notification without going anywhere would
+  // make the tap silently eat it.
   const handleActivityClick = (n: Notification) => {
+    const trip = trips.find(t => t.id === n.trip_id);
+    if (!trip) {
+      toast('That trip is unavailable');
+      return;
+    }
     dismissNotification(n.id);
     setShowNotifications(false);
-    const trip = trips.find(t => t.id === n.trip_id);
-    if (trip) {
-      onSelectTrip(trip, {
-        placeId: n.place_id,
-        openComments: n.type === 'comment_added',
-      });
-    }
+    onSelectTrip(trip, {
+      placeId: n.place_id,
+      openComments: n.type === 'comment_added',
+    });
   };
 
   useEscapeClose(() => setShowCreate(false));
