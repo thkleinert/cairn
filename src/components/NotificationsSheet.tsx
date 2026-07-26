@@ -71,6 +71,17 @@ function SwipeableNotification({
     else setDx(0);
   };
 
+  // The row has touch-action: pan-y, so a drag that drifts vertical hands the
+  // gesture to the scroller and fires pointercancel instead of pointerup.
+  // Without this reset the row froze mid-swipe and — because dxRef kept its
+  // last value — the NEXT plain tap on the row could read as a completed
+  // swipe and dismiss the notification instead of opening it.
+  const onPointerCancel = () => {
+    dragging.current = false;
+    dxRef.current = 0;
+    setDx(0);
+  };
+
   const translate = exiting ? -600 : dx;
   const revealing = translate < 0;
 
@@ -88,6 +99,7 @@ function SwipeableNotification({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onClick={() => { if (!swiped.current) onSelect(n); }}
       >
         <span className={`notif-icon notif-icon--${n.type}`}>

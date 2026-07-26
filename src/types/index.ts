@@ -1,4 +1,3 @@
-export type TripStatus = 'planning' | 'ongoing' | 'completed';
 export type PlaceStatus = 'planned' | 'visited';
 export type MemberRole = 'owner' | 'editor' | 'viewer';
 
@@ -8,7 +7,6 @@ export interface Trip {
   description?: string;
   start_date?: string | null;
   end_date?: string | null;
-  status: TripStatus;
   share_token: string;
   cover_image_url?: string | null;
   owner_id: string;
@@ -71,7 +69,7 @@ export interface Place {
   google_place_id?: string;
   status: PlaceStatus;
   visited_at?: string | null;
-  notes?: string;
+  notes?: string | null;
   source_urls: string[];
   image_url?: string;
   added_by?: string;

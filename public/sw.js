@@ -2,7 +2,7 @@
 // activate handler deletes any cache whose name isn't the current one, so
 // changing this value purges the previous build on the next launch — the
 // escape hatch for "deployed but users still see the old version". (main.tsx
-// checks for a new worker on foreground and toasts the user to restart.)
+// checks for a new worker on foreground and auto-reloads once it takes over.)
 const CACHE = 'cairn-v2';
 
 // Only the app shell is pre-cached; hashed build assets are cached on demand.
@@ -34,8 +34,13 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(request, { cache: 'no-store' })
         .then(res => {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put('/', clone));
+          // Only a healthy response may become the offline shell — caching a
+          // transient 500 here would replace the app with an error page for
+          // every offline launch until the next successful visit.
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put('/', clone));
+          }
           return res;
         })
         .catch(() => caches.match('/'))

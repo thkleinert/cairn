@@ -84,8 +84,11 @@ export function PlaceDetailSheet({
   const handleAddComment = async () => {
     const body = commentDraft.trim();
     if (!body) return;
+    // Clear eagerly for snappy UX, but put the text back if the post fails so
+    // a flaky connection doesn't eat the comment.
     setCommentDraft('');
-    await addComment(body);
+    const ok = await addComment(body);
+    if (!ok) setCommentDraft(body);
   };
 
   // Arriving from a comment notification: make sure the thread is expanded,
@@ -114,7 +117,10 @@ export function PlaceDetailSheet({
   const assignedTags = allTags.filter(t => selectedTags.includes(t.id));
 
   const handleSave = () => {
-    onUpdate({ notes: notes || undefined });
+    // null, not undefined: undefined is dropped from the JSON payload entirely,
+    // so clearing a note would never reach the database and the old text
+    // resurrects on the next refetch.
+    onUpdate({ notes: notes || null });
     onSetTags(selectedTags);
     setDirty(false);
   };

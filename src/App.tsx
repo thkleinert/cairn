@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { AuthScreen } from './components/AuthScreen';
 import { UpdatePasswordScreen } from './components/UpdatePasswordScreen';
@@ -58,20 +58,35 @@ function AuthedApp() {
   useEffect(() => {
     if (!inviteToken) return;
     localStorage.setItem(INVITE_KEY, inviteToken);
-    supabase.rpc('get_trip_invite', { p_token: inviteToken }).then(({ data }) => {
+    supabase.rpc('get_trip_invite', { p_token: inviteToken }).then(({ data, error }) => {
       const inv = Array.isArray(data) ? data[0] : data;
-      if (inv) setInvitePrompt({ tripName: inv.trip_name, role: inv.role, inviter: inv.inviter_email });
+      if (inv) {
+        setInvitePrompt({ tripName: inv.trip_name, role: inv.role, inviter: inv.inviter_email });
+      } else if (!error) {
+        // The lookup worked and found nothing: a revoked or malformed token.
+        // Drop the stash now — left in place it would "detonate" on a later,
+        // unrelated sign-in with a confusing failure toast. (On a transient
+        // error we keep it; reopening the link retries.)
+        localStorage.removeItem(INVITE_KEY);
+      }
     });
   }, [inviteToken]);
 
   // Once authenticated, redeem any pending invite and jump into the trip.
+  // The ref guards against the effect double-firing (StrictMode, or the user
+  // object changing identity mid-redeem) and calling accept twice — the
+  // second call would race the first and surface a spurious error.
+  const redeemingRef = useRef(false);
   useEffect(() => {
     if (loading || !user) return;
     const token = localStorage.getItem(INVITE_KEY);
     if (!token) { setAcceptingInvite(false); return; }
+    if (redeemingRef.current) return;
+    redeemingRef.current = true;
     setAcceptingInvite(true);
     supabase.rpc('accept_trip_invite', { p_token: token }).then(async ({ data, error }) => {
       localStorage.removeItem(INVITE_KEY);
+      redeemingRef.current = false;
       setInvitePrompt(null);
       if (error) {
         toast(error.message || 'Could not accept the invite');

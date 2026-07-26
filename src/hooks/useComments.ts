@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import type { PlaceComment } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -75,9 +76,11 @@ export function useComments(placeId: string) {
 
   useEffect(() => { load(); }, [load]);
 
-  const addComment = async (body: string) => {
+  // Returns whether the post succeeded, so the caller can restore the draft
+  // on failure instead of silently losing the text.
+  const addComment = async (body: string): Promise<boolean> => {
     const trimmed = body.trim();
-    if (!trimmed) return;
+    if (!trimmed) return false;
 
     if (USE_MOCK) {
       const { data: { user } } = await supabase.auth.getUser();
@@ -92,16 +95,20 @@ export function useComments(placeId: string) {
           created_at: new Date().toISOString(),
         },
       ]);
-      return;
+      return true;
     }
 
     const { data, error } = await supabase.rpc('add_place_comment', {
       p_place_id: placeId,
       p_body: trimmed,
     });
-    if (error) throw error;
+    if (error) {
+      toast('Could not post comment');
+      return false;
+    }
     const created = Array.isArray(data) ? data[0] : data;
     if (created) setComments(prev => [...prev, created as PlaceComment]);
+    return true;
   };
 
   const deleteComment = async (id: string) => {
@@ -110,7 +117,10 @@ export function useComments(placeId: string) {
       return;
     }
     const { error } = await supabase.from('place_comments').delete().eq('id', id);
-    if (error) throw error;
+    if (error) {
+      toast('Could not delete comment');
+      return;
+    }
     setComments(prev => prev.filter(c => c.id !== id));
   };
 
