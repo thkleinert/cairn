@@ -10,37 +10,66 @@ export interface Collaborator {
   email: string;
 }
 
+export interface PendingInvite {
+  id: string;
+  trip_id: string;
+  email: string | null;
+  role: string;
+  token: string;
+  created_at: string;
+}
+
+export type InviteResult =
+  | { status: 'added'; email: string; role: string }
+  | { status: 'invited'; email: string; role: string; token: string };
+
 export function useCollaborators(tripId: string) {
   const [members, setMembers] = useState<Collaborator[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const loadMembers = useCallback(async () => {
     const { data } = await supabase.rpc('get_trip_members', { p_trip_id: tripId });
     setMembers((data as Collaborator[]) ?? []);
-    setLoading(false);
   }, [tripId]);
 
-  useEffect(() => { load(); }, [load]);
+  // Not-yet-claimed invites, shown as pending rows. RLS lets trip members read
+  // their trip's invites.
+  const loadInvites = useCallback(async () => {
+    const { data } = await supabase
+      .from('trip_invites')
+      .select('id, trip_id, email, role, token, created_at')
+      .eq('trip_id', tripId)
+      .is('accepted_at', null)
+      .order('created_at', { ascending: true });
+    setPendingInvites((data as PendingInvite[]) ?? []);
+  }, [tripId]);
 
-  const inviteCollaborator = async (email: string, role: 'editor' | 'viewer' = 'editor') => {
-    const { data, error } = await supabase.rpc('invite_collaborator', {
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([loadMembers(), loadInvites()]).finally(() => setLoading(false));
+  }, [loadMembers, loadInvites]);
+
+  // Invite by email: an existing account is added straight away; otherwise a
+  // pending token invite is created and returned so the caller can build a
+  // shareable link from it.
+  const createInvite = async (email: string, role: 'editor' | 'viewer' = 'editor'): Promise<InviteResult> => {
+    const { data, error } = await supabase.rpc('create_trip_invite', {
       p_trip_id: tripId,
       p_email: email,
       p_role: role,
     });
     if (error) throw error;
-    const newMember = Array.isArray(data) ? data[0] : data;
-    if (newMember) {
-      setMembers(prev => {
-        const existing = prev.findIndex(m => m.user_id === newMember.user_id);
-        if (existing >= 0) {
-          return prev.map((m, i) => (i === existing ? newMember : m));
-        }
-        return [...prev, newMember];
-      });
-    }
-    return newMember as Collaborator;
+    const result = data as InviteResult;
+    if (result.status === 'added') await loadMembers();
+    else await loadInvites();
+    return result;
+  };
+
+  const revokeInvite = async (token: string) => {
+    const { error } = await supabase.rpc('revoke_trip_invite', { p_token: token });
+    if (error) throw error;
+    setPendingInvites(prev => prev.filter(i => i.token !== token));
   };
 
   const removeCollaborator = async (userId: string) => {
@@ -52,5 +81,5 @@ export function useCollaborators(tripId: string) {
     setMembers(prev => prev.filter(m => m.user_id !== userId));
   };
 
-  return { members, loading, inviteCollaborator, removeCollaborator };
+  return { members, pendingInvites, loading, createInvite, revokeInvite, removeCollaborator };
 }
