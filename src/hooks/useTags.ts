@@ -69,5 +69,5 @@ export function useTags(tripId: string | undefined) {
     return data;
   };
 
-  return { tags, createTag, deleteTag, updateTag, refetch: fetchTags };
+  return { tags, createTag, deleteTag, updateTag };
 }

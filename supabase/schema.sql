@@ -15,7 +15,8 @@ create table public.trips (
   cover_image_url text,
   owner_id    uuid not null references auth.users(id) on delete cascade,
   created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  updated_at  timestamptz not null default now(),
+  constraint trips_dates_ordered check (start_date is null or end_date is null or end_date >= start_date)
 );
 
 create table public.trip_members (
@@ -47,12 +48,16 @@ create table public.places (
   status          text not null default 'planned' check (status in ('planned','visited')),
   visited_at      timestamptz,
   notes           text,
-  source_url      text,
+  source_urls     text[] not null default '{}',
   image_url       text,
   added_by        uuid references auth.users(id),
   position        integer not null default 0,
   created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
+  updated_at      timestamptz not null default now(),
+  -- A visited place must carry its visit time — the travel-map export filters
+  -- on both, so a desynced row would silently vanish from it.
+  constraint places_visited_at_coherent check (status <> 'visited' or visited_at is not null),
+  constraint places_coords_bounded check (latitude between -90 and 90 and longitude between -180 and 180)
 );
 
 create table public.place_tags (
@@ -186,6 +191,7 @@ alter table public.trip_members enable row level security;
 alter table public.tags enable row level security;
 alter table public.places enable row level security;
 alter table public.place_tags enable row level security;
+alter table public.place_images enable row level security;
 
 -- trips
 -- owner_id check is first: avoids the window between INSERT and the after-insert
@@ -274,6 +280,23 @@ create policy "place_tags_delete" on public.place_tags for delete
       where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
   );
 
+-- place_images (rows; the stored files are covered in the STORAGE section)
+create policy "place_images_select" on public.place_images for select
+  using (
+    exists (select 1 from public.places p
+      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+  );
+create policy "place_images_insert" on public.place_images for insert
+  with check (
+    exists (select 1 from public.places p
+      where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
+  );
+create policy "place_images_delete" on public.place_images for delete
+  using (
+    exists (select 1 from public.places p
+      where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
+  );
+
 -- ============================================================
 -- COLLABORATION RPCs
 -- ============================================================
@@ -308,67 +331,6 @@ as $$
 $$;
 
 grant execute on function public.get_trip_members(uuid) to authenticated;
-
--- Invite an existing user by email (owner only)
-create or replace function public.invite_collaborator(
-  p_trip_id uuid,
-  p_email   text,
-  p_role    text default 'editor'
-)
-returns table (
-  id        uuid,
-  trip_id   uuid,
-  user_id   uuid,
-  role      text,
-  joined_at timestamptz,
-  email     text
-)
-language plpgsql security definer
-set search_path = public, auth
-as $$
-declare
-  v_uid       uuid;
-  v_target_id uuid;
-  v_member_id uuid;
-begin
-  v_uid := auth.uid();
-  if v_uid is null then raise exception 'Not authenticated'; end if;
-
-  if p_role not in ('editor', 'viewer') then
-    raise exception 'Role must be editor or viewer';
-  end if;
-
-  -- Alias the table: this function RETURNS TABLE(id ...), so a bare `id`
-  -- reference is ambiguous between that output column and trips.id.
-  if not exists (
-    select 1 from public.trips t where t.id = p_trip_id and t.owner_id = v_uid
-  ) then
-    raise exception 'Only the trip owner can invite collaborators';
-  end if;
-
-  select u.id into v_target_id from auth.users u where lower(u.email) = lower(p_email);
-  if v_target_id is null then
-    raise exception 'No account found with email %', p_email;
-  end if;
-
-  if v_target_id = v_uid then
-    raise exception 'You are already the owner of this trip';
-  end if;
-
-  insert into public.trip_members (trip_id, user_id, role)
-  values (p_trip_id, v_target_id, p_role)
-  on conflict (trip_id, user_id) do update set role = excluded.role
-  returning public.trip_members.id into v_member_id;
-
-  return query
-    select tm.id, tm.trip_id, tm.user_id, tm.role, tm.joined_at, u.email
-    from public.trip_members tm
-    join auth.users u on u.id = tm.user_id
-    where tm.id = v_member_id;
-end;
-$$;
-
-grant execute on function public.invite_collaborator(uuid, text, text) to authenticated;
 
 -- Remove a collaborator (owner only, cannot remove owner)
 create or replace function public.remove_collaborator(
@@ -629,6 +591,42 @@ create index trip_members_user_id_idx on public.trip_members(user_id);
 create index places_trip_id_idx on public.places(trip_id);
 create index places_google_place_id_idx on public.places(google_place_id);
 create index tags_trip_id_idx on public.tags(trip_id);
+-- The frontend's hot paths: place loads filter trip_id + order by position,
+-- every place fetch embeds place_images, tag deletion cascades by tag_id, and
+-- place/comment deletion cascades through activity's FKs.
+create index places_trip_position_idx on public.places(trip_id, position);
+create index place_images_place_id_idx on public.place_images(place_id);
+create index place_tags_tag_id_idx on public.place_tags(tag_id);
+create index activity_place_id_idx on public.activity(place_id);
+create index activity_comment_id_idx on public.activity(comment_id);
+
+-- ============================================================
+-- STORAGE
+-- ------------------------------------------------------------
+-- One public bucket for all app images (place photos + trip covers). Files
+-- live under {trip_id}/... so the policies can gate writes on membership via
+-- the first path segment. "Public" means anyone with a file's URL can fetch
+-- its bytes; listing/writing still goes through these policies.
+-- ============================================================
+insert into storage.buckets (id, name, public)
+values ('place-images', 'place-images', true)
+on conflict (id) do nothing;
+
+create policy "place_images_select" on storage.objects for select
+  using (
+    bucket_id = 'place-images'
+    and public.is_trip_member(((storage.foldername(name))[1])::uuid, public.auth_uid())
+  );
+create policy "place_images_insert" on storage.objects for insert
+  with check (
+    bucket_id = 'place-images'
+    and public.is_trip_editor(((storage.foldername(name))[1])::uuid, public.auth_uid())
+  );
+create policy "place_images_delete" on storage.objects for delete
+  using (
+    bucket_id = 'place-images'
+    and public.is_trip_editor(((storage.foldername(name))[1])::uuid, public.auth_uid())
+  );
 
 -- ============================================================
 -- REALTIME

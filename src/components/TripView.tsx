@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
 import type { Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTags } from '../hooks/useTags';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
-import { MapView } from './MapView';
+// Lazy: mapbox-gl is ~90% of the bundle; splitting it means the auth screen,
+// trip list, and invite/share landings load without it. The map chunk starts
+// fetching the moment a trip opens.
+const MapView = lazy(() => import('./MapView').then(m => ({ default: m.MapView })));
 import { PlaceSearch } from './PlaceSearch';
 import { PlaceDetailSheet } from './PlaceDetailSheet';
 import { TagFilterSheet } from './TagFilterSheet';
@@ -110,13 +113,15 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
       <div className="trip-content">
         {viewMode === 'map' ? (
           <>
-            <MapView
-              places={places}
-              selectedPlace={selectedPlace}
-              activeTags={activeTags}
-              allTags={tags}
-              onSelectPlace={(place) => setSelectedPlaceId(place.id)}
-            />
+            <Suspense fallback={<div className="loading-spinner" />}>
+              <MapView
+                places={places}
+                selectedPlace={selectedPlace}
+                activeTags={activeTags}
+                allTags={tags}
+                onSelectPlace={(place) => setSelectedPlaceId(place.id)}
+              />
+            </Suspense>
             {!loading && places.length === 0 && !showSearch && (
               <div className="map-empty-hint">
                 <Plus size={16} />
@@ -208,7 +213,6 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
       {openSheet === 'settings' && (
         <TripSettingsSheet
           trip={trip}
-          userId={userId}
           onClose={() => setOpenSheet('none')}
           onUpdate={handleUpdateTrip}
           onDelete={handleDeleteTrip}

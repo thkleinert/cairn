@@ -9,7 +9,6 @@ import { DateField } from './DateField';
 
 interface Props {
   trip: Trip;
-  userId: string;
   onClose: () => void;
   onUpdate: (updates: Partial<Trip>) => void;
   onDelete: () => void;

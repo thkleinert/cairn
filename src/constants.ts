@@ -9,6 +9,3 @@ export const TAG_COLORS: Array<{ value: string; name: string }> = [
   { value: '#8b5cf6', name: 'Violet' },
   { value: '#14b8a6', name: 'Teal' },
 ];
-
-export const MARKER_PLANNED_COLOR = '#6366f1';
-export const MARKER_VISITED_COLOR = '#22c55e';

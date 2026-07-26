@@ -13,7 +13,6 @@
   --color-primary-light: #e6f7f5;
   --color-on-primary: #ffffff;
   --color-success: #131416;
-  --color-success-bg: #f0f1f2;
   --color-danger: #dc2626;
   --color-muted: #9a9fa6;
   --color-secondary: #5b6068;
@@ -97,6 +96,8 @@ img { display: block; }
 
 .error-text { color: var(--color-danger); font-size: 13px; line-height: 1.4; }
 .success-text { color: var(--color-success); font-size: 13px; }
+
+.u-mb8 { margin-bottom: 8px; }
 
 /* ============================================================
    INPUTS
@@ -274,6 +275,15 @@ select.input {
   z-index: 5;
   transition: padding var(--dur-base) var(--glide), border-color var(--dur-base) var(--glide), align-items var(--dur-base);
 }
+.trip-list-actions { display: flex; align-items: center; gap: 4px; }
+.btn-icon--danger { color: var(--color-danger); }
+.signout-hint {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--color-danger);
+  text-align: right;
+}
+
 .trip-list-header--compact {
   align-items: center;
   padding-top: calc(14px + env(safe-area-inset-top));
@@ -1556,7 +1566,6 @@ select.input {
     --color-primary-light: #123833;
     --color-on-primary: #ffffff;
     --color-success: #f2f3f4;
-    --color-success-bg: #232527;
     --color-danger: #f87171;
     --color-muted: #6c7076;
     --color-secondary: #a2a6ad;
@@ -1691,21 +1700,6 @@ select.input {
   animation: toastIn 0.3s cubic-bezier(0.32,0.72,0,1);
 }
 .map-empty-hint svg { color: var(--color-primary); }
-
-/* ============================================================
-   MISC ADDITIONS
-   ============================================================ */
-.u-mb8 { margin-bottom: 8px; }
-.u-mb16 { margin-bottom: 16px; }
-
-.trip-list-actions { display: flex; align-items: center; gap: 4px; }
-.btn-icon--danger { color: var(--color-danger); }
-.signout-hint {
-  padding: 6px 16px;
-  font-size: 12px;
-  color: var(--color-danger);
-  text-align: right;
-}
 
 /* ============================================================
    NOTIFICATIONS — bell + badge, and the activity sheet
