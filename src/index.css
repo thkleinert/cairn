@@ -1482,6 +1482,34 @@ select.input {
 }
 .collab-error { font-size: 13px; color: var(--color-danger); margin: 0; }
 .collab-success { font-size: 13px; color: var(--color-success); margin: 0; }
+
+/* Pending (unclaimed) invite rows */
+.collab-row--pending { background: transparent; border: 1px dashed var(--color-border); }
+.collab-avatar--pending {
+  background: var(--color-bg); color: var(--color-muted);
+}
+
+/* Generated invite link + copy button */
+.collab-invite-link { display: flex; gap: 8px; align-items: stretch; }
+.collab-invite-link .input {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--color-text-secondary);
+}
+.collab-copy-btn {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 14px;
+}
+
+/* Invite context banner on the auth screen */
+.auth-invite-banner {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-light);
+  color: var(--color-text);
+  font-size: 13.5px; line-height: 1.45;
+}
+.auth-invite-banner strong { font-weight: 700; }
 .readonly-badge {
   padding: 4px 10px;
   background: #fef9c3; color: #b45309;

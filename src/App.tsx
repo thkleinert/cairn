@@ -9,7 +9,12 @@ import { SetupScreen } from './components/SetupScreen';
 import { Toasts } from './components/Toasts';
 import { OfflineBanner } from './components/OfflineBanner';
 import { isConfigured, supabase } from './lib/supabase';
+import { toast } from './lib/toast';
 import type { Trip } from './types';
+
+// Survives the sign-up → email-confirm → return round-trip, so the invite is
+// still redeemable when the invitee lands back in the app logged in.
+const INVITE_KEY = 'cairn.pendingInvite';
 
 function getShareToken(): string | null {
   const match = window.location.pathname.match(/^\/shared\/([^/]+)$/);
@@ -18,6 +23,11 @@ function getShareToken(): string | null {
 
 function getTripIdFromPath(): string | null {
   const match = window.location.pathname.match(/^\/trip\/([^/]+)$/);
+  return match ? match[1] : null;
+}
+
+function getInviteToken(): string | null {
+  const match = window.location.pathname.match(/^\/invite\/([^/]+)$/);
   return match ? match[1] : null;
 }
 
@@ -31,12 +41,53 @@ function AuthedApp() {
   const [pendingPlace, setPendingPlace] = useState<{ id: string; openComments: boolean; nonce: number } | null>(null);
   const [restoringTrip, setRestoringTrip] = useState(() => getTripIdFromPath() !== null);
   const shareToken = getShareToken();
+  const inviteToken = getInviteToken();
+  const [invitePrompt, setInvitePrompt] =
+    useState<{ tripName: string; role: string; inviter: string } | null>(null);
+  const [acceptingInvite, setAcceptingInvite] = useState(() => getInviteToken() !== null);
 
   useEffect(() => {
     const handler = () => setActiveTrip(null);
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
   }, []);
+
+  // Landing on /invite/:token — stash it and fetch details for the sign-in
+  // banner. If the visitor isn't logged in they'll authenticate first; the
+  // redeem effect below runs once they are.
+  useEffect(() => {
+    if (!inviteToken) return;
+    localStorage.setItem(INVITE_KEY, inviteToken);
+    supabase.rpc('get_trip_invite', { p_token: inviteToken }).then(({ data }) => {
+      const inv = Array.isArray(data) ? data[0] : data;
+      if (inv) setInvitePrompt({ tripName: inv.trip_name, role: inv.role, inviter: inv.inviter_email });
+    });
+  }, [inviteToken]);
+
+  // Once authenticated, redeem any pending invite and jump into the trip.
+  useEffect(() => {
+    if (loading || !user) return;
+    const token = localStorage.getItem(INVITE_KEY);
+    if (!token) { setAcceptingInvite(false); return; }
+    setAcceptingInvite(true);
+    supabase.rpc('accept_trip_invite', { p_token: token }).then(async ({ data, error }) => {
+      localStorage.removeItem(INVITE_KEY);
+      setInvitePrompt(null);
+      if (error) {
+        toast(error.message || 'Could not accept the invite');
+        window.history.replaceState(null, '', '/');
+      } else {
+        const { data: trip } = await supabase.from('trips').select('*').eq('id', data as string).single();
+        if (trip) {
+          setActiveTrip(trip);
+          window.history.replaceState(null, '', `/trip/${trip.id}`);
+        } else {
+          window.history.replaceState(null, '', '/');
+        }
+      }
+      setAcceptingInvite(false);
+    });
+  }, [user, loading]);
 
   // Restore /trip/:id after a refresh
   useEffect(() => {
@@ -55,7 +106,8 @@ function AuthedApp() {
 
   if (shareToken) return <SharedTripView shareToken={shareToken} />;
   if (loading || restoringTrip) return <div className="loading-spinner fullscreen" />;
-  if (!user) return <AuthScreen />;
+  if (!user) return <AuthScreen invite={invitePrompt} />;
+  if (acceptingInvite) return <div className="loading-spinner fullscreen" />;
   if (passwordRecovery) return <UpdatePasswordScreen onUpdatePassword={updatePassword} />;
 
   if (activeTrip) {

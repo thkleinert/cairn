@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Trash2, UserPlus, UserX, Crown, Eye, Pencil, Plus } from 'lucide-react';
+import { X, Trash2, UserPlus, UserX, Crown, Eye, Pencil, Plus, Copy, Check, Clock } from 'lucide-react';
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
@@ -36,9 +36,25 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [inviteSuccess, setInviteSuccess] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
 
-  const { members, inviteCollaborator, removeCollaborator } = useCollaborators(trip.id);
+  const { members, pendingInvites, createInvite, revokeInvite, removeCollaborator } = useCollaborators(trip.id);
+
+  const inviteLinkFor = (token: string) => `${window.location.origin}/invite/${token}`;
+
+  const copyLink = async (link: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(k => (k === key ? null : k)), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  const handleRevoke = async (token: string) => {
+    try { await revokeInvite(token); } catch { /* rare; leave the row */ }
+  };
   const { sheetRef, handleProps } = useSwipeToClose(onClose);
   useEscapeClose(onClose);
 
@@ -77,19 +93,26 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   };
 
   const handleInvite = async () => {
-    if (!inviteEmail.trim()) return;
+    const email = inviteEmail.trim();
+    if (!email) return;
     setInviting(true);
     setInviteError('');
     setInviteSuccess('');
+    setInviteLink('');
     try {
-      await inviteCollaborator(inviteEmail.trim(), inviteRole);
-      setInviteSuccess(`${inviteEmail.trim()} added as ${inviteRole}`);
+      const res = await createInvite(email, inviteRole);
+      if (res.status === 'added') {
+        setInviteSuccess(`${res.email} added as ${res.role}`);
+      } else {
+        // No account yet — surface a link the owner sends however they like.
+        setInviteLink(inviteLinkFor(res.token));
+        setInviteSuccess(`${res.email} has no account yet — share this link to invite them`);
+      }
       setInviteEmail('');
     } catch (e) {
       // Supabase throws a PostgrestError (a plain object, not an Error), so
       // pull .message off either shape rather than falling back to a generic
-      // string — the RPC's messages ("No account found with email …", etc.)
-      // are what the user actually needs to see.
+      // string — the RPC's messages are what the user actually needs to see.
       const message =
         e instanceof Error ? e.message
         : typeof e === 'object' && e !== null && 'message' in e
@@ -204,6 +227,35 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
                 )}
               </div>
             ))}
+
+            {pendingInvites.map(inv => (
+              <div key={inv.id} className="collab-row collab-row--pending">
+                <div className="collab-avatar collab-avatar--pending"><Clock size={13} /></div>
+                <div className="collab-info">
+                  <span className="collab-email">{inv.email ?? 'Invite link'}</span>
+                  <span className="collab-role">
+                    {ROLE_ICONS[inv.role]}
+                    {inv.role} · pending
+                  </span>
+                </div>
+                <button
+                  className="btn-icon"
+                  onClick={() => copyLink(inviteLinkFor(inv.token), inv.token)}
+                  aria-label="Copy invite link"
+                >
+                  {copiedKey === inv.token ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+                {isOwner && (
+                  <button
+                    className="btn-icon collab-remove"
+                    onClick={() => handleRevoke(inv.token)}
+                    aria-label="Revoke invite"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
 
           {isOwner && (
@@ -236,6 +288,24 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
               </button>
               {inviteError && <p className="collab-error">{inviteError}</p>}
               {inviteSuccess && <p className="collab-success">{inviteSuccess}</p>}
+              {inviteLink && (
+                <div className="collab-invite-link">
+                  <input
+                    className="input"
+                    readOnly
+                    value={inviteLink}
+                    onFocus={e => e.currentTarget.select()}
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary collab-copy-btn"
+                    onClick={() => copyLink(inviteLink, 'new')}
+                  >
+                    {copiedKey === 'new' ? <Check size={16} /> : <Copy size={16} />}
+                    {copiedKey === 'new' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

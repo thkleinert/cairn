@@ -14,9 +14,15 @@ function friendlyAuthError(message: string): string {
   return message;
 }
 
-export function AuthScreen() {
+interface Props {
+  // When arriving via an invite link, show what's being joined and default to
+  // sign-up (most invitees won't have an account yet).
+  invite?: { tripName: string; role: string; inviter: string } | null;
+}
+
+export function AuthScreen({ invite }: Props = {}) {
   const { signIn, signUp, resetPassword } = useAuth();
-  const [mode, setMode] = useState<Mode>('signin');
+  const [mode, setMode] = useState<Mode>(invite ? 'signup' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -67,6 +73,14 @@ export function AuthScreen() {
         <p className="auth-subtitle">
           {mode === 'reset' ? 'Reset your password' : 'Plan your adventures together'}
         </p>
+
+        {invite && mode !== 'reset' && (
+          <div className="auth-invite-banner">
+            <strong>{invite.inviter}</strong> invited you to join{' '}
+            <strong>{invite.tripName}</strong> as {invite.role}. Sign in or create an
+            account to join.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="auth-form">
           <input
