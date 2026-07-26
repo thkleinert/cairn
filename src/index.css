@@ -1500,12 +1500,6 @@ select.input {
   padding: 0 14px;
 }
 
-.share-link-hint {
-  margin: 0 0 10px;
-  font-size: 13px; line-height: 1.45;
-  color: var(--color-text-secondary);
-}
-
 /* Invite context banner on the auth screen */
 .auth-invite-banner {
   margin: 0 0 16px;
