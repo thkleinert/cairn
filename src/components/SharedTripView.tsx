@@ -18,27 +18,20 @@ export function SharedTripView({ shareToken }: Props) {
 
   useEffect(() => {
     const load = async () => {
-      const { data: tripData } = await supabase
-        .from('trips')
-        .select('*')
-        .eq('share_token', shareToken)
-        .single();
-
-      if (!tripData) { setError('Trip not found or link is invalid.'); return; }
-      setTrip(tripData);
-
-      const { data: placesData } = await supabase
-        .from('places')
-        .select('*, place_tags(tag_id, tags(*))')
-        .eq('trip_id', tripData.id);
-
-      setPlaces((placesData ?? []).map((p: Place & { place_tags?: Array<{ tags: unknown }> }) => ({
-        ...p,
-        tags: (p.place_tags ?? []).map(pt => pt.tags),
-      })) as Place[]);
-
-      const { data: tagsData } = await supabase.from('tags').select('*').eq('trip_id', tripData.id);
-      setTags(tagsData ?? []);
+      // One token-scoped RPC returns trip + places (tags/images nested) +
+      // tags. Direct table reads can't work here: an anonymous visitor fails
+      // every membership-based RLS policy.
+      const { data, error: rpcError } = await supabase.rpc('get_shared_trip', {
+        p_token: shareToken,
+      });
+      if (rpcError || !data) {
+        setError('Trip not found or link is invalid.');
+        return;
+      }
+      const payload = data as { trip: Trip; places: Place[]; tags: Tag[] };
+      setTrip(payload.trip);
+      setPlaces(payload.places);
+      setTags(payload.tags);
     };
     load();
   }, [shareToken]);

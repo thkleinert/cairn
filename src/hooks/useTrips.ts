@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import { updateTrip as updateTripRow, deleteTrip as deleteTripRow } from '../lib/trips';
 import type { Trip } from '../types';
 
 // A trip's sort key: its travel date, falling back to when it was created for
@@ -59,17 +60,11 @@ export function useTrips(userId: string | undefined) {
     return data;
   };
 
+  // Mutations live in src/lib/trips.ts (TripView uses them without list
+  // state); this wrapper just folds the result back into the sorted list.
   const updateTrip = async (id: string, updates: Partial<Trip>) => {
-    const { data, error } = await supabase
-      .from('trips')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error || !data) {
-      toast('Could not save trip');
-      return null;
-    }
+    const data = await updateTripRow(id, updates);
+    if (!data) return null;
     // Preserve the derived is_shared flag (the update row doesn't carry it) and
     // re-sort in case the dates changed.
     setTrips(prev => sortTrips(prev.map(t => t.id === id ? { ...data, is_shared: t.is_shared } : t)));
@@ -77,31 +72,10 @@ export function useTrips(userId: string | undefined) {
   };
 
   const deleteTrip = async (id: string) => {
-    const { error } = await supabase.from('trips').delete().eq('id', id);
-    if (error) {
-      toast('Could not delete trip');
-      return false;
-    }
-    setTrips(prev => prev.filter(t => t.id !== id));
-    return true;
+    const ok = await deleteTripRow(id);
+    if (ok) setTrips(prev => prev.filter(t => t.id !== id));
+    return ok;
   };
 
-  // Reuses the place-images bucket — its RLS only checks trip membership
-  // via the first path segment, which a bare {trip_id}/cover-... path
-  // satisfies just as well as a place's own {trip_id}/{place_id}/... path
-  const uploadTripCover = async (tripId: string, file: File): Promise<string | null> => {
-    const ext = file.name.split('.').pop() || 'jpg';
-    const path = `${tripId}/cover-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage
-      .from('place-images')
-      .upload(path, file, { contentType: file.type || 'image/jpeg' });
-    if (error) {
-      toast('Could not upload cover photo');
-      return null;
-    }
-    const { data } = supabase.storage.from('place-images').getPublicUrl(path);
-    return data.publicUrl;
-  };
-
-  return { trips, loading, createTrip, updateTrip, deleteTrip, uploadTripCover, refetch: fetchTrips };
+  return { trips, loading, createTrip, updateTrip, deleteTrip, refetch: fetchTrips };
 }

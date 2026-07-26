@@ -130,6 +130,7 @@ function AuthedApp() {
       <TripView
         trip={activeTrip}
         userId={user.id}
+        onTripUpdated={setActiveTrip}
         initialPlaceId={pendingPlace?.id}
         initialOpenComments={pendingPlace?.openComments}
         openNonce={pendingPlace?.nonce}

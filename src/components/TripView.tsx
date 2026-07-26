@@ -3,7 +3,7 @@ import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-rea
 import type { Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTags } from '../hooks/useTags';
-import { useTrips } from '../hooks/useTrips';
+import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { MapView } from './MapView';
 import { PlaceSearch } from './PlaceSearch';
@@ -16,6 +16,9 @@ interface Props {
   trip: Trip;
   userId: string;
   onBack: () => void;
+  // Settings edits save here; App owns the trip object, so it must be told
+  // about updates or the topbar/settings keep rendering the stale trip.
+  onTripUpdated: (trip: Trip) => void;
   // Optional deep-link target — e.g. jumping in from an activity notification.
   initialPlaceId?: string;
   initialOpenComments?: boolean;
@@ -25,10 +28,9 @@ interface Props {
 type Sheet = 'none' | 'tag-filter' | 'settings';
 type ViewMode = 'map' | 'list';
 
-export function TripView({ trip, userId, onBack, initialPlaceId, initialOpenComments, openNonce }: Props) {
+export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, initialOpenComments, openNonce }: Props) {
   const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
-  const { updateTrip, deleteTrip, uploadTripCover } = useTrips(userId);
 
   // Selection is an id — the place object is always derived fresh from `places`,
   // so realtime refetches and edits never leave the sheet stale.
@@ -66,7 +68,8 @@ export function TripView({ trip, userId, onBack, initialPlaceId, initialOpenComm
   };
 
   const handleUpdateTrip = async (updates: Partial<Trip>) => {
-    await updateTrip(trip.id, updates);
+    const updated = await updateTrip(trip.id, updates);
+    if (updated) onTripUpdated(updated);
   };
 
   const handleDeleteTrip = async () => {
