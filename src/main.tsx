@@ -22,25 +22,13 @@ createRoot(document.getElementById('root')!).render(
 );
 
 if ('serviceWorker' in navigator) {
-  // Auto-apply updates: when a newly-installed worker takes control, reload
-  // once so the page swaps to the fresh assets instead of waiting for a manual
-  // restart. Skip the very first registration (no prior controller — that page
-  // already loaded current assets), and guard against reload loops.
-  const hadController = !!navigator.serviceWorker.controller;
-  let reloading = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading || !hadController) return;
-    reloading = true;
-    window.location.reload();
-  });
-
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(reg => {
-      // A standalone/home-screen PWA doesn't re-fetch anything just from being
-      // brought back to the foreground — only a genuine reload does. Proactively
-      // check for a new worker whenever the app becomes visible again; if one is
-      // found it activates immediately (skipWaiting) and the controllerchange
-      // handler above reloads to pick up the new assets.
+      // Check for a new worker whenever the app comes back to the foreground.
+      // The worker installs quietly and waits — it takes over on the next full
+      // app launch, which also picks up the new assets (navigations are
+      // network-first). No mid-session takeover or auto-reload: seizing a live
+      // page wedged the iOS standalone PWA on the splash screen.
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') reg.update().catch(() => {});
       });

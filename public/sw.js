@@ -1,23 +1,27 @@
 // Bump CACHE whenever you need every client to drop its old bundle. The
 // activate handler deletes any cache whose name isn't the current one, so
-// changing this value purges the previous build on the next launch — the
-// escape hatch for "deployed but users still see the old version". (main.tsx
-// checks for a new worker on foreground and auto-reloads once it takes over.)
-const CACHE = 'cairn-v2';
+// changing this value purges the previous build once the new worker takes
+// over — the escape hatch for "deployed but users still see the old version".
+const CACHE = 'cairn-v3';
 
 // Only the app shell is pre-cached; hashed build assets are cached on demand.
 const SHELL = ['/', '/manifest.json'];
 
+// Deliberately NO skipWaiting/clients.claim: a new worker installs quietly and
+// takes over on the next full app launch. Seizing control of a live page and
+// reloading it mid-session wedged the iOS standalone PWA on the splash screen
+// (WebKit hung the reload before React mounted). Freshness doesn't need the
+// takeover anyway — navigations are network-first no-store and assets are
+// content-hashed, so a new deploy's content arrives on next launch no matter
+// which worker version is still active.
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
   );
 });
 
