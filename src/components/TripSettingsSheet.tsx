@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Trash2, UserPlus, UserX, Crown, Eye, Pencil, Plus, Copy, Check, Clock } from 'lucide-react';
+import { X, Trash2, UserPlus, UserX, Crown, Eye, Pencil, Plus, Copy, Check, Clock, Link2 } from 'lucide-react';
 import type { Trip } from '../types';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
@@ -308,6 +308,23 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
               )}
             </div>
           )}
+        </div>
+
+        {/* Read-only share link — token-scoped, no account needed to view */}
+        <div className="detail-section">
+          <label className="detail-label">Share</label>
+          <p className="share-link-hint">
+            Anyone with this link can view the trip's map and places — read-only, no
+            account needed.
+          </p>
+          <button
+            type="button"
+            className="btn-secondary collab-copy-btn"
+            onClick={() => copyLink(`${window.location.origin}/shared/${trip.share_token}`, 'share')}
+          >
+            {copiedKey === 'share' ? <Check size={16} /> : <Link2 size={16} />}
+            {copiedKey === 'share' ? 'Copied' : 'Copy read-only link'}
+          </button>
         </div>
 
         {isOwner && (

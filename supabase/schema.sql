@@ -50,6 +50,7 @@ create table public.places (
   source_url      text,
   image_url       text,
   added_by        uuid references auth.users(id),
+  position        integer not null default 0,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -188,14 +189,13 @@ alter table public.place_tags enable row level security;
 
 -- trips
 -- owner_id check is first: avoids the window between INSERT and the after-insert
--- trigger that adds owner to trip_members (PostgREST evaluates SELECT policy on RETURNING).
+-- trigger that adds owner to trip_members (PostgREST evaluates SELECT policy on
+-- RETURNING). Anonymous share access is NOT handled here — it goes through the
+-- token-scoped get_shared_trip RPC below.
 create policy "trip_select" on public.trips for select
   using (
     owner_id = public.auth_uid()
     or public.is_trip_member(id, public.auth_uid())
-    or share_token::text = nullif(
-      current_setting('request.jwt.claims', true), ''
-    )::json->>'share_token'
   );
 
 create policy "trip_insert" on public.trips for insert
@@ -577,26 +577,48 @@ $$;
 grant execute on function public.revoke_trip_invite(uuid) to authenticated;
 
 -- ============================================================
--- PUBLIC SHARE VIEW (bypasses RLS via share token)
+-- READ-ONLY TRIP SHARING (token-scoped RPC)
+-- ------------------------------------------------------------
+-- /shared/:token renders from this single anon-callable RPC — the same trust
+-- model as invite links: possession of the (uuid) token is the authorization.
+-- Direct table reads can't serve anonymous visitors, who fail every
+-- membership-based RLS policy.
 -- ============================================================
 
--- security_invoker is load-bearing: without it the view executes as its owner,
--- BYPASSING trips RLS — any anon-key holder could dump every trip including
--- every share_token. With it, callers only see what trips RLS grants them.
--- No grants: nothing in the frontend reads this view.
-create or replace view public.public_trip_view
-  with (security_invoker = true) as
-  select
-    t.id,
-    t.name,
-    t.description,
-    t.start_date,
-    t.end_date,
-    t.share_token,
-    t.cover_image_url
-  from public.trips t;
+create or replace function public.get_shared_trip(p_token uuid)
+returns jsonb
+language sql security definer stable
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'trip', to_jsonb(t) - 'share_token' - 'owner_id',
+    'tags', coalesce(
+      (select jsonb_agg(to_jsonb(tg)) from public.tags tg where tg.trip_id = t.id),
+      '[]'::jsonb),
+    'places', coalesce((
+      select jsonb_agg(
+        to_jsonb(p) || jsonb_build_object(
+          'tags', coalesce(
+            (select jsonb_agg(to_jsonb(tg2))
+             from public.place_tags pt
+             join public.tags tg2 on tg2.id = pt.tag_id
+             where pt.place_id = p.id),
+            '[]'::jsonb),
+          'images', coalesce(
+            (select jsonb_agg(to_jsonb(pi) order by pi.position)
+             from public.place_images pi where pi.place_id = p.id),
+            '[]'::jsonb)
+        )
+        order by p.position
+      )
+      from public.places p where p.trip_id = t.id
+    ), '[]'::jsonb)
+  )
+  from public.trips t
+  where t.share_token = p_token;
+$$;
 
-revoke select on public.public_trip_view from anon, authenticated;
+grant execute on function public.get_shared_trip(uuid) to anon, authenticated;
 
 -- ============================================================
 -- INDEXES
