@@ -77,5 +77,5 @@ export function useTrips(userId: string | undefined) {
     return ok;
   };
 
-  return { trips, loading, createTrip, updateTrip, deleteTrip, refetch: fetchTrips };
+  return { trips, loading, createTrip, updateTrip, deleteTrip };
 }

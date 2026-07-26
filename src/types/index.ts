@@ -1,5 +1,4 @@
 export type PlaceStatus = 'planned' | 'visited';
-export type MemberRole = 'owner' | 'editor' | 'viewer';
 
 export interface Trip {
   id: string;
@@ -15,22 +14,6 @@ export interface Trip {
   // Client-side: true when the trip has more than one member (you shared it,
   // or it was shared with you). Derived in useTrips, not a DB column.
   is_shared?: boolean;
-}
-
-export interface TripMember {
-  id: string;
-  trip_id: string;
-  user_id: string;
-  role: MemberRole;
-  joined_at: string;
-  profile?: Profile;
-}
-
-export interface Profile {
-  id: string;
-  email?: string;
-  full_name?: string;
-  avatar_url?: string;
 }
 
 export interface Tag {
@@ -80,11 +63,6 @@ export interface Place {
   images?: PlaceImage[];
 }
 
-export interface PlaceTag {
-  place_id: string;
-  tag_id: string;
-}
-
 export interface GooglePlacePrediction {
   place_id: string;
   description: string;
@@ -92,14 +70,4 @@ export interface GooglePlacePrediction {
     main_text: string;
     secondary_text: string;
   };
-}
-
-export interface GooglePlaceDetail {
-  place_id: string;
-  name: string;
-  formatted_address: string;
-  geometry: {
-    location: { lat: number; lng: number };
-  };
-  photos?: Array<{ getUrl: (opts: { maxWidth: number }) => string }>;
 }
