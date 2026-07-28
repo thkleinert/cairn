@@ -480,6 +480,17 @@ select.input {
 
 .trip-content { flex: 1; position: relative; overflow: hidden; }
 
+/* Contained failure state for the lazy-loaded map chunk */
+.map-load-error {
+  height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
 .map-container { position: absolute; inset: 0; }
 
 /* ============================================================

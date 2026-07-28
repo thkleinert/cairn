@@ -1,4 +1,5 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy } from 'react';
+import { MapBoundary } from './MapBoundary';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
 import type { Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
@@ -113,7 +114,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
       <div className="trip-content">
         {viewMode === 'map' ? (
           <>
-            <Suspense fallback={<div className="loading-spinner" />}>
+            <MapBoundary>
               <MapView
                 places={places}
                 selectedPlace={selectedPlace}
@@ -121,7 +122,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
                 allTags={tags}
                 onSelectPlace={(place) => setSelectedPlaceId(place.id)}
               />
-            </Suspense>
+            </MapBoundary>
             {!loading && places.length === 0 && !showSearch && (
               <div className="map-empty-hint">
                 <Plus size={16} />

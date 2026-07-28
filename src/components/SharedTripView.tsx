@@ -1,8 +1,9 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useState, lazy } from 'react';
 import { MapPin, Lock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Trip, Place, Tag } from '../types';
 import { PlaceDetailSheet } from './PlaceDetailSheet';
+import { MapBoundary } from './MapBoundary';
 
 const MapView = lazy(() => import('./MapView').then(m => ({ default: m.MapView })));
 
@@ -55,7 +56,7 @@ export function SharedTripView({ shareToken }: Props) {
       </div>
 
       <div className="trip-content">
-        <Suspense fallback={<div className="loading-spinner" />}>
+        <MapBoundary>
           <MapView
             places={places}
             selectedPlace={selectedPlace}
@@ -63,7 +64,7 @@ export function SharedTripView({ shareToken }: Props) {
             allTags={tags}
             onSelectPlace={setSelectedPlace}
           />
-        </Suspense>
+        </MapBoundary>
       </div>
 
       {selectedPlace && (
