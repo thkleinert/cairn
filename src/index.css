@@ -491,7 +491,12 @@ select.input {
   font-size: 14px;
 }
 
-.map-container { position: absolute; inset: 0; }
+/* Two classes (0,2,0) so this beats mapbox-gl.css's `.mapboxgl-map
+   { position: relative }` (0,1,0) regardless of stylesheet order. Since the
+   map went lazy, mapbox's CSS loads AFTER ours — at equal specificity its
+   rule won the tie, the container fell out of absolute positioning and
+   collapsed to height 0, and the whole map rendered blank with no errors. */
+.trip-content .map-container { position: absolute; inset: 0; }
 
 /* ============================================================
    BOTTOM BAR — floating island pill
