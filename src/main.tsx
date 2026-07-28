@@ -14,6 +14,21 @@ if (gmKey) {
   document.head.appendChild(s);
 }
 
+// Deploys replace the content-hashed chunk files, so a page loaded before a
+// deploy can lazily request a chunk (e.g. the map) that no longer exists —
+// and a long-lived PWA page is almost always "loaded before a deploy". Vite
+// surfaces those failures as vite:preloadError; one reload fetches the fresh
+// shell, whose chunk references all exist. Rate-limited so a genuine network
+// failure degrades to the error UI instead of a reload loop.
+window.addEventListener('vite:preloadError', (event) => {
+  const KEY = 'cairn.chunkReloadAt';
+  const last = Number(sessionStorage.getItem(KEY) || 0);
+  if (Date.now() - last < 30_000) return; // recently tried — let it fail visibly
+  sessionStorage.setItem(KEY, String(Date.now()));
+  event.preventDefault();
+  window.location.reload();
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
