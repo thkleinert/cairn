@@ -1304,14 +1304,23 @@ select.input {
    PLACE LIST VIEW
    ============================================================ */
 .place-list {
-  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  /* height: 100%, not flex: 1 — the parent (.trip-content) is a plain block,
+     not a flex container, so flex:1 was a no-op: the list sized to its content,
+     .trip-content's overflow:hidden clipped the excess, and this element's own
+     overflow-y never engaged. Pinning to the parent's (definite, flexed)
+     height makes the list itself the scroller. */
+  height: 100%;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 0 0 calc(76px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column;
   background: var(--color-surface);
 }
 
-/* Rows settle in with a short stagger when the list appears */
+/* Rows settle in with a short stagger when the list appears. flex-shrink: 0
+   so rows keep their natural height now that the list is a fixed-height
+   scroller instead of growing with its content. */
 .place-list li {
+  flex-shrink: 0;
   animation: rowIn var(--dur-base) var(--glide) backwards;
 }
 .place-list li:nth-child(1) { animation-delay: 0.03s; }
