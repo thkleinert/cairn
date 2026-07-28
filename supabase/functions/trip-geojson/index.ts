@@ -23,7 +23,10 @@ type Place = {
   visited_at: string;
 };
 
-const MAPBOX_TOKEN = Deno.env.get('MAPBOX_TOKEN'); // optional; enables road snapping
+// Road snapping via Mapbox directions. Fallback is the app's PUBLIC client
+// token (it ships in the browser bundle, so baking it here reveals nothing);
+// a MAPBOX_TOKEN secret on the function still takes precedence.
+const MAPBOX_TOKEN = Deno.env.get('MAPBOX_TOKEN') ?? 'pk.eyJ1IjoidGhrbGVpbmVyZCIsImEiOiJjbXF3YW9ja3UwZG9zMnFyMmtudWFzOGl2In0.VHuukPQ6hsEdxLNQ49qqzw';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
