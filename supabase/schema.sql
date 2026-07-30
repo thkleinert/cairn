@@ -592,13 +592,12 @@ create index places_trip_id_idx on public.places(trip_id);
 create index places_google_place_id_idx on public.places(google_place_id);
 create index tags_trip_id_idx on public.tags(trip_id);
 -- The frontend's hot paths: place loads filter trip_id + order by position,
--- every place fetch embeds place_images, tag deletion cascades by tag_id, and
--- place/comment deletion cascades through activity's FKs.
+-- every place fetch embeds place_images, tag deletion cascades by tag_id.
+-- (activity's cascade indexes live next to the activity table below — this
+-- file must stay runnable top-to-bottom in a single SQL Editor paste.)
 create index places_trip_position_idx on public.places(trip_id, position);
 create index place_images_place_id_idx on public.place_images(place_id);
 create index place_tags_tag_id_idx on public.place_tags(tag_id);
-create index activity_place_id_idx on public.activity(place_id);
-create index activity_comment_id_idx on public.activity(comment_id);
 
 -- ============================================================
 -- STORAGE
@@ -785,6 +784,9 @@ create table public.activity (
 );
 
 create index activity_trip_id_idx on public.activity(trip_id, created_at desc);
+-- Cascade hot paths: place/comment deletion walks activity through these FKs.
+create index activity_place_id_idx on public.activity(place_id);
+create index activity_comment_id_idx on public.activity(comment_id);
 
 -- Per-user "mark all read" cursor: everything at or before this is read.
 create table public.activity_seen (
