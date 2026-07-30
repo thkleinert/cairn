@@ -12,9 +12,19 @@
 // importer can build its `trips.js` entry; the importer strips it before
 // writing the file.
 //
-// verify_jwt is disabled: auth is the share token itself, checked below.
+// verify_jwt is disabled (pinned in ../../config.toml so deploys can't
+// forget): auth is the share token itself, checked below.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// This endpoint is unauthenticated (token-gated), and every leg costs a
+// Mapbox Directions call — bound the damage a looping token holder can do:
+// legs beyond the cap fall back to straight lines instead of API calls, and
+// a computed result is reused for a while (per warm instance) since places
+// change far less often than exports are requested.
+const MAX_ROUTED_LEGS = 30;
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const cache = new Map<string, { at: number; body: string }>();
 
 type Place = {
   name: string;
@@ -103,15 +113,26 @@ Deno.serve(async (req: Request) => {
   if (placesErr) return json({ error: 'places load failed' }, 500);
   const places = (placesData ?? []) as Place[];
 
+  // Serve a still-fresh cached export: the visit list is the cache key, so
+  // any change to the visited places invalidates it naturally.
+  const cacheKey = trip.id + '|' + places.map((p) => `${p.latitude},${p.longitude},${p.visited_at}`).join(';');
+  const hit = cache.get(cacheKey);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    return new Response(hit.body, {
+      status: 200,
+      headers: { ...cors, 'Content-Type': 'application/geo+json' },
+    });
+  }
+
   const features: unknown[] = [];
 
   // Routed legs between consecutive stops. A leg with no drivable route (or
-  // when Mapbox isn't configured) degrades to a straight line rather than a
-  // gap, so the track always stays connected.
+  // when Mapbox isn't configured, or past the routing cap) degrades to a
+  // straight line rather than a gap, so the track always stays connected.
   for (let i = 0; i < places.length - 1; i++) {
     const from: [number, number] = [places[i].longitude, places[i].latitude];
     const to: [number, number] = [places[i + 1].longitude, places[i + 1].latitude];
-    const road = await roadLeg(from, to);
+    const road = i < MAX_ROUTED_LEGS ? await roadLeg(from, to) : null;
     features.push({
       type: 'Feature',
       properties: { name: `${places[i].name} → ${places[i + 1].name}`, road: !!road },
@@ -138,19 +159,26 @@ Deno.serve(async (req: Request) => {
       ]
     : null;
 
-  return json(
-    {
-      type: 'FeatureCollection',
-      features,
-      metadata: {
-        name: trip.name,
-        dateStart: trip.start_date,
-        dateEnd: trip.end_date,
-        destCoords: center,
-        stopCount: places.length,
-      },
+  const body = JSON.stringify({
+    type: 'FeatureCollection',
+    features,
+    metadata: {
+      name: trip.name,
+      dateStart: trip.start_date,
+      dateEnd: trip.end_date,
+      destCoords: center,
+      stopCount: places.length,
     },
-    200,
-    'application/geo+json',
-  );
+  });
+
+  cache.set(cacheKey, { at: Date.now(), body });
+  // Drop stale entries so a token-scanning attacker can't grow the map.
+  for (const [k, v] of cache) {
+    if (Date.now() - v.at >= CACHE_TTL_MS) cache.delete(k);
+  }
+
+  return new Response(body, {
+    status: 200,
+    headers: { ...cors, 'Content-Type': 'application/geo+json' },
+  });
 });

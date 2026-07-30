@@ -50,7 +50,9 @@ create table public.places (
   notes           text,
   source_urls     text[] not null default '{}',
   image_url       text,
-  added_by        uuid references auth.users(id),
+  -- set null on user deletion: a NO ACTION FK here makes deleting any account
+  -- that ever added a place to someone else's trip fail outright.
+  added_by        uuid references auth.users(id) on delete set null,
   position        integer not null default 0,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
@@ -219,6 +221,54 @@ revoke update on table public.trips from anon, authenticated;
 grant update (name, description, start_date, end_date, cover_image_url)
   on public.trips to authenticated;
 
+-- share_token is likewise excluded from SELECT: it's a bearer credential for
+-- the public /shared view, and a viewer-role member must not be able to lift
+-- it and publish a trip the owner never shared. The owner reads/rotates it via
+-- the RPCs below. Client-side selects must therefore name their columns —
+-- select('*') on trips fails with a column permission error by design.
+revoke select on table public.trips from anon, authenticated;
+grant select (id, name, description, start_date, end_date, cover_image_url,
+              owner_id, created_at, updated_at)
+  on public.trips to authenticated;
+
+-- Owner-only read of the share token (drives the "copy share link" UI).
+create or replace function public.get_share_token(p_trip_id uuid)
+returns uuid
+language sql security definer stable
+set search_path = public, auth
+as $$
+  select t.share_token from public.trips t
+  where t.id = p_trip_id and t.owner_id = auth.uid();
+$$;
+
+grant execute on function public.get_share_token(uuid) to authenticated;
+
+-- Rotate the token: the owner's remedy when a share link leaked. Old links
+-- (including geojson exports) stop working immediately.
+create or replace function public.rotate_share_token(p_trip_id uuid)
+returns uuid
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  v_token uuid;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  -- gen_random_uuid(), not uuid_generate_v4(): the latter lives in the
+  -- extensions schema, which this function's pinned search_path can't see.
+  update public.trips
+    set share_token = gen_random_uuid()
+  where id = p_trip_id and owner_id = auth.uid()
+  returning share_token into v_token;
+  if v_token is null then
+    raise exception 'Only the trip owner can reset the share link';
+  end if;
+  return v_token;
+end;
+$$;
+
+grant execute on function public.rotate_share_token(uuid) to authenticated;
+
 create policy "trip_delete" on public.trips for delete
   using (owner_id = public.auth_uid());
 
@@ -253,11 +303,38 @@ create policy "tags_update" on public.tags for update
 create policy "tags_delete" on public.tags for delete
   using (public.is_trip_editor(trip_id, public.auth_uid()));
 
+-- Atomic reorder: one statement for the whole new order. The client used to
+-- issue one UPDATE per place, and a partial failure left server, client, and
+-- realtime three different orders.
+create or replace function public.reorder_places(p_trip_id uuid, p_place_ids uuid[])
+returns void
+language plpgsql security definer
+set search_path = public, auth
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.is_trip_editor(p_trip_id, auth.uid()) then
+    raise exception 'Not an editor of this trip';
+  end if;
+  update public.places p
+    set position = u.ord - 1
+  from unnest(p_place_ids) with ordinality as u(id, ord)
+  where p.id = u.id and p.trip_id = p_trip_id;
+end;
+$$;
+
+grant execute on function public.reorder_places(uuid, uuid[]) to authenticated;
+
 -- places
 create policy "places_select" on public.places for select
   using (public.is_trip_member(trip_id, public.auth_uid()));
+-- added_by must be the caller (or null): without the check, an editor could
+-- attribute a place — and its activity-feed entry — to any other member.
 create policy "places_insert" on public.places for insert
-  with check (public.is_trip_editor(trip_id, public.auth_uid()));
+  with check (
+    public.is_trip_editor(trip_id, public.auth_uid())
+    and (added_by is null or added_by = public.auth_uid())
+  );
 create policy "places_update" on public.places for update
   using (public.is_trip_editor(trip_id, public.auth_uid()));
 create policy "places_delete" on public.places for delete
@@ -366,10 +443,12 @@ grant execute on function public.remove_collaborator(uuid, uuid) to authenticate
 -- ============================================================
 -- TRIP INVITES — pending memberships via a copyable link
 -- ------------------------------------------------------------
--- Inviting an email that already has an account adds them straight to
--- trip_members. Inviting one that doesn't creates a token-based invite; the
--- owner shares the link, and whoever opens it and signs in redeems the token
--- (acceptance is by token, email is just a label of who it was meant for).
+-- Every invite is a token link, whether or not the email already has an
+-- account: the owner shares the link, and whoever opens it and signs in
+-- redeems the token (acceptance is by token; email is just a label of who it
+-- was meant for). Uniform tokens keep two problems out: the RPC's response
+-- can't be used to probe which emails have accounts on the instance, and
+-- nobody is ever added to a trip without opening the link themselves.
 -- ============================================================
 
 create table public.trip_invites (
@@ -398,8 +477,8 @@ create policy "trip_invites_select" on public.trip_invites for select
       where t.id = trip_id and t.owner_id = public.auth_uid())
   );
 
--- Create an invite. Existing account -> added immediately; otherwise a
--- pending token invite (reusing an open one for the same email if present).
+-- Create an invite: always a pending token link (reusing an open one for the
+-- same email if present), never an immediate membership — see block comment.
 create or replace function public.create_trip_invite(
   p_trip_id uuid,
   p_email   text,
@@ -411,7 +490,6 @@ set search_path = public, auth
 as $$
 declare
   v_uid    uuid;
-  v_target uuid;
   v_token  uuid;
 begin
   v_uid := auth.uid();
@@ -425,19 +503,10 @@ begin
     raise exception 'Only the trip owner can invite collaborators';
   end if;
 
-  select u.id into v_target from auth.users u where lower(u.email) = lower(p_email);
-
-  if v_target is not null then
-    if v_target = v_uid then raise exception 'You are already the owner of this trip'; end if;
-    insert into public.trip_members (trip_id, user_id, role)
-    values (p_trip_id, v_target, p_role)
-    on conflict (trip_id, user_id) do update set role = excluded.role;
-    return jsonb_build_object('status', 'added', 'email', p_email, 'role', p_role);
-  end if;
-
   select token into v_token
   from public.trip_invites
-  where trip_id = p_trip_id and lower(email) = lower(p_email) and accepted_at is null
+  where trip_id = p_trip_id and lower(email) = lower(p_email)
+    and accepted_at is null and expires_at > now()
   limit 1;
 
   if v_token is null then
@@ -454,7 +523,10 @@ $$;
 
 grant execute on function public.create_trip_invite(uuid, text, text) to authenticated;
 
--- Public token lookup for the accept screen (name/role/inviter, no row access).
+-- Public token lookup for the accept screen (name/role/inviter, no row
+-- access). Only live invites answer: an expired or already-redeemed token
+-- must not keep leaking the trip name and inviter email to whoever replays
+-- the old link.
 create or replace function public.get_trip_invite(p_token uuid)
 returns table (
   trip_id       uuid,
@@ -470,7 +542,9 @@ as $$
   from public.trip_invites i
   join public.trips t on t.id = i.trip_id
   join auth.users u on u.id = i.invited_by
-  where i.token = p_token;
+  where i.token = p_token
+    and i.accepted_at is null
+    and i.expires_at > now();
 $$;
 
 grant execute on function public.get_trip_invite(uuid) to anon, authenticated;
@@ -559,7 +633,9 @@ as $$
       '[]'::jsonb),
     'places', coalesce((
       select jsonb_agg(
-        to_jsonb(p) || jsonb_build_object(
+        -- scrub like the trip object: anonymous token holders get the trip
+        -- content, not live auth.users UUIDs or Google internals.
+        (to_jsonb(p) - 'added_by' - 'google_place_id') || jsonb_build_object(
           'tags', coalesce(
             (select jsonb_agg(to_jsonb(tg2))
              from public.place_tags pt
@@ -607,9 +683,14 @@ create index place_tags_tag_id_idx on public.place_tags(tag_id);
 -- the first path segment. "Public" means anyone with a file's URL can fetch
 -- its bytes; listing/writing still goes through these policies.
 -- ============================================================
-insert into storage.buckets (id, name, public)
-values ('place-images', 'place-images', true)
-on conflict (id) do nothing;
+-- MIME + size limits matter on a public bucket: without them any editor can
+-- upload text/html and get it served from your *.supabase.co origin
+-- (phishing / stored XSS), or fill the bucket with arbitrarily large files.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('place-images', 'place-images', true, 10485760, array['image/*'])
+on conflict (id) do update
+  set file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
 
 create policy "place_images_select" on storage.objects for select
   using (
@@ -633,11 +714,16 @@ create policy "place_images_delete" on storage.objects for delete
 -- usePlaces/useTags subscribe to postgres_changes on these tables; without
 -- this the channels connect and simply never fire (collaborators never see
 -- each other's edits live). replica identity full so DELETE events carry the
--- trip_id the client-side filter needs.
+-- trip_id the client-side filter needs. place_tags/place_images are published
+-- too: tag and photo edits touch only the join tables, and without events for
+-- them collaborators keep stale tags/galleries until an unrelated place edit.
 -- ============================================================
 alter table public.places replica identity full;
 alter table public.tags replica identity full;
-alter publication supabase_realtime add table public.places, public.tags;
+alter table public.place_tags replica identity full;
+alter table public.place_images replica identity full;
+alter publication supabase_realtime add table
+  public.places, public.tags, public.place_tags, public.place_images;
 
 -- ============================================================
 -- PLACE COMMENTS  (feature/place-comments prototype)
@@ -645,8 +731,7 @@ alter publication supabase_realtime add table public.places, public.tags;
 -- A per-place discussion thread so collaborators can talk through a spot
 -- ("should we book this?") separately from the single-author notes field.
 -- Any trip member may read and post; you may only delete your own comment
--- (the trip owner may delete any, to moderate). Apply this whole block, then
--- flip USE_MOCK to false in src/hooks/useComments.ts to go live.
+-- (the trip owner may delete any, to moderate).
 -- ============================================================
 
 create table public.place_comments (
@@ -747,7 +832,10 @@ begin
   returning place_comments.id into v_id;
 
   return query
-    select c.id, c.place_id, c.user_id, u.email, c.body, c.created_at
+    -- ::text matters: auth.users.email is varchar(255), and plpgsql's RETURN
+    -- QUERY (unlike LANGUAGE sql) refuses the implicit coercion — without the
+    -- cast every comment post fails with "structure of query does not match".
+    select c.id, c.place_id, c.user_id, u.email::text, c.body, c.created_at
     from public.place_comments c
     join auth.users u on u.id = c.user_id
     where c.id = v_id;
@@ -768,9 +856,6 @@ grant execute on function public.add_place_comment(uuid, text) to authenticated;
 -- — by tapping through to its place or swiping it away, which are the same
 -- action. The feed itself is never cleared — it's a rolling window
 -- (get_activity returns the newest 50); dismissed items simply drop out.
---
--- Apply this block, then flip USE_MOCK to false in
--- src/hooks/useNotifications.ts to go live.
 -- ============================================================
 
 create table public.activity (
@@ -932,3 +1017,51 @@ as $$
 $$;
 
 grant execute on function public.mark_activity_seen() to authenticated;
+
+-- ============================================================
+-- FUNCTION PRIVILEGES — make the grants above real
+-- ------------------------------------------------------------
+-- Postgres grants EXECUTE on every new function to PUBLIC by default, so the
+-- per-function `grant execute … to authenticated` statements above were
+-- documentation, not access control: anon could call any RPC (each one's own
+-- auth.uid()/membership checks held the line alone). Strip the implicit
+-- grant from this file's functions, then re-grant per role. Deliberately an
+-- explicit list — `all functions in schema public` would also revoke
+-- extension helpers like uuid_generate_v4(), and column defaults execute
+-- with the *inserting role's* privileges, which would break every INSERT.
+-- If you add a function to this file, add it here too.
+-- ============================================================
+revoke execute on function
+  public.auth_uid(),
+  public.is_trip_member(uuid, uuid),
+  public.is_trip_editor(uuid, uuid),
+  public.create_trip(text, text, date, date),
+  public.get_trip_members(uuid),
+  public.remove_collaborator(uuid, uuid),
+  public.create_trip_invite(uuid, text, text),
+  public.get_trip_invite(uuid),
+  public.accept_trip_invite(uuid),
+  public.revoke_trip_invite(uuid),
+  public.get_shared_trip(uuid),
+  public.get_share_token(uuid),
+  public.rotate_share_token(uuid),
+  public.reorder_places(uuid, uuid[]),
+  public.get_place_comments(uuid),
+  public.add_place_comment(uuid, text),
+  public.get_activity(),
+  public.dismiss_activity(uuid),
+  public.mark_activity_seen(),
+  public.set_updated_at(),
+  public.add_trip_owner_as_member(),
+  public.log_place_added(),
+  public.log_comment_added()
+from public, anon;
+
+-- RLS and storage policies evaluate these as the calling role.
+grant execute on function public.auth_uid() to anon, authenticated;
+grant execute on function public.is_trip_member(uuid, uuid) to anon, authenticated;
+grant execute on function public.is_trip_editor(uuid, uuid) to anon, authenticated;
+
+-- The two genuinely anonymous entry points (share links + invite links).
+grant execute on function public.get_shared_trip(uuid) to anon;
+grant execute on function public.get_trip_invite(uuid) to anon;

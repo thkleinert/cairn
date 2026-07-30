@@ -1,0 +1,13 @@
+# Per-function deploy configuration — the CLI reads this on
+# `supabase functions deploy`, so the JWT settings below can't be forgotten
+# on the command line.
+
+# Anonymous by design: callers authenticate with the trip's share token
+# (validated inside the function), not a Supabase session.
+[functions.trip-geojson]
+verify_jwt = false
+
+# Signed-in users only; the upload itself additionally runs under the
+# caller's JWT so storage RLS applies.
+[functions.persist-photo]
+verify_jwt = true
