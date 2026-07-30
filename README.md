@@ -31,30 +31,43 @@ traveling with.
 
 ## Contents
 
-- [Feature tour](#feature-tour)
-- [How it's built](#how-its-built)
-- [Self-hosting guide](#self-hosting-guide)
+- [Feature Tour](#feature-tour)
+- [How It's Built](#how-its-built)
+- [Self-Hosting Guide](#self-hosting-guide)
   - [1. Prerequisites](#1-prerequisites)
-  - [2. Clone and install](#2-clone-and-install)
-  - [3. Create the Supabase project](#3-create-the-supabase-project)
-  - [4. Get a Mapbox token](#4-get-a-mapbox-token)
-  - [5. Get a Google Places API key](#5-get-a-google-places-api-key)
-  - [6. Configure environment variables](#6-configure-environment-variables)
-  - [7. Run it](#7-run-it)
+  - [2. Clone and Install](#2-clone-and-install)
+  - [3. Create the Supabase Project](#3-create-the-supabase-project)
+  - [4. Get a Mapbox Token](#4-get-a-mapbox-token)
+  - [5. Get a Google Places API Key](#5-get-a-google-places-api-key)
+  - [6. Configure Environment Variables](#6-configure-environment-variables)
+  - [7. Run It](#7-run-it)
   - [8. Deploy](#8-deploy)
-  - [9. Optional: edge functions](#9-optional-edge-functions)
-- [Install it like an app](#-install-it-like-an-app)
-- [Security model](#security-model)
+  - [9. Edge Functions](#9-edge-functions)
+- [Install It Like an App](#-install-it-like-an-app)
+- [Security Model](#security-model)
 - [Development](#development)
-- [Project structure](#project-structure)
+- [Project Structure](#project-structure)
 
 ---
 
-## Feature tour
+## Feature Tour
 
-### 🗺️ The map is the plan
+### 🧭 Your Trips, One Shelf
 
-<img align="right" src="docs/screenshots/trip-map.png" width="235" alt="Map view" />
+<img align="right" src="docs/screenshots/trip-list.png" width="235" alt="Trip list" />
+
+Trips live on cards with a cover photo, dates, and a badge when a trip is
+shared with others. The bell in the corner collects activity from your
+co-planners across every trip, and the + button starts the next adventure.
+
+Each trip is its own shared space: places, tags, photos, discussion, and the
+people you're planning with.
+
+<br clear="right" />
+
+### 🗺️ The Map Is the Plan
+
+<img align="left" src="docs/screenshots/trip-map.png" width="235" alt="Map view" />
 
 Every place in the trip is plotted on a Mapbox map with a marker that carries
 its tag's emoji — waterfalls, hot springs, food spots, and hikes are
@@ -63,18 +76,18 @@ distinguishable at a glance.
 Mark places as **visited** and Cairn draws your actual route between them, in
 the order you visited: real road geometry via the Mapbox Directions API, with
 a dashed straight-line fallback wherever there is no drivable route (island
-hops, ferry crossings). The trip slowly turns into a travel diary while you're
-still on the road.
+hops, ferry crossings). The trip slowly turns into a travel diary while
+you're still on the road.
 
 - Tap a marker to open the place
 - Filter markers by tag
 - One-tap locate-me and compass controls
 
-<br clear="right" />
+<br clear="left" />
 
-### 📋 …and so is the list
+### 📋 …And So Is the List
 
-<img align="left" src="docs/screenshots/trip-places-list.png" width="235" alt="List view" />
+<img align="right" src="docs/screenshots/trip-places-list.png" width="235" alt="List view" />
 
 The same places as a scrollable list — photo thumbnail, address, tag chips,
 and a check for the ones you've already been to.
@@ -83,11 +96,11 @@ Drag the handle to reorder; the order is shared, so the list doubles as your
 rough itinerary. Map and list are two views over the same trip, and the pill
 at the bottom flips between them.
 
-<br clear="left" />
+<br clear="right" />
 
-### 📍 Every place carries its story
+### 📍 Every Place Carries Its Story
 
-<img align="right" src="docs/screenshots/place-detail.png" width="235" alt="Place detail" />
+<img align="left" src="docs/screenshots/place-detail.png" width="235" alt="Place detail" />
 
 Tapping a place opens its detail sheet:
 
@@ -96,15 +109,16 @@ Tapping a place opens its detail sheet:
 - **Sources** — the article, reel, or maps link that convinced you this place
   was worth adding. Six months later you'll want it.
 - **Photos** — a gallery per place: the Google Places photo it was created
-  with, plus anything you upload yourself.
+  with (persisted into your own storage so it never expires), plus anything
+  you upload yourself.
 - **Tags** — color- and emoji-coded, trip-scoped, filterable.
 - **Visited toggle** — flip it when you get there; the map route updates.
 
-<br clear="right" />
+<br clear="left" />
 
-### 💬 Talk it through, right on the place
+### 💬 Talk It Through, Right on the Place
 
-<img align="left" src="docs/screenshots/place-comments.png" width="235" alt="Per-place discussion" />
+<img align="right" src="docs/screenshots/place-comments.png" width="235" alt="Per-place discussion" />
 
 Each place has its own discussion thread, separate from the notes field —
 "should we book this?", "is it worth the detour?" — so decisions happen next
@@ -112,11 +126,11 @@ to the thing being decided, not lost in a group chat.
 
 You can delete your own comments; the trip owner can moderate the thread.
 
-<br clear="left" />
+<br clear="right" />
 
-### 🔔 Know what changed while you were away
+### 🔔 Know What Changed While You Were Away
 
-<img align="right" src="docs/screenshots/notifications.png" width="235" alt="Activity feed" />
+<img align="left" src="docs/screenshots/notifications.png" width="235" alt="Activity feed" />
 
 The bell on the trips screen collects what your co-planners did across all
 your trips: places they added, comments they posted. Tap an item to jump
@@ -124,11 +138,11 @@ straight to that place (comment items open the thread), swipe it away to
 dismiss it, or mark everything read at once. Your own actions never notify
 you.
 
-<br clear="right" />
+<br clear="left" />
 
-### 🔎 Adding a place takes seconds
+### 🔎 Adding a Place Takes Seconds
 
-<img align="left" src="docs/screenshots/search.png" width="235" alt="Google Places search" />
+<img align="right" src="docs/screenshots/search.png" width="235" alt="Google Places search" />
 
 The + button morphs into a search bar backed by Google Places autocomplete —
 find anything from "Húsavík whale watching" to a specific restaurant, and it
@@ -136,54 +150,56 @@ lands on the map with its name, address, coordinates, and photo already
 filled in. A quick-add sheet also lets you paste a link or a photo straight
 onto a place.
 
-<br clear="left" />
+<br clear="right" />
 
-### 👥 Built for planning together
+### 👥 Built for Planning Together
 
-<img align="right" src="docs/screenshots/trip-settings.png" width="235" alt="Trip settings with collaborators" />
+<img align="left" src="docs/screenshots/trip-settings.png" width="235" alt="Trip settings with share link and collaborators" />
 
 Invite people by email as an **editor** (can add and edit places) or a
-**viewer** (read-only):
+**viewer** (read-only). Every invite is a **copyable link**: whoever opens
+it and signs in joins the trip — nobody is ever silently added to a trip
+they didn't opt into. Invites expire after 30 days and can be revoked while
+pending.
 
-- If they already have an account, they're added instantly.
-- If they don't, Cairn gives you a **copyable invite link**; whoever opens it
-  and signs up joins the trip. Invites expire after 30 days and can be
-  revoked while pending.
+Everything — places, tags, photos, reorderings — updates live for the whole
+group via Supabase Realtime.
 
-Everything — places, tags, reorderings — updates live for the whole group via
-Supabase Realtime.
+<br clear="left" />
+
+### 🔗 Share a Trip with Anyone
+
+<img align="right" src="docs/screenshots/shared-view.png" width="235" alt="Read-only shared view" />
+
+Trip settings has a **read-only share link** that renders the whole trip —
+map, places, notes, photos — for anyone who has it, no account required.
+Send it to the friend who "just wants to see the plan". If a link escapes
+further than you meant it to, **reset it** and the old one dies instantly.
+
+There's also a GeoJSON export of the visited route (see
+[Edge Functions](#9-edge-functions)) for plotting finished trips on your own
+travel map.
 
 <br clear="right" />
 
-### 🔗 Share a trip with people who don't have an account
+### 🔐 Simple Sign-In
 
-<img align="left" src="docs/screenshots/shared-view.png" width="235" alt="Read-only shared view" />
+<img align="left" src="docs/screenshots/auth.png" width="235" alt="Sign-in screen" />
 
-Every trip has a share link (`/shared/<token>`) that renders a **read-only**
-version of the whole trip — map, places, notes, photos — for anyone who has
-the link, no sign-in required. Send it to the friend who "just wants to see
-the plan".
-
-There's also a GeoJSON export of the visited route (see
-[edge functions](#9-optional-edge-functions)) for plotting finished trips on
-your own travel map.
+Plain email + password via Supabase Auth — no OAuth apps to configure, no
+third-party identity dance. Password reset by email works out of the box,
+and changing your password signs out every other session.
 
 <br clear="left" />
 
-<div align="center">
-  <img src="docs/screenshots/trip-list.png" width="235" alt="Trip list" />&nbsp;&nbsp;
-  <img src="docs/screenshots/auth.png" width="235" alt="Sign-in screen" />
-  <p><em>Trips live on cards with cover photos; auth is plain email + password — no OAuth setup needed.</em></p>
-</div>
-
 ---
 
-## How it's built
+## How It's Built
 
 **No custom backend server.** The React app talks directly to Supabase and
 the map/places APIs; all server-side logic lives in Postgres — Row Level
-Security policies and a set of `SECURITY DEFINER` RPCs — plus one optional
-edge function for the GeoJSON export.
+Security policies and a set of `SECURITY DEFINER` RPCs — plus two small edge
+functions (photo persistence and the GeoJSON export).
 
 ```mermaid
 flowchart LR
@@ -197,11 +213,11 @@ flowchart LR
         Auth[Auth]
         RT[Realtime]
         ST[Storage<br/>place-images]
-        EF[Edge function<br/>trip-geojson]
+        EF[Edge functions<br/>persist-photo · trip-geojson]
     end
     Hooks -->|supabase-js| PG
     Hooks --> Auth
-    RT -->|live place & tag changes| Hooks
+    RT -->|live place, tag & photo changes| Hooks
     Hooks -->|photo uploads| ST
     UI -->|map tiles + directions| MB[Mapbox GL / Directions]
     UI -->|place search + photos| GP[Google Places]
@@ -211,18 +227,18 @@ flowchart LR
 
 | Layer | Choice |
 |---|---|
-| Frontend | React 19 + TypeScript, Vite, plain CSS |
+| Frontend | React 19 + TypeScript (strict), Vite, plain CSS |
 | Database | Supabase Postgres — every row gated by trip-membership RLS |
 | Auth | Supabase Auth, email + password |
-| Live sync | Supabase Realtime (`postgres_changes` on `places` and `tags`) |
-| Photo storage | Supabase Storage, one public `place-images` bucket |
+| Live sync | Supabase Realtime (`postgres_changes` on places, tags, photos) |
+| Photo storage | Supabase Storage, one public `place-images` bucket (images only, 10 MB cap) |
 | Maps & routing | Mapbox GL JS + Mapbox Directions API |
 | Place search | Google Maps JavaScript API (Places library) |
 | Offline / install | Hand-rolled service worker + web manifest (no framework) |
 
 ---
 
-## Self-hosting guide
+## Self-Hosting Guide
 
 Cairn is designed to be self-hosted: one static frontend + one Supabase
 project you own. Everything below fits in the free tiers.
@@ -236,7 +252,7 @@ project you own. Everything below fits in the free tiers.
 - Any static host for the production build (Cloudflare Pages, Netlify,
   Vercel, …)
 
-### 2. Clone and install
+### 2. Clone and Install
 
 ```bash
 git clone <your-fork-url>
@@ -244,7 +260,7 @@ cd travel-planner
 npm install
 ```
 
-### 3. Create the Supabase project
+### 3. Create the Supabase Project
 
 1. Create a new project in the [Supabase dashboard](https://supabase.com/dashboard).
 2. Open the **SQL Editor** and run the entire contents of
@@ -253,22 +269,23 @@ npm install
    - all tables (`trips`, `trip_members`, `places`, `tags`, `place_tags`,
      `place_images`, `trip_invites`, `place_comments`, `activity`, …),
    - every Row Level Security policy (all data is scoped to trip membership),
-   - the RPCs the app calls (trip creation, invites, comments, activity feed,
-     shared-trip reads),
-   - the public **`place-images`** storage bucket and its access policies,
+   - the RPCs the app calls (trip creation, invites, share links, comments,
+     activity feed, atomic reorder),
+   - the public **`place-images`** storage bucket with image-only MIME and
+     10 MB size limits,
    - the Realtime publication that makes collaborator edits show up live.
 3. Under **Authentication → Sign In / Providers**, make sure **Email**
    sign-up is enabled (it is by default). No OAuth configuration is needed.
 4. From **Project Settings → API**, note the **Project URL** and the
    **`anon` public key**.
 
-### 4. Get a Mapbox token
+### 4. Get a Mapbox Token
 
 Sign up at [mapbox.com](https://account.mapbox.com/) and copy your **default
 public token** (`pk.…`) from the Access Tokens page. The default scopes cover
 both map rendering and the Directions API used for visited-route drawing.
 
-### 5. Get a Google Places API key
+### 5. Get a Google Places API Key
 
 1. In the [Google Cloud Console](https://console.cloud.google.com/), enable
    the **Maps JavaScript API** and **Places API** for a project.
@@ -277,7 +294,7 @@ both map rendering and the Directions API used for visited-route drawing.
    domain(s). Remember to include your local dev origin
    (e.g. `http://localhost:5173`) if you want search to work in development.
 
-### 6. Configure environment variables
+### 6. Configure Environment Variables
 
 Create `.env.local` in the project root:
 
@@ -292,7 +309,7 @@ All four are *publishable* client-side keys — safety comes from RLS (Supabase)
 and key restrictions (Google/Mapbox), not from hiding them. If any are
 missing, the app boots into a setup checklist instead of crashing.
 
-### 7. Run it
+### 7. Run It
 
 ```bash
 npm run dev
@@ -304,7 +321,7 @@ no seed data), create a trip, add a place. That's the whole loop.
 ### 8. Deploy
 
 ```bash
-npm run build   # type-checks, then outputs a static dist/
+npm run build   # type-checks, builds, and stamps the service worker version
 ```
 
 Deploy `dist/` to any static host:
@@ -317,72 +334,80 @@ Deploy `dist/` to any static host:
   included [`public/_redirects`](public/_redirects) handles this for
   Cloudflare Pages/Netlify; translate it for other hosts (e.g. a Vercel
   `rewrites` rule).
-- **Cache headers** — [`public/_headers`](public/_headers) ships sane
-  no-cache rules for the HTML shell and service worker so deploys roll out
-  cleanly.
+- **Headers** — [`public/_headers`](public/_headers) ships cache rules plus
+  a full set of security headers (CSP, HSTS, frame-ancestors, …) already
+  tuned for the Supabase/Mapbox/Google endpoints the app talks to. If your
+  host uses a different header mechanism, port that file.
 
-### 9. Optional: edge functions
+### 9. Edge Functions
 
-Two features degrade gracefully without their edge function; deploy them if
-you want them.
-
-**`trip-geojson` (included)** — exports a trip's visited route as GeoJSON
-(road-snapped legs + stop markers), authorized by the trip's share token:
+Both functions live in `supabase/functions/` and are deployed with the
+[Supabase CLI](https://supabase.com/docs/guides/functions); their JWT
+settings are pinned in [`supabase/config.toml`](supabase/config.toml) so a
+plain deploy does the right thing:
 
 ```bash
-supabase functions deploy trip-geojson --no-verify-jwt
+supabase functions deploy persist-photo trip-geojson
 supabase secrets set MAPBOX_TOKEN=pk.your-own-token
 ```
 
-`--no-verify-jwt` matters: callers authenticate with the share token, not a
-Supabase session. Set your own `MAPBOX_TOKEN` secret — otherwise the function
-falls back to the app author's public token and your exports draw down their
-Directions quota. Then:
+**`persist-photo`** — Google Places photo URLs are temporary and eventually
+expire. When a place is added from search, the app calls this function to
+copy the photo server-side into your own `place-images` bucket for a
+permanent URL (server-side because Google's photo CDN has no CORS headers).
+The upload runs under the *caller's* JWT, so the bucket's own RLS decides
+what's writable — the function holds no elevated storage privileges. Without
+it deployed, the app degrades gracefully and keeps the temporary Google URL.
+
+**`trip-geojson`** — exports a trip's visited route as GeoJSON (road-snapped
+legs + stop markers), authorized by the trip's share token:
 
 ```
 GET https://<project>.supabase.co/functions/v1/trip-geojson?token=<share_token>
 ```
 
-**`persist-photo` (not included yet)** — Google Places photo URLs are
-temporary and eventually expire. The app tries to call an edge function named
-`persist-photo` to copy the photo server-side into your `place-images` bucket
-for a permanent URL (server-side because Google's photo CDN has no CORS
-headers). Without it the app simply keeps the temporary Google URL, which
-will stop loading for old places at some point. If you want permanent photos,
-deploy your own function with this contract: accept `{ photoUrl, path }`
-(JWT-authenticated), fetch `photoUrl`, upload the bytes to `place-images` at
-`path` (validate that `path` stays inside a trip the caller can edit), and
-return `{ url }`.
+Set your own `MAPBOX_TOKEN` secret — otherwise the function falls back to
+the app author's public token and your exports draw down their Directions
+quota. Routing is capped and cached server-side, so a leaked link can't burn
+unbounded quota.
 
 ---
 
-## 📲 Install it like an app
+## 📲 Install It Like an App
 
 Cairn is an installable PWA. On a phone, open it in the browser and use
 **Add to Home Screen** (iOS Safari) or the install prompt (Android Chrome)
 for a full-screen, app-like experience. The service worker keeps the app
 shell cached — previously loaded screens survive flaky connectivity, and an
-offline banner tells you when you've lost the network.
+offline banner tells you when you've lost the network. Each deploy stamps a
+fresh cache version, so clients never accumulate stale builds.
 
 ---
 
-## Security model
+## Security Model
 
 Worth understanding before you invite the whole group:
 
 - **All trip data is gated by Row Level Security.** Every table's policies
   boil down to *"is the caller a member of this trip?"*, with writes
   requiring the `editor` or `owner` role. Privilege escalation is blocked at
-  the column level: only the owner can touch `owner_id`, and nobody can
-  rewrite `share_token`.
+  the column level: only the owner can touch `owner_id`, and the share token
+  isn't even readable by other members — it's a bearer credential, served to
+  the owner alone via an RPC.
 - **Share links and invite links are bearer tokens.** Whoever holds a trip's
-  share token can read the whole trip (that's the feature) — treat the link
-  like the data. Invite links make whoever opens them a member; they expire
-  after 30 days and can be revoked while pending.
-- **Uploaded photos live in a public bucket.** Uploads and deletions are
-  restricted to trip editors, but anyone who has a file's exact URL can fetch
-  its bytes. Don't upload photos you wouldn't hand to everyone who might see
-  the trip.
+  share link can read the whole trip (that's the feature) — treat the link
+  like the data, and **reset it from trip settings** if it leaks. Invite
+  links join whoever opens them; they expire after 30 days, can be revoked
+  while pending, and redeeming one from a previous session always asks for
+  confirmation first.
+- **Uploaded photos live in a public bucket** (images only, 10 MB max).
+  Uploads and deletions are restricted to trip editors, and deleting a
+  photo, place, or trip also removes the underlying files — but anyone who
+  saved a file's exact URL while it existed could have fetched its bytes.
+  Don't upload photos you wouldn't hand to everyone who might see the trip.
+- **The frontend ships hardened headers.** `public/_headers` sets a strict
+  Content-Security-Policy scoped to the APIs the app actually uses, plus
+  HSTS, `frame-ancestors 'none'`, and friends.
 - **Email sign-ups are open by default.** Anyone who finds your instance can
   create an account (they'll see only their own trips). If you want a private
   instance, disable sign-ups in Supabase Auth settings after creating your
@@ -394,16 +419,16 @@ Worth understanding before you invite the whole group:
 
 ```bash
 npm run dev      # Vite dev server
-npm run build    # tsc -b + production build into dist/
+npm run build    # tsc -b (strict) + production build + SW version stamp
 npm run preview  # serve the production build locally
-npm run lint     # eslint
+npm run lint     # eslint (includes the service worker)
 ```
 
 There is no test suite yet; `npm run build` is the type-safety gate.
 
 ---
 
-## Project structure
+## Project Structure
 
 ```
 src/
@@ -411,14 +436,18 @@ src/
                   PlaceDetailSheet, TripSettingsSheet, SharedTripView, …
   hooks/          Data hooks wrapping Supabase — usePlaces, useTrips, useTags,
                   useComments, useNotifications, useCollaborators, useAuth
-  lib/            Supabase client, Mapbox routing, Google photo helpers, toasts
+  lib/            Supabase client, Mapbox routing, Google photo helpers,
+                  storage cleanup, toasts
   types/          Shared TypeScript types
 supabase/
   schema.sql      The entire backend: tables, RLS, RPCs, storage bucket,
                   realtime publication. Run once on a fresh project.
+  config.toml     Per-function JWT settings for the CLI
   functions/
-    trip-geojson/ Share-token-gated GeoJSON export of a trip's visited route
-public/           PWA manifest, service worker, redirect & header rules
+    persist-photo/  Copies expiring Google photos into your own bucket
+    trip-geojson/   Share-token-gated GeoJSON export of the visited route
+public/           PWA manifest, service worker, viewport shim, headers
+scripts/          Build helpers (service-worker cache stamping)
 docs/             Logo & README screenshots
 ```
 
