@@ -1,8 +1,30 @@
-/sw.js
-  Cache-Control: no-cache, no-store, must-revalidate
+# Order matters: later matching rules override earlier ones per header.
+# The catch-all pins every response — including SPA-fallback HTML for
+# /trip/:id, /shared/:token and /invite/:token, which browsers would
+# otherwise heuristically cache and serve stale after a deploy — then
+# /assets/* opts the content-hashed build files back into immutable caching.
 
-/index.html
+/*
   Cache-Control: no-cache, no-store, must-revalidate
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(self), camera=(), microphone=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://maps.gstatic.com; worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; manifest-src 'self'
 
-/
-  Cache-Control: no-cache, no-store, must-revalidate
+# Content-hashed by Vite — a new build emits new URLs, so these never go stale.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Stable static images: safe to cache for a week.
+/favicon.svg
+  Cache-Control: public, max-age=604800
+/icons.svg
+  Cache-Control: public, max-age=604800
+/icon-192.png
+  Cache-Control: public, max-age=604800
+/icon-512.png
+  Cache-Control: public, max-age=604800
+/apple-touch-icon.png
+  Cache-Control: public, max-age=604800

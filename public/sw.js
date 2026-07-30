@@ -1,8 +1,11 @@
-// Bump CACHE whenever you need every client to drop its old bundle. The
-// activate handler deletes any cache whose name isn't the current one, so
-// changing this value purges the previous build once the new worker takes
-// over — the escape hatch for "deployed but users still see the old version".
-const CACHE = 'cairn-v3';
+// __BUILD_VERSION__ is stamped by the build (vite.config.ts) so every deploy
+// gets its own cache name automatically. The activate handler deletes any
+// cache whose name isn't the current one, so each deploy purges the previous
+// build's assets once the new worker takes over — without this, long-lived
+// clients accumulated every deploy's hashed chunks until someone remembered
+// to bump a manual version string. (In dev the literal placeholder serves as
+// the version; nothing breaks.)
+const CACHE = 'cairn-__BUILD_VERSION__';
 
 // Only the app shell is pre-cached; hashed build assets are cached on demand.
 const SHELL = ['/', '/manifest.json'];
@@ -74,8 +77,27 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Same-origin images (icons, cached cover photos): cache-first for offline
-  // use and speed.
+  // The manifest is in the precache but needs a fetch branch to actually be
+  // served from it — without this, installed-app launches while offline fail
+  // the manifest request even though the bytes are sitting in the cache.
+  if (sameOrigin && url.pathname === '/manifest.json') {
+    e.respondWith(
+      fetch(request)
+        .then(res => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match('/manifest.json'))
+    );
+    return;
+  }
+
+  // Same-origin images (app icons; note cover/place photos are cross-origin
+  // Supabase storage URLs and deliberately stay network-only below): cache-
+  // first for offline use and speed.
   if (sameOrigin && request.destination === 'image') {
     e.respondWith(
       caches.match(request).then(cached =>

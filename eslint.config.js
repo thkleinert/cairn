@@ -5,7 +5,19 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'public'] },
+  { ignores: ['dist'] },
+  // The service worker + viewport shim live in public/ and run in their own
+  // scopes — lint them with the right globals instead of ignoring them.
+  {
+    files: ['public/sw.js'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  {
+    files: ['public/viewport.js'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.browser },
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
