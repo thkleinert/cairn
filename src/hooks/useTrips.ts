@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { updateTrip as updateTripRow, deleteTrip as deleteTripRow } from '../lib/trips';
+import { updateTrip as updateTripRow, deleteTrip as deleteTripRow, TRIP_COLUMNS } from '../lib/trips';
 import type { Trip } from '../types';
 
 // A trip's sort key: its travel date, falling back to when it was created for
@@ -27,7 +27,7 @@ export function useTrips(userId: string | undefined) {
     // is the true membership size.
     const { data, error } = await supabase
       .from('trips')
-      .select('*, trip_members(count)');
+      .select(`${TRIP_COLUMNS}, trip_members(count)`);
     if (error) {
       toast('Could not load trips');
       setLoading(false);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import type { PlaceComment } from '../types';
@@ -7,13 +7,28 @@ export function useComments(placeId: string) {
   const [comments, setComments] = useState<PlaceComment[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  // The sheet can stay mounted while placeId changes (tapping another marker,
+  // notification tap-through) — without a sequence guard, place A's slower
+  // response could land after place B's and show A's thread on B.
+  const seqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++seqRef.current;
     setLoading(true);
+    setError(false);
     const { data: { user } } = await supabase.auth.getUser();
+    if (seq !== seqRef.current) return;
     setCurrentUserId(user?.id ?? null);
-    const { data } = await supabase.rpc('get_place_comments', { p_place_id: placeId });
-    setComments((data as PlaceComment[]) ?? []);
+    const { data, error: rpcError } = await supabase.rpc('get_place_comments', { p_place_id: placeId });
+    if (seq !== seqRef.current) return;
+    if (rpcError) {
+      // A failed load must not render as "no comments yet".
+      setComments([]);
+      setError(true);
+    } else {
+      setComments((data as PlaceComment[]) ?? []);
+    }
     setLoading(false);
   }, [placeId]);
 
@@ -25,11 +40,11 @@ export function useComments(placeId: string) {
     const trimmed = body.trim();
     if (!trimmed) return false;
 
-    const { data, error } = await supabase.rpc('add_place_comment', {
+    const { data, error: rpcError } = await supabase.rpc('add_place_comment', {
       p_place_id: placeId,
       p_body: trimmed,
     });
-    if (error) {
+    if (rpcError) {
       toast('Could not post comment');
       return false;
     }
@@ -39,13 +54,13 @@ export function useComments(placeId: string) {
   };
 
   const deleteComment = async (id: string) => {
-    const { error } = await supabase.from('place_comments').delete().eq('id', id);
-    if (error) {
+    const { error: deleteError } = await supabase.from('place_comments').delete().eq('id', id);
+    if (deleteError) {
       toast('Could not delete comment');
       return;
     }
     setComments(prev => prev.filter(c => c.id !== id));
   };
 
-  return { comments, currentUserId, loading, addComment, deleteComment };
+  return { comments, currentUserId, loading, error, reload: load, addComment, deleteComment };
 }

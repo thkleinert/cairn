@@ -20,10 +20,18 @@ function getPlacesService(): google.maps.places.PlacesService | null {
   return placesService;
 }
 
-function waitForGoogleMaps(): Promise<void> {
-  if (window.google?.maps?.places) return Promise.resolve();
+// Resolves false if the SDK never shows up (ad-blocker, network failure) —
+// an unbounded wait would leave callers hung on a forever-pending promise
+// and accumulate one listener per attempted photo heal.
+function waitForGoogleMaps(timeoutMs = 15000): Promise<boolean> {
+  if (window.google?.maps?.places) return Promise.resolve(true);
   return new Promise(resolve => {
-    window.addEventListener('gmaps-loaded', () => resolve(), { once: true });
+    const onLoad = () => { clearTimeout(timer); resolve(true); };
+    const timer = setTimeout(() => {
+      window.removeEventListener('gmaps-loaded', onLoad);
+      resolve(false);
+    }, timeoutMs);
+    window.addEventListener('gmaps-loaded', onLoad, { once: true });
   });
 }
 
@@ -31,7 +39,7 @@ function waitForGoogleMaps(): Promise<void> {
 // google_place_id — used to self-heal places whose stored URL already
 // expired, since a dead URL's bytes can no longer be fetched directly.
 export async function fetchFreshGooglePhotoUrl(googlePlaceId: string): Promise<string | null> {
-  await waitForGoogleMaps();
+  if (!(await waitForGoogleMaps())) return null;
   const service = getPlacesService();
   if (!service) return null;
   return new Promise(resolve => {

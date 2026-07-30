@@ -1,14 +1,19 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import type { Tag } from '../types';
 
 export function useTags(tripId: string | undefined) {
   const [tags, setTags] = useState<Tag[]>([]);
+  // Same stale-response guard as usePlaces: bursty realtime events spawn
+  // concurrent refetches, and the last to *resolve* must not win.
+  const fetchSeqRef = useRef(0);
 
   const fetchTags = useCallback(async () => {
     if (!tripId) return;
+    const seq = ++fetchSeqRef.current;
     const { data, error } = await supabase.from('tags').select('*').eq('trip_id', tripId);
+    if (seq !== fetchSeqRef.current) return;
     if (error) { toast('Could not load tags'); return; }
     setTags(data ?? []);
   }, [tripId]);

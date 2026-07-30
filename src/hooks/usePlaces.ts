@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
+import { removeStorageUrls } from '../lib/storage';
 import type { Place, PlaceImage } from '../types';
 
 export function usePlaces(tripId: string | undefined) {
@@ -9,6 +10,13 @@ export function usePlaces(tripId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const healingRef = useRef<Set<string>>(new Set());
+  // Realtime events arrive in bursts and each one triggers a refetch; without
+  // a sequence guard the *last response to resolve* would win, even if it
+  // carries an older DB snapshot than one that already rendered.
+  const fetchSeqRef = useRef(0);
+  // Current place ids, for deciding whether a join-table event is ours (those
+  // tables carry no trip_id to filter on server-side).
+  const placeIdsRef = useRef<Set<string>>(new Set());
 
   // Self-heal: a cover photo still pointing at Google's ephemeral session
   // URL has already expired (that URL's bytes can't be fetched anymore),
@@ -37,11 +45,20 @@ export function usePlaces(tripId: string | undefined) {
 
   const fetchPlaces = useCallback(async () => {
     if (!tripId) { setLoading(false); return; }
+    const seq = ++fetchSeqRef.current;
     const { data, error } = await supabase
       .from('places')
       .select('*, place_tags(tag_id, tags(*)), place_images(*)')
       .eq('trip_id', tripId)
-      .order('position', { ascending: true });
+      // created_at tiebreaker: positions can collide (deletes never compact
+      // them), and without it tied rows come back in unspecified order and
+      // visibly swap between refetches.
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    // A newer fetch was issued while this one was in flight — its response
+    // supersedes this one no matter which resolves first.
+    if (seq !== fetchSeqRef.current) return;
 
     if (error) {
       toast('Could not load places');
@@ -54,6 +71,7 @@ export function usePlaces(tripId: string | undefined) {
       tags: (p.place_tags ?? []).map((pt) => pt.tags),
       images: (p.place_images ?? []).sort((a, b) => a.position - b.position),
     }));
+    placeIdsRef.current = new Set(normalized.map(p => p.id));
     setPlaces(normalized as Place[]);
     setLoading(false);
     (normalized as Place[]).forEach(p => { selfHealCoverPhoto(p); });
@@ -63,6 +81,15 @@ export function usePlaces(tripId: string | undefined) {
     if (!tripId) return;
     fetchPlaces();
 
+    // place_tags/place_images have no trip_id column, so those events can't
+    // be filtered server-side — check the payload's place_id against ours.
+    // (Without these subscriptions, a collaborator's tag/photo edits never
+    // showed up until some unrelated places-row change forced a refetch.)
+    const onJoinTableChange = (payload: { new: unknown; old: unknown }) => {
+      const rec = (payload.new ?? payload.old) as { place_id?: string } | null;
+      if (rec?.place_id && placeIdsRef.current.has(rec.place_id)) fetchPlaces();
+    };
+
     channelRef.current = supabase
       .channel(`places:${tripId}`)
       .on('postgres_changes', {
@@ -71,6 +98,16 @@ export function usePlaces(tripId: string | undefined) {
         table: 'places',
         filter: `trip_id=eq.${tripId}`,
       }, () => { fetchPlaces(); })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'place_tags',
+      }, onJoinTableChange)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'place_images',
+      }, onJoinTableChange)
       .subscribe();
 
     return () => {
@@ -88,21 +125,29 @@ export function usePlaces(tripId: string | undefined) {
     notes?: string;
   }) => {
     if (!tripId) return null;
+    // max+1, not length: after any delete the positions have gaps, and
+    // length would collide with an existing position.
+    const nextPosition = places.reduce((max, p) => Math.max(max, p.position), -1) + 1;
     const { data, error } = await supabase
       .from('places')
-      .insert({ ...place, trip_id: tripId, position: places.length })
+      .insert({ ...place, trip_id: tripId, position: nextPosition })
       .select()
       .single();
     if (error || !data) {
       toast('Could not add place');
       return null;
     }
+    placeIdsRef.current.add(data.id);
     setPlaces(prev => [...prev, { ...data, tags: [], images: [] }]);
 
     // The image_url passed in (if any) is a fresh but still-ephemeral
     // Google session URL — persist it to our own storage right away so
-    // it doesn't just expire like the ones added before this existed
+    // it doesn't just expire like the ones added before this existed.
+    // Mark it as healing first: the insert's own realtime event triggers a
+    // refetch whose self-heal pass would otherwise race this persist and
+    // upload the photo a second time.
     if (data.image_url) {
+      healingRef.current.add(data.id);
       persistGooglePhoto(tripId, data.id, data.image_url).then(async stableUrl => {
         if (!stableUrl) return;
         const { data: updated, error: updateError } = await supabase
@@ -121,8 +166,9 @@ export function usePlaces(tripId: string | undefined) {
   };
 
   const updatePlace = async (id: string, updates: Partial<Place>) => {
-    // Optimistic: apply immediately, revert on failure
-    const before = places.find(p => p.id === id);
+    // Optimistic: apply immediately; on failure refetch rather than revert —
+    // a call-time snapshot could clobber fresher data a collaborator's edit
+    // delivered while our write was in flight.
     setPlaces(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
 
     const { data, error } = await supabase
@@ -132,8 +178,8 @@ export function usePlaces(tripId: string | undefined) {
       .select()
       .single();
     if (error || !data) {
-      if (before) setPlaces(prev => prev.map(p => p.id === id ? before : p));
       toast('Could not save changes');
+      fetchPlaces();
       return null;
     }
     setPlaces(prev => prev.map(p => p.id === id ? { ...p, ...data } : p));
@@ -141,18 +187,25 @@ export function usePlaces(tripId: string | undefined) {
   };
 
   const deletePlace = async (id: string) => {
+    const place = places.find(p => p.id === id);
     const { error } = await supabase.from('places').delete().eq('id', id);
     if (error) {
       toast('Could not delete place');
       return;
     }
+    placeIdsRef.current.delete(id);
     setPlaces(prev => prev.filter(p => p.id !== id));
+    // The bucket is public — remove the actual files, not just the rows.
+    if (place) {
+      removeStorageUrls([place.image_url, ...(place.images ?? []).map(i => i.url)]);
+    }
   };
 
-  // Drag-to-reorder: apply the new order immediately, revert everything
-  // on failure (any partial write would otherwise leave positions mixed)
+  // Drag-to-reorder: apply the new order immediately; the whole order is
+  // written atomically by an RPC (per-row updates could partially fail,
+  // leaving server, client, and realtime with three different orders).
   const reorderPlaces = async (orderedIds: string[]) => {
-    const before = places;
+    if (!tripId) return;
     const reordered = orderedIds
       .map((id, index) => {
         const place = places.find(p => p.id === id);
@@ -161,14 +214,13 @@ export function usePlaces(tripId: string | undefined) {
       .filter((p): p is Place => p !== null);
     setPlaces(reordered);
 
-    const results = await Promise.all(
-      orderedIds.map((id, index) =>
-        supabase.from('places').update({ position: index }).eq('id', id)
-      )
-    );
-    if (results.some(r => r.error)) {
-      setPlaces(before);
+    const { error } = await supabase.rpc('reorder_places', {
+      p_trip_id: tripId,
+      p_place_ids: orderedIds,
+    });
+    if (error) {
       toast('Could not save the new order');
+      fetchPlaces();
     }
   };
 
@@ -193,13 +245,15 @@ export function usePlaces(tripId: string | undefined) {
         .delete()
         .eq('place_id', placeId)
         .in('tag_id', toRemove);
-      if (error) { toast('Could not update tags'); return; }
+      // Refetch even on failure: the delete may have half-applied relative to
+      // what the user saw, and nothing else re-syncs this session.
+      if (error) { toast('Could not update tags'); fetchPlaces(); return; }
     }
     if (toAdd.length > 0) {
       const { error } = await supabase
         .from('place_tags')
         .insert(toAdd.map(tag_id => ({ place_id: placeId, tag_id })));
-      if (error) { toast('Could not update tags'); return; }
+      if (error) { toast('Could not update tags'); fetchPlaces(); return; }
     }
     fetchPlaces();
   };
@@ -243,6 +297,7 @@ export function usePlaces(tripId: string | undefined) {
   };
 
   const removePlaceImage = async (placeId: string, imageId: string) => {
+    const image = places.find(p => p.id === placeId)?.images?.find(i => i.id === imageId);
     const { error } = await supabase.from('place_images').delete().eq('id', imageId);
     if (error) {
       toast('Could not remove photo');
@@ -251,6 +306,8 @@ export function usePlaces(tripId: string | undefined) {
     setPlaces(prev => prev.map(p =>
       p.id === placeId ? { ...p, images: (p.images ?? []).filter(i => i.id !== imageId) } : p
     ));
+    // The bucket is public — a "removed" photo must stop being fetchable.
+    if (image) removeStorageUrls([image.url]);
   };
 
   return { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };

@@ -6,7 +6,6 @@ export interface Trip {
   description?: string;
   start_date?: string | null;
   end_date?: string | null;
-  share_token: string;
   cover_image_url?: string | null;
   owner_id: string;
   created_at: string;
