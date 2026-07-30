@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { AuthScreen } from './components/AuthScreen';
 import { UpdatePasswordScreen } from './components/UpdatePasswordScreen';
@@ -9,12 +9,38 @@ import { SetupScreen } from './components/SetupScreen';
 import { Toasts } from './components/Toasts';
 import { OfflineBanner } from './components/OfflineBanner';
 import { isConfigured, supabase } from './lib/supabase';
+import { TRIP_COLUMNS } from './lib/trips';
 import { toast } from './lib/toast';
 import type { Trip } from './types';
 
 // Survives the sign-up → email-confirm → return round-trip, so the invite is
-// still redeemable when the invitee lands back in the app logged in.
+// still redeemable when the invitee lands back in the app logged in. Expires:
+// an invite token is a bearer credential, and a stale stash must not sit in
+// localStorage waiting to fire on some unrelated future sign-in.
 const INVITE_KEY = 'cairn.pendingInvite';
+const INVITE_STASH_TTL_MS = 30 * 60 * 1000;
+
+function stashInvite(token: string) {
+  localStorage.setItem(INVITE_KEY, JSON.stringify({ token, at: Date.now() }));
+}
+
+function readStashedInvite(): string | null {
+  const raw = localStorage.getItem(INVITE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { token?: string; at?: number };
+    if (!parsed.token || !parsed.at || Date.now() - parsed.at > INVITE_STASH_TTL_MS) {
+      localStorage.removeItem(INVITE_KEY);
+      return null;
+    }
+    return parsed.token;
+  } catch {
+    // Pre-expiry format (a bare token string) — drop it rather than honour
+    // a stash of unknown age.
+    localStorage.removeItem(INVITE_KEY);
+    return null;
+  }
+}
 
 function getShareToken(): string | null {
   const match = window.location.pathname.match(/^\/shared\/([^/]+)$/);
@@ -45,9 +71,31 @@ function AuthedApp() {
   const [invitePrompt, setInvitePrompt] =
     useState<{ tripName: string; role: string; inviter: string } | null>(null);
   const [acceptingInvite, setAcceptingInvite] = useState(() => getInviteToken() !== null);
+  // A stashed (not URL-borne) invite is redeemed only after an explicit
+  // confirmation — see the redeem effect below.
+  const [confirmInvite, setConfirmInvite] =
+    useState<{ token: string; tripName: string; role: string; inviter: string } | null>(null);
+  // Whether the current /trip/:id history entry was pushed by us (list →
+  // trip): then the in-app back button can use real history.back() instead
+  // of growing the stack with duplicate '/' entries.
+  const pushedTripRef = useRef(false);
 
+  // Keep URL and UI in sync across browser back/forward: restore whatever
+  // trip the URL now points at instead of unconditionally showing the list
+  // (which stranded browser-forward on a /trip URL over list content).
   useEffect(() => {
-    const handler = () => setActiveTrip(null);
+    const handler = () => {
+      const tripId = getTripIdFromPath();
+      if (!tripId) {
+        setActiveTrip(null);
+        return;
+      }
+      supabase.from('trips').select(TRIP_COLUMNS).eq('id', tripId).single().then(({ data }) => {
+        // Only apply if the URL still points at this trip by the time the
+        // response lands (rapid back-forward).
+        if (data && getTripIdFromPath() === (data as Trip).id) setActiveTrip(data as Trip);
+      });
+    };
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
   }, []);
@@ -57,7 +105,7 @@ function AuthedApp() {
   // redeem effect below runs once they are.
   useEffect(() => {
     if (!inviteToken) return;
-    localStorage.setItem(INVITE_KEY, inviteToken);
+    stashInvite(inviteToken);
     supabase.rpc('get_trip_invite', { p_token: inviteToken }).then(({ data, error }) => {
       const inv = Array.isArray(data) ? data[0] : data;
       if (inv) {
@@ -72,37 +120,62 @@ function AuthedApp() {
     });
   }, [inviteToken]);
 
-  // Once authenticated, redeem any pending invite and jump into the trip.
-  // The ref guards against the effect double-firing (StrictMode, or the user
-  // object changing identity mid-redeem) and calling accept twice — the
-  // second call would race the first and surface a spurious error.
+  // The ref guards against double-firing (StrictMode, or the user object
+  // changing identity mid-redeem) and calling accept twice — the second call
+  // would race the first and surface a spurious error.
   const redeemingRef = useRef(false);
-  useEffect(() => {
-    if (loading || !user) return;
-    const token = localStorage.getItem(INVITE_KEY);
-    if (!token) { setAcceptingInvite(false); return; }
+  const redeemInvite = useCallback(async (token: string) => {
     if (redeemingRef.current) return;
     redeemingRef.current = true;
     setAcceptingInvite(true);
-    supabase.rpc('accept_trip_invite', { p_token: token }).then(async ({ data, error }) => {
-      localStorage.removeItem(INVITE_KEY);
-      redeemingRef.current = false;
-      setInvitePrompt(null);
-      if (error) {
-        toast(error.message || 'Could not accept the invite');
-        window.history.replaceState(null, '', '/');
+    const { data, error } = await supabase.rpc('accept_trip_invite', { p_token: token });
+    localStorage.removeItem(INVITE_KEY);
+    redeemingRef.current = false;
+    setInvitePrompt(null);
+    setConfirmInvite(null);
+    if (error) {
+      toast(error.message || 'Could not accept the invite');
+      window.history.replaceState(null, '', '/');
+    } else {
+      const { data: trip } = await supabase
+        .from('trips').select(TRIP_COLUMNS).eq('id', data as string).single();
+      if (trip) {
+        setActiveTrip(trip as Trip);
+        window.history.replaceState(null, '', `/trip/${(trip as Trip).id}`);
       } else {
-        const { data: trip } = await supabase.from('trips').select('*').eq('id', data as string).single();
-        if (trip) {
-          setActiveTrip(trip);
-          window.history.replaceState(null, '', `/trip/${trip.id}`);
-        } else {
-          window.history.replaceState(null, '', '/');
-        }
+        window.history.replaceState(null, '', '/');
+      }
+    }
+    setAcceptingInvite(false);
+  }, []);
+
+  // Once authenticated: an invite opened in THIS page load (token in the
+  // URL) redeems directly — the user just clicked the link. A token that
+  // only exists in the stash (returning from the sign-up round-trip, or
+  // someone else's abandoned invite on a shared browser) gets an explicit
+  // "join this trip?" confirmation instead of silently attaching whoever
+  // signed in to a trip they may never have been invited to.
+  useEffect(() => {
+    if (loading || !user) return;
+    if (inviteToken) {
+      redeemInvite(inviteToken);
+      return;
+    }
+    const stashed = readStashedInvite();
+    if (!stashed) {
+      setAcceptingInvite(false);
+      return;
+    }
+    supabase.rpc('get_trip_invite', { p_token: stashed }).then(({ data, error }) => {
+      const inv = Array.isArray(data) ? data[0] : data;
+      if (inv) {
+        setConfirmInvite({ token: stashed, tripName: inv.trip_name, role: inv.role, inviter: inv.inviter_email });
+      } else if (!error) {
+        localStorage.removeItem(INVITE_KEY);
       }
       setAcceptingInvite(false);
     });
-  }, [user, loading]);
+  }, [user, loading, inviteToken, redeemInvite]);
 
   // Restore /trip/:id after a refresh
   useEffect(() => {
@@ -110,10 +183,19 @@ function AuthedApp() {
     const tripId = getTripIdFromPath();
     if (!user || !tripId) { setRestoringTrip(false); return; }
     let cancelled = false;
-    supabase.from('trips').select('*').eq('id', tripId).single().then(({ data }) => {
+    supabase.from('trips').select(TRIP_COLUMNS).eq('id', tripId).single().then(({ data, error }) => {
       if (cancelled) return;
-      if (data) setActiveTrip(data);
-      else window.history.replaceState(null, '', '/');
+      if (data) {
+        setActiveTrip(data as Trip);
+      } else if (error && error.code !== 'PGRST116') {
+        // Transient failure (offline launch, flaky network) — keep the URL
+        // so a retry/reconnect can still restore the deep link, and fall
+        // back to the list for now. Only a definite "no such row" (PGRST116)
+        // may rewrite the URL.
+        toast('Could not load the trip — check your connection');
+      } else {
+        window.history.replaceState(null, '', '/');
+      }
       setRestoringTrip(false);
     });
     return () => { cancelled = true; };
@@ -125,6 +207,29 @@ function AuthedApp() {
   if (acceptingInvite) return <div className="loading-spinner fullscreen" />;
   if (passwordRecovery) return <UpdatePasswordScreen onUpdatePassword={updatePassword} />;
 
+  if (confirmInvite) {
+    return (
+      <div className="invite-confirm-screen">
+        <div className="invite-confirm-card">
+          <h2>Join “{confirmInvite.tripName}”?</h2>
+          <p>{confirmInvite.inviter} invited you to collaborate as {confirmInvite.role}.</p>
+          <button className="btn-primary" onClick={() => redeemInvite(confirmInvite.token)}>
+            Join trip
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              localStorage.removeItem(INVITE_KEY);
+              setConfirmInvite(null);
+            }}
+          >
+            Not now
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (activeTrip) {
     return (
       <TripView
@@ -135,9 +240,17 @@ function AuthedApp() {
         initialOpenComments={pendingPlace?.openComments}
         openNonce={pendingPlace?.nonce}
         onBack={() => {
-          setActiveTrip(null);
           setPendingPlace(null);
-          window.history.pushState(null, '', '/');
+          if (pushedTripRef.current) {
+            // We pushed this /trip entry from the list — real back keeps the
+            // history stack clean (the popstate handler clears activeTrip).
+            pushedTripRef.current = false;
+            window.history.back();
+          } else {
+            // Deep-linked entry: there's no in-app '/' behind us to pop to.
+            setActiveTrip(null);
+            window.history.replaceState(null, '', '/');
+          }
         }}
       />
     );
@@ -153,6 +266,7 @@ function AuthedApp() {
             ? { id: target.placeId, openComments: !!target.openComments, nonce: Date.now() }
             : null
         );
+        pushedTripRef.current = true;
         window.history.pushState(null, '', `/trip/${trip.id}`);
       }}
     />

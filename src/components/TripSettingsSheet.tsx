@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import { X, Trash2, UserPlus, UserX, Crown, Eye, Pencil, Plus, Copy, Check, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Trash2, UserPlus, UserX, Crown, Eye, Pencil, Plus, Copy, Check, Clock, Link2, RefreshCw } from 'lucide-react';
 import type { Trip } from '../types';
+import { supabase } from '../lib/supabase';
+import { cleanupReplacedCover } from '../lib/trips';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -38,10 +40,33 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   const [inviteLink, setInviteLink] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [shareLink, setShareLink] = useState('');
+  const [rotating, setRotating] = useState(false);
 
-  const { members, pendingInvites, createInvite, revokeInvite, removeCollaborator } = useCollaborators(trip.id);
+  const { members, pendingInvites, error: membersError, createInvite, revokeInvite, removeCollaborator } =
+    useCollaborators(trip.id);
 
   const inviteLinkFor = (token: string) => `${window.location.origin}/invite/${token}`;
+
+  // The share token is owner-only and never part of the trip row the client
+  // holds (it's a bearer credential) — fetched on demand via RPC.
+  useEffect(() => {
+    if (!isOwner) return;
+    let cancelled = false;
+    supabase.rpc('get_share_token', { p_trip_id: trip.id }).then(({ data }) => {
+      if (!cancelled && data) setShareLink(`${window.location.origin}/shared/${data}`);
+    });
+    return () => { cancelled = true; };
+  }, [isOwner, trip.id]);
+
+  // Rotate = the remedy when a share link leaked; old links die immediately.
+  const handleRotateShareLink = async () => {
+    if (rotating) return;
+    setRotating(true);
+    const { data, error } = await supabase.rpc('rotate_share_token', { p_trip_id: trip.id });
+    if (!error && data) setShareLink(`${window.location.origin}/shared/${data}`);
+    setRotating(false);
+  };
 
   const copyLink = async (link: string, key: string) => {
     try {
@@ -75,6 +100,9 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   };
 
   const handleSetCoverUrl = (url: string) => {
+    // A replaced cover that lived in our public bucket would otherwise stay
+    // world-readable forever.
+    if (coverImageUrl && coverImageUrl !== url) cleanupReplacedCover(coverImageUrl);
     setCoverImageUrl(url);
     onUpdate({ cover_image_url: url });
   };
@@ -87,26 +115,26 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   };
 
   const handleRemoveCover = () => {
+    if (coverImageUrl) cleanupReplacedCover(coverImageUrl);
     setCoverImageUrl('');
     onUpdate({ cover_image_url: null });
   };
 
+  // Guarded inside the handler, not just on the button: Enter in the email
+  // input calls this directly, and repeat presses during the await would
+  // create the invite twice.
   const handleInvite = async () => {
     const email = inviteEmail.trim();
-    if (!email) return;
+    if (!email || inviting) return;
     setInviting(true);
     setInviteError('');
     setInviteSuccess('');
     setInviteLink('');
     try {
+      // Always a pending link — nobody is added to a trip without opening it.
       const res = await createInvite(email, inviteRole);
-      if (res.status === 'added') {
-        setInviteSuccess(`${res.email} added as ${res.role}`);
-      } else {
-        // No account yet — surface a link the owner sends however they like.
-        setInviteLink(inviteLinkFor(res.token));
-        setInviteSuccess(`${res.email} has no account yet — share this link to invite them`);
-      }
+      setInviteLink(inviteLinkFor(res.token));
+      setInviteSuccess(`Share this link with ${res.email} — opening it joins them as ${res.role}`);
       setInviteEmail('');
     } catch (e) {
       // Supabase throws a PostgrestError (a plain object, not an Error), so
@@ -198,10 +226,50 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
           </>
         )}
 
-        {/* Collaborators — invite by email with a role, no separate
-            read-only link to manage */}
+        {isOwner && shareLink && (
+          <div className="detail-section">
+            <label className="detail-label">Share (read-only link)</label>
+            <p className="detail-hint">
+              Anyone with this link can view the trip — no account needed.
+              Reset it to cut off old links.
+            </p>
+            <div className="collab-invite-link">
+              <input
+                className="input"
+                readOnly
+                value={shareLink}
+                onFocus={e => e.currentTarget.select()}
+              />
+              <button
+                type="button"
+                className="btn-secondary collab-copy-btn"
+                onClick={() => copyLink(shareLink, 'share')}
+              >
+                {copiedKey === 'share' ? <Check size={16} /> : <Link2 size={16} />}
+                {copiedKey === 'share' ? 'Copied' : 'Copy'}
+              </button>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={handleRotateShareLink}
+                disabled={rotating}
+                aria-label="Reset share link"
+                title="Reset share link"
+              >
+                <RefreshCw size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Collaborators — invite by email with a role; every invite is a
+            copyable link, redeemed by whoever opens it */}
         <div className="detail-section">
           <label className="detail-label">Collaborators</label>
+
+          {membersError && (
+            <p className="collab-error">Couldn't load collaborators — check your connection and reopen.</p>
+          )}
 
           <div className="collab-list">
             {members.map(m => (
@@ -266,7 +334,7 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
                   placeholder="Email address"
                   value={inviteEmail}
                   onChange={e => { setInviteEmail(e.target.value); setInviteError(''); setInviteSuccess(''); }}
-                  onKeyDown={e => e.key === 'Enter' && handleInvite()}
+                  onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && handleInvite()}
                 />
                 <select
                   className="input collab-role-select"

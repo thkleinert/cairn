@@ -21,17 +21,25 @@ export function TagPickerSheet({ allTags, selectedTagIds, onToggleTag, onCreateT
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(TAG_COLORS[0].value);
   const [newIcon, setNewIcon] = useState('');
+  const [creating, setCreating] = useState(false);
   const { sheetRef, handleProps } = useSwipeToClose(onClose);
   useEscapeClose(onClose);
 
+  // Reentry guard: Enter in the name input calls this directly, and repeated
+  // presses during the await would create duplicate tags.
   const handleCreate = async () => {
-    if (!newName.trim() || !onCreateTag) return;
-    const tag = await onCreateTag(newName.trim(), newColor, newIcon.trim() || undefined);
-    if (tag) onToggleTag(tag.id);
-    setNewName('');
-    setNewColor(TAG_COLORS[0].value);
-    setNewIcon('');
-    setShowCreate(false);
+    if (!newName.trim() || !onCreateTag || creating) return;
+    setCreating(true);
+    try {
+      const tag = await onCreateTag(newName.trim(), newColor, newIcon.trim() || undefined);
+      if (tag) onToggleTag(tag.id);
+      setNewName('');
+      setNewColor(TAG_COLORS[0].value);
+      setNewIcon('');
+      setShowCreate(false);
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -89,8 +97,14 @@ export function TagPickerSheet({ allTags, selectedTagIds, onToggleTag, onCreateT
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter') handleCreate();
-                  if (e.key === 'Escape') { setShowCreate(false); setNewIcon(''); }
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleCreate();
+                  if (e.key === 'Escape') {
+                    // Cancel the inline form only — without stopPropagation
+                    // the window-level escape stack would close the sheet too.
+                    e.stopPropagation();
+                    setShowCreate(false);
+                    setNewIcon('');
+                  }
                 }}
                 autoFocus
               />
@@ -108,7 +122,7 @@ export function TagPickerSheet({ allTags, selectedTagIds, onToggleTag, onCreateT
             </div>
             <div className="form-actions">
               <button className="btn-secondary" onClick={() => { setShowCreate(false); setNewIcon(''); }}>Cancel</button>
-              <button className="btn-primary" onClick={handleCreate} disabled={!newName.trim()}>Add</button>
+              <button className="btn-primary" onClick={handleCreate} disabled={!newName.trim() || creating}>Add</button>
             </div>
           </div>
         )}

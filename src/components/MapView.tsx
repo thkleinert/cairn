@@ -81,6 +81,18 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, { marker: mapboxgl.Marker; anchor: string }>>(new Map());
   const didFitRef = useRef(false);
+  // Latest route geometry, whatever the style lifecycle is doing: setStyle
+  // (OS light/dark switch) wipes custom sources, and the styledata handler
+  // must be able to re-apply the *data*, not just re-add empty layers —
+  // otherwise the visited route vanishes at sunset when phones flip to dark.
+  const routeDataRef = useRef<RouteFeatureCollection>(EMPTY_ROUTE);
+
+  const applyRouteData = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    ensureRouteLayers(map);
+    (map.getSource(ROUTE_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined)?.setData(routeDataRef.current);
+  }, []);
 
   // Keep refs to the latest props so marker click handlers never go stale
   const placesRef = useRef(places);
@@ -108,18 +120,26 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     darkQuery.addEventListener('change', onSchemeChange);
 
     // setStyle (initial load, or the scheme-change above) wipes any custom
-    // source/layers — re-add them every time the style finishes (re)loading
+    // source/layers — re-add them AND re-apply the current route data every
+    // time the style finishes (re)loading
     const map = mapRef.current;
-    const onStyleData = () => ensureRouteLayers(map);
+    const onStyleData = () => applyRouteData();
     map.on('styledata', onStyleData);
 
+    const markers = markersRef.current;
     return () => {
       darkQuery.removeEventListener('change', onSchemeChange);
       map.off('styledata', onStyleData);
       mapRef.current?.remove();
       mapRef.current = null;
+      // The markers belong to the map instance that was just destroyed. Left
+      // in the ref, a remount would "update" them instead of re-adding to the
+      // fresh map — rendering zero pins (this is exactly what StrictMode's
+      // dev double-mount hit).
+      markers.clear();
+      didFitRef.current = false;
     };
-  }, []);
+  }, [applyRouteData]);
 
   const getEmoji = useCallback((place: Place): string | null => {
     if (place.tags && place.tags.length > 0) {
@@ -186,14 +206,21 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     });
   }, [places, activeTags, selectedPlace, allTags, getEmoji]);
 
+  // Keyed on id + coordinates, not object identity: usePlaces re-creates the
+  // place object on every optimistic update and server confirm, and flying on
+  // identity yanked the map back to the pin (twice) whenever the open place
+  // was edited behind the sheet.
+  const selId = selectedPlace?.id;
+  const selLng = selectedPlace?.longitude;
+  const selLat = selectedPlace?.latitude;
   useEffect(() => {
-    if (!selectedPlace || !mapRef.current) return;
+    if (!selId || selLng === undefined || selLat === undefined || !mapRef.current) return;
     mapRef.current.flyTo({
-      center: [selectedPlace.longitude, selectedPlace.latitude],
+      center: [selLng, selLat],
       zoom: Math.max(mapRef.current.getZoom(), 13),
       duration: 600,
     });
-  }, [selectedPlace]);
+  }, [selId, selLng, selLat]);
 
   // Fit bounds once on initial load — never yank the viewport on add/remove.
   // Extra bottom padding so markers don't land under the floating bottom
@@ -223,18 +250,16 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
   // order, or coordinates actually change, not on unrelated place edits
   const visitedKey = visitedPlaces.map(p => `${p.id}:${p.longitude},${p.latitude}`).join('|');
 
+  // This effect only computes and stashes route data; applying it is shared
+  // with the styledata handler, so a style swap mid-fetch can't drop it (the
+  // old `map.once('load', …)` guard never fired after the initial load).
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const applyEmpty = () => {
-      ensureRouteLayers(map);
-      (map.getSource(ROUTE_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined)?.setData(EMPTY_ROUTE);
-    };
-
     if (visitedPlaces.length < 2) {
-      if (map.isStyleLoaded()) applyEmpty();
-      else map.once('load', applyEmpty);
+      routeDataRef.current = EMPTY_ROUTE;
+      if (map.isStyleLoaded()) applyRouteData();
       return;
     }
 
@@ -243,12 +268,10 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
 
     buildVisitedRouteGeoJSON(points).then(geojson => {
       if (cancelled) return;
-      const apply = () => {
-        ensureRouteLayers(map);
-        (map.getSource(ROUTE_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined)?.setData(geojson);
-      };
-      if (map.isStyleLoaded()) apply();
-      else map.once('load', apply);
+      routeDataRef.current = geojson;
+      // If the style is still loading (initial or mid-swap), the styledata
+      // handler applies routeDataRef when it lands.
+      if (map.isStyleLoaded()) applyRouteData();
     });
 
     return () => { cancelled = true; };

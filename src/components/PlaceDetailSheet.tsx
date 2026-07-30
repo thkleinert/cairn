@@ -79,7 +79,7 @@ export function PlaceDetailSheet({
   const galleryRef = useRef<HTMLDivElement>(null);
   const discussionRef = useRef<HTMLDivElement>(null);
 
-  const { comments, currentUserId, loading: commentsLoading, addComment, deleteComment } = useComments(place.id);
+  const { comments, currentUserId, loading: commentsLoading, error: commentsError, reload: reloadComments, addComment, deleteComment } = useComments(place.id);
 
   const handleAddComment = async () => {
     const body = commentDraft.trim();
@@ -342,7 +342,13 @@ export function PlaceDetailSheet({
             Discussion{comments.length > 0 ? ` · ${comments.length}` : ''}
           </button>
 
-          {!commentsOpen ? null : comments.length === 0 ? (
+          {!commentsOpen ? null : commentsError ? (
+            // A failed load must not masquerade as an empty thread.
+            <p className="comments-empty">
+              Couldn't load comments.{' '}
+              <button className="btn-ghost comments-retry" onClick={reloadComments}>Retry</button>
+            </p>
+          ) : comments.length === 0 ? (
             <p className="comments-empty">
               {readOnly ? 'No comments yet.' : 'Start the conversation about this place.'}
             </p>
@@ -388,7 +394,7 @@ export function PlaceDetailSheet({
                 placeholder="Add a comment…"
                 value={commentDraft}
                 onChange={e => setCommentDraft(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddComment()}
+                onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAddComment()}
               />
               <button
                 className="comment-send"

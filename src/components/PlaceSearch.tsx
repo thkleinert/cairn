@@ -29,6 +29,10 @@ export function PlaceSearch({ onSelect }: Props) {
   const divRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Google's callback API can answer out of order (or after the input was
+  // cleared) — only the latest request may touch state, otherwise a slow
+  // response re-opens the dropdown with a stale query's results.
+  const requestSeqRef = useRef(0);
 
   // Deliberately not autoFocus: focusing immediately pops the keyboard up
   // while the bottom pill is still mid-grow, and the two animations fight
@@ -36,6 +40,13 @@ export function PlaceSearch({ onSelect }: Props) {
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 350);
     return () => clearTimeout(t);
+  }, []);
+
+  // The debounce must not fire into an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, []);
 
   const initServices = useCallback(() => {
@@ -63,9 +74,11 @@ export function PlaceSearch({ onSelect }: Props) {
 
   const fetchPredictions = useCallback((value: string) => {
     if (!autocompleteService.current) return;
+    const seq = ++requestSeqRef.current;
     autocompleteService.current.getPlacePredictions(
       { input: value, sessionToken: sessionToken.current ?? undefined },
       (results, status) => {
+        if (seq !== requestSeqRef.current) return; // superseded or cleared
         if (status === google.maps.places.PlacesServiceStatus.OK && results) {
           setPredictions(results as unknown as GooglePlacePrediction[]);
           setOpen(true);
@@ -80,7 +93,11 @@ export function PlaceSearch({ onSelect }: Props) {
     setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!value.trim()) {
+      // Invalidate any in-flight request too — its late response would
+      // otherwise re-open the dropdown over an empty input.
+      requestSeqRef.current++;
       setPredictions([]);
+      setOpen(false);
       return;
     }
     debounceRef.current = setTimeout(() => fetchPredictions(value), 250);
@@ -115,6 +132,8 @@ export function PlaceSearch({ onSelect }: Props) {
   };
 
   const clear = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    requestSeqRef.current++;
     setQuery('');
     setPredictions([]);
     setOpen(false);

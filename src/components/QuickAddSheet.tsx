@@ -23,9 +23,12 @@ export function QuickAddSheet({ title, urlPlaceholder = 'https://…', onAddUrl,
   const { sheetRef, handleProps } = useSwipeToClose(onClose);
   useEscapeClose(onClose);
 
+  // Guard inside the handler, not just on the button: Enter in the input
+  // calls this directly, and repeated presses during the await would add
+  // the same URL several times.
   const handleAddUrl = async () => {
     const trimmed = url.trim();
-    if (!trimmed) return;
+    if (!trimmed || submitting) return;
     setSubmitting(true);
     await onAddUrl(trimmed);
     setSubmitting(false);
@@ -67,7 +70,7 @@ export function QuickAddSheet({ title, urlPlaceholder = 'https://…', onAddUrl,
             placeholder={urlPlaceholder}
             value={url}
             onChange={e => setUrl(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAddUrl()}
+            onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAddUrl()}
             autoFocus
           />
           <button className="btn-icon" onClick={handleAddUrl} disabled={!url.trim() || submitting} aria-label="Add">

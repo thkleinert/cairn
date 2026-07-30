@@ -44,6 +44,13 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   const [openSheet, setOpenSheet] = useState<Sheet>('none');
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [showSearch, setShowSearch] = useState(false);
+  // Once created, the map stays mounted (hidden) across Map↔List toggles —
+  // unmounting destroys the mapbox instance, and every toggle back would
+  // re-download the style/tiles and refit bounds, losing the viewport.
+  const [mapMounted, setMapMounted] = useState(viewMode === 'map');
+  useEffect(() => {
+    if (viewMode === 'map') setMapMounted(true);
+  }, [viewMode]);
 
   const selectedPlace = places.find(p => p.id === selectedPlaceId) ?? null;
   const isOwner = trip.owner_id === userId;
@@ -110,10 +117,10 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
         </div>
       </div>
 
-      {/* Map or List */}
+      {/* Map or List — the map is hidden, not unmounted, when the list shows */}
       <div className="trip-content">
-        {viewMode === 'map' ? (
-          <>
+        {mapMounted && (
+          <div style={{ display: viewMode === 'map' ? 'contents' : 'none' }}>
             <MapBoundary>
               <MapView
                 places={places}
@@ -123,14 +130,15 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
                 onSelectPlace={(place) => setSelectedPlaceId(place.id)}
               />
             </MapBoundary>
-            {!loading && places.length === 0 && !showSearch && (
-              <div className="map-empty-hint">
-                <Plus size={16} />
-                Tap the + button to add your first place
-              </div>
-            )}
-          </>
-        ) : (
+          </div>
+        )}
+        {viewMode === 'map' && !loading && places.length === 0 && !showSearch && (
+          <div className="map-empty-hint">
+            <Plus size={16} />
+            Tap the + button to add your first place
+          </div>
+        )}
+        {viewMode === 'list' && (
           <PlaceListView
             places={places}
             activeTags={activeTags}

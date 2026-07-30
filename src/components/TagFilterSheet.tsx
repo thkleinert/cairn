@@ -119,8 +119,13 @@ export function TagFilterSheet({
                       value={editName}
                       onChange={e => setEditName(e.target.value)}
                       onKeyDown={e => {
-                        if (e.key === 'Enter') handleSaveEdit();
-                        if (e.key === 'Escape') cancelEdit();
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSaveEdit();
+                        if (e.key === 'Escape') {
+                          // Cancel the rename only — without stopPropagation
+                          // the escape stack would also dismiss the sheet.
+                          e.stopPropagation();
+                          cancelEdit();
+                        }
                       }}
                       autoFocus
                     />
