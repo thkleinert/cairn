@@ -5,7 +5,14 @@
 # /assets/* opts the content-hashed build files back into immutable caching.
 
 /*
-  Cache-Control: no-cache, no-store, must-revalidate
+  # no-transform stops Cloudflare injecting its JavaScript Detections
+  # bootstrap into the HTML. That bootstrap is an inline <script>, and the
+  # only ways to permit it are 'unsafe-inline' (which would defeat the CSP
+  # below) or a per-request nonce (impossible from a static _headers file),
+  # so every page load logged a CSP violation for a script this app doesn't
+  # need. Opting out here keeps the choice in the repo and scoped to this
+  # app, rather than disabling JS Detections for the whole zone.
+  Cache-Control: no-cache, no-store, must-revalidate, no-transform
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
