@@ -2,6 +2,14 @@
   "name": "travel-planner",
   "private": true,
   "version": "0.0.1",
+  "description": "Cairn — a collaborative, self-hostable trip planner built on Supabase and Mapbox",
+  "license": "MIT",
+  "author": "Thomas Kleinert",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thkleinert/travel-planner.git"
+  },
+  "homepage": "https://github.com/thkleinert/travel-planner#readme",
   "type": "module",
   "scripts": {
     "dev": "vite",

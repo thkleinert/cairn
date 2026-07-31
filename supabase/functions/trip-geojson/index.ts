@@ -33,10 +33,17 @@ type Place = {
   visited_at: string;
 };
 
-// Road snapping via Mapbox directions. Fallback is the app's PUBLIC client
-// token (it ships in the browser bundle, so baking it here reveals nothing);
-// a MAPBOX_TOKEN secret on the function still takes precedence.
-const MAPBOX_TOKEN = Deno.env.get('MAPBOX_TOKEN') ?? 'pk.eyJ1IjoidGhrbGVpbmVyZCIsImEiOiJjbXF3YW9ja3UwZG9zMnFyMmtudWFzOGl2In0.VHuukPQ6hsEdxLNQ49qqzw';
+// Road snapping via Mapbox directions. Set a MAPBOX_TOKEN secret on the
+// function to enable it:
+//
+//   supabase secrets set MAPBOX_TOKEN=pk.your-own-token
+//
+// Deliberately no baked-in fallback. A public `pk.` token is not a secret,
+// but a hardcoded one in a public repo is a billable credential sitting in
+// something bots scrape continuously — and it would be *someone else's*
+// quota every fork spends. Without the secret the export still works; every
+// leg is just a straight line instead of a road route.
+const MAPBOX_TOKEN = Deno.env.get('MAPBOX_TOKEN') ?? '';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',

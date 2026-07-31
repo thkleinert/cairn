@@ -18,6 +18,7 @@ traveling with.
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%2B%20RLS-3fcf8e?logo=supabase&logoColor=white)](https://supabase.com)
 [![Mapbox](https://img.shields.io/badge/Mapbox-GL%20JS-000000?logo=mapbox&logoColor=white)](https://docs.mapbox.com/mapbox-gl-js/)
 [![PWA](https://img.shields.io/badge/PWA-installable-5a0fc8)](#-install-it-like-an-app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <br />
 
@@ -47,6 +48,7 @@ traveling with.
 - [Security Model](#security-model)
 - [Development](#development)
 - [Project Structure](#project-structure)
+- [License](#license)
 
 ---
 
@@ -366,10 +368,10 @@ legs + stop markers), authorized by the trip's share token:
 GET https://<project>.supabase.co/functions/v1/trip-geojson?token=<share_token>
 ```
 
-Set your own `MAPBOX_TOKEN` secret — otherwise the function falls back to
-the app author's public token and your exports draw down their Directions
-quota. Routing is capped and cached server-side, so a leaked link can't burn
-unbounded quota.
+The `MAPBOX_TOKEN` secret is what enables road snapping; without it the
+export still works, but every leg is a straight line instead of a road
+route. Routing is capped and cached server-side, so a leaked share link
+can't burn unbounded Directions quota.
 
 ---
 
@@ -450,6 +452,12 @@ public/           PWA manifest, service worker, viewport shim, headers
 scripts/          Build helpers (service-worker cache stamping)
 docs/             Logo & README screenshots
 ```
+
+---
+
+## License
+
+[MIT](LICENSE) © Thomas Kleinert — fork it, self-host it, make it yours.
 
 ---
 
