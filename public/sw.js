@@ -31,6 +31,21 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const { request } = e;
   const url = new URL(request.url);
+  const sameOrigin = url.origin === self.location.origin;
+
+  // Cross-origin (trip/place photos, map tiles, the Supabase API, Google):
+  // don't intercept at all — return without calling respondWith and the
+  // browser performs the request itself.
+  //
+  // This is not just an optimisation. A service worker inherits the CSP of
+  // the response that served its script, and fetches *it* makes are checked
+  // against that policy — not the page's. Proxying a third-party image
+  // through `fetch()` here therefore subjected it to the worker's
+  // connect-src, which lists only our own APIs, so every cover photo and
+  // pasted image URL failed with ERR_FAILED once the worker took control.
+  // Letting these pass through keeps them under the page's img-src, where
+  // they belong. We never cached them anyway.
+  if (!sameOrigin) return;
 
   // Navigation: always network-first so a fresh deploy's index.html — and the
   // new hashed asset URLs it points at — is picked up immediately. Refresh the
@@ -61,8 +76,7 @@ self.addEventListener('fetch', (e) => {
   // cache and fetch fresh — while the old entries are dropped when CACHE bumps.
   // (The previous worker cached ALL scripts/styles cache-first, which is how a
   // client could get stranded on an old, non-hashed asset.)
-  const sameOrigin = url.origin === self.location.origin;
-  if (sameOrigin && url.pathname.startsWith('/assets/')) {
+  if (url.pathname.startsWith('/assets/')) {
     e.respondWith(
       caches.match(request).then(cached =>
         cached || fetch(request).then(res => {
@@ -80,7 +94,7 @@ self.addEventListener('fetch', (e) => {
   // The manifest is in the precache but needs a fetch branch to actually be
   // served from it — without this, installed-app launches while offline fail
   // the manifest request even though the bytes are sitting in the cache.
-  if (sameOrigin && url.pathname === '/manifest.json') {
+  if (url.pathname === '/manifest.json') {
     e.respondWith(
       fetch(request)
         .then(res => {
@@ -95,10 +109,9 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Same-origin images (app icons; note cover/place photos are cross-origin
-  // Supabase storage URLs and deliberately stay network-only below): cache-
-  // first for offline use and speed.
-  if (sameOrigin && request.destination === 'image') {
+  // Same-origin images — the app icons. (Cover and place photos are all
+  // cross-origin and returned above, so they never reach this branch.)
+  if (request.destination === 'image') {
     e.respondWith(
       caches.match(request).then(cached =>
         cached || fetch(request).then(res => {
@@ -113,7 +126,5 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Everything else (Supabase API, map tiles, cross-origin assets): network,
-  // so live data is never served stale from cache.
-  e.respondWith(fetch(request));
+  // Any other same-origin request: leave it to the browser.
 });

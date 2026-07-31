@@ -13,6 +13,16 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Content-Security-Policy: default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://maps.gstatic.com; worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; manifest-src 'self'
 
+# A service worker inherits the CSP of the response that delivered its script,
+# and that policy governs the fetches the worker itself makes — so the strict
+# app policy above would silently break anything it requests cross-origin.
+# The worker only ever fetches same-origin now, but keep its policy honest
+# rather than relying on that: connect-src https: lets a future cross-origin
+# fetch work without another day of debugging blank images.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https:; script-src 'self'
+
 # Content-hashed by Vite — a new build emits new URLs, so these never go stale.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
