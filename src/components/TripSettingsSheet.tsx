@@ -46,6 +46,10 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
   const { members, pendingInvites, error: membersError, createInvite, revokeInvite, removeCollaborator } =
     useCollaborators(trip.id);
 
+  // Pending-invite rows only ever show the plain link: the one-time action
+  // link that provisions an account is returned once, at creation, and can't
+  // be reconstructed later. Someone who never redeemed it can still use this
+  // one — they'll be asked to sign in, or the owner can re-invite them.
   const inviteLinkFor = (token: string) => `${window.location.origin}/invite/${token}`;
 
   // The share token is owner-only and never part of the trip row the client
@@ -131,10 +135,16 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
     setInviteSuccess('');
     setInviteLink('');
     try {
-      // Always a pending link — nobody is added to a trip without opening it.
+      // Always a link — nobody is added to a trip without opening it. A
+      // first-time invitee gets an account provisioned along the way, so the
+      // link also signs them in and asks them to pick a password.
       const res = await createInvite(email, inviteRole);
-      setInviteLink(inviteLinkFor(res.token));
-      setInviteSuccess(`Share this link with ${res.email} — opening it joins them as ${res.role}`);
+      setInviteLink(res.link);
+      setInviteSuccess(
+        res.status === 'invited'
+          ? `Send this link to ${res.email} — it sets up their account and joins them as ${res.role}`
+          : `${res.email} already has an account — send this link to join them as ${res.role}`
+      );
       setInviteEmail('');
     } catch (e) {
       // Supabase throws a PostgrestError (a plain object, not an Error), so

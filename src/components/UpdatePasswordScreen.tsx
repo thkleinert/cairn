@@ -3,9 +3,19 @@ import { KeyRound } from 'lucide-react';
 
 interface Props {
   onUpdatePassword: (password: string) => Promise<{ error: { message: string } | null }>;
+  // Same form serves password *recovery* and first-time setup for an
+  // invited account, which differ only in wording.
+  title?: string;
+  subtitle?: string;
+  submitLabel?: string;
 }
 
-export function UpdatePasswordScreen({ onUpdatePassword }: Props) {
+export function UpdatePasswordScreen({
+  onUpdatePassword,
+  title = 'New password',
+  subtitle = 'Choose a new password for your account',
+  submitLabel = 'Set new password',
+}: Props) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
@@ -27,9 +37,9 @@ export function UpdatePasswordScreen({ onUpdatePassword }: Props) {
       <div className="auth-card">
         <div className="auth-logo">
           <KeyRound size={32} color="var(--color-primary)" />
-          <h1>New password</h1>
+          <h1>{title}</h1>
         </div>
-        <p className="auth-subtitle">Choose a new password for your account</p>
+        <p className="auth-subtitle">{subtitle}</p>
 
         <form onSubmit={handleSubmit} className="auth-form">
           <input
@@ -51,7 +61,7 @@ export function UpdatePasswordScreen({ onUpdatePassword }: Props) {
           />
           {error && <p className="error-text">{error}</p>}
           <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? 'Saving…' : 'Set new password'}
+            {loading ? 'Saving…' : submitLabel}
           </button>
         </form>
       </div>

@@ -46,6 +46,7 @@ traveling with.
   - [9. Edge Functions](#9-edge-functions)
 - [Install It Like an App](#-install-it-like-an-app)
 - [Security Model](#security-model)
+  - [Invite-Only Mode](#invite-only-mode)
 - [Development](#development)
 - [Project Structure](#project-structure)
 - [License](#license)
@@ -215,7 +216,7 @@ flowchart LR
         Auth[Auth]
         RT[Realtime]
         ST[Storage<br/>place-images]
-        EF[Edge functions<br/>persist-photo · trip-geojson]
+        EF[Edge functions<br/>invite-collaborator · persist-photo · trip-geojson]
     end
     Hooks -->|supabase-js| PG
     Hooks --> Auth
@@ -231,7 +232,7 @@ flowchart LR
 |---|---|
 | Frontend | React 19 + TypeScript (strict), Vite, plain CSS |
 | Database | Supabase Postgres — every row gated by trip-membership RLS |
-| Auth | Supabase Auth, email + password |
+| Auth | Supabase Auth, email + password (optionally invite-only) |
 | Live sync | Supabase Realtime (`postgres_changes` on places, tags, photos) |
 | Photo storage | Supabase Storage, one public `place-images` bucket (images only, 10 MB cap) |
 | Maps & routing | Mapbox GL JS + Mapbox Directions API |
@@ -278,7 +279,13 @@ npm install
    - the Realtime publication that makes collaborator edits show up live.
 3. Under **Authentication → Sign In / Providers**, make sure **Email**
    sign-up is enabled (it is by default). No OAuth configuration is needed.
-4. From **Project Settings → API**, note the **Project URL** and the
+4. Under **Authentication → URL Configuration**, set the **Site URL** to your
+   app's origin and add `https://your-domain.example/**` to **Redirect URLs**
+   (plus `http://localhost:5173/**` for development). Invite and password-reset
+   links land on real paths, and Supabase silently rewrites any redirect that
+   isn't on this list back to the Site URL — which would drop invitees on the
+   trip list instead of joining them to the trip.
+5. From **Project Settings → API**, note the **Project URL** and the
    **`anon` public key**.
 
 ### 4. Get a Mapbox Token
@@ -343,15 +350,30 @@ Deploy `dist/` to any static host:
 
 ### 9. Edge Functions
 
-Both functions live in `supabase/functions/` and are deployed with the
+All three functions live in `supabase/functions/` and are deployed with the
 [Supabase CLI](https://supabase.com/docs/guides/functions); their JWT
 settings are pinned in [`supabase/config.toml`](supabase/config.toml) so a
 plain deploy does the right thing:
 
 ```bash
-supabase functions deploy persist-photo trip-geojson
+supabase functions deploy invite-collaborator persist-photo trip-geojson
+supabase secrets set APP_ORIGINS="https://your-domain.example,http://localhost:5173"
 supabase secrets set MAPBOX_TOKEN=pk.your-own-token
 ```
+
+**`invite-collaborator`** — creates the pending invite and, when the invitee
+has no account yet, provisions one through the Auth admin API and returns a
+one-time link that signs them in. This is what makes
+[invite-only mode](#invite-only-mode) possible: the instance can refuse
+self-service sign-up entirely, because being invited to a trip becomes the
+only way to get an account. The owner still just copies a link and sends it
+however they like — no SMTP setup and no dependency on email delivery.
+
+It requires the **`APP_ORIGINS`** secret: a comma-separated allowlist of
+origins it may build links for. The client asks for one, but the function
+only ever honours an origin from this list — an attacker-chosen redirect
+would otherwise hand a live session to their own domain. With the secret
+unset the function refuses to issue links at all rather than guessing.
 
 **`persist-photo`** — Google Places photo URLs are temporary and eventually
 expire. When a place is added from search, the app calls this function to
@@ -410,10 +432,28 @@ Worth understanding before you invite the whole group:
 - **The frontend ships hardened headers.** `public/_headers` sets a strict
   Content-Security-Policy scoped to the APIs the app actually uses, plus
   HSTS, `frame-ancestors 'none'`, and friends.
-- **Email sign-ups are open by default.** Anyone who finds your instance can
-  create an account (they'll see only their own trips). If you want a private
-  instance, disable sign-ups in Supabase Auth settings after creating your
-  accounts.
+### Invite-Only Mode
+
+By default anyone who finds your instance can create an account. They'd see
+only their own empty trip list — RLS means they can't reach anyone's data —
+but on a personal instance you probably want the door shut.
+
+Because `invite-collaborator` provisions accounts itself, you can close it
+completely:
+
+1. Deploy the function and set `APP_ORIGINS` (see
+   [Edge Functions](#9-edge-functions)).
+2. In **Authentication → Sign In / Providers → Email**, turn **Allow new
+   users to sign up** off.
+
+Invites keep working exactly as before — the owner types an email, gets a
+link, and sends it — but now that link is the *only* way an account comes
+into existence. The sign-in screen notices sign-ups are disabled (it reads
+GoTrue's public settings endpoint) and stops offering a "create account"
+option, so nobody is sent down a path the server will reject.
+
+A first-time invitee clicks the link, lands signed in, picks a password, and
+is already in the trip.
 
 ---
 
@@ -446,8 +486,9 @@ supabase/
                   realtime publication. Run once on a fresh project.
   config.toml     Per-function JWT settings for the CLI
   functions/
-    persist-photo/  Copies expiring Google photos into your own bucket
-    trip-geojson/   Share-token-gated GeoJSON export of the visited route
+    invite-collaborator/  Creates invites; provisions accounts for new invitees
+    persist-photo/        Copies expiring Google photos into your own bucket
+    trip-geojson/         Share-token-gated GeoJSON export of the visited route
 public/           PWA manifest, service worker, viewport shim, headers
 scripts/          Build helpers (service-worker cache stamping)
 docs/             Logo & README screenshots

@@ -11,3 +11,8 @@ verify_jwt = false
 # caller's JWT so storage RLS applies.
 [functions.persist-photo]
 verify_jwt = true
+
+# Signed-in users only; the trip-owner check is enforced by create_trip_invite
+# running under the caller's JWT.
+[functions.invite-collaborator]
+verify_jwt = true

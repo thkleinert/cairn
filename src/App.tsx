@@ -57,6 +57,13 @@ function getInviteToken(): string | null {
   return match ? match[1] : null;
 }
 
+// invite-collaborator appends ?setup=1 when it provisioned the account: an
+// admin-created user has no password yet, so without this step they could
+// never sign in again on another device. Read once at module load — the
+// redeem flow rewrites the URL before render settles.
+const NEEDS_PASSWORD_SETUP =
+  getInviteToken() !== null && new URLSearchParams(window.location.search).get('setup') === '1';
+
 // Only rendered when Supabase is configured — safe to call hooks
 function AuthedApp() {
   const { user, loading, passwordRecovery, updatePassword } = useAuth();
@@ -79,6 +86,7 @@ function AuthedApp() {
   // trip): then the in-app back button can use real history.back() instead
   // of growing the stack with duplicate '/' entries.
   const pushedTripRef = useRef(false);
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(NEEDS_PASSWORD_SETUP);
 
   // Keep URL and UI in sync across browser back/forward: restore whatever
   // trip the URL now points at instead of unconditionally showing the list
@@ -206,6 +214,23 @@ function AuthedApp() {
   if (!user) return <AuthScreen invite={invitePrompt} />;
   if (acceptingInvite) return <div className="loading-spinner fullscreen" />;
   if (passwordRecovery) return <UpdatePasswordScreen onUpdatePassword={updatePassword} />;
+
+  // Freshly provisioned invitee: they're signed in and already in the trip,
+  // but have no password until they pick one here.
+  if (needsPasswordSetup) {
+    return (
+      <UpdatePasswordScreen
+        title="Choose a password"
+        subtitle="Set a password so you can sign back in later"
+        submitLabel="Save password"
+        onUpdatePassword={async (password) => {
+          const result = await updatePassword(password);
+          if (!result.error) setNeedsPasswordSetup(false);
+          return result;
+        }}
+      />
+    );
+  }
 
   if (confirmInvite) {
     return (

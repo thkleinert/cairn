@@ -19,7 +19,16 @@ export interface PendingInvite {
   created_at: string;
 }
 
-export type InviteResult = { status: 'invited'; email: string; role: string; token: string };
+// 'invited' — a new account was provisioned; the link signs them in and
+//              lands on the password-setup step.
+// 'existing' — the email already has an account; the link is redeemed once
+//              they're signed in.
+export type InviteResult = {
+  status: 'invited' | 'existing';
+  email: string;
+  role: string;
+  link: string;
+};
 
 export function useCollaborators(tripId: string) {
   const [members, setMembers] = useState<Collaborator[]>([]);
@@ -55,19 +64,33 @@ export function useCollaborators(tripId: string) {
     Promise.all([loadMembers(), loadInvites()]).finally(() => setLoading(false));
   }, [loadMembers, loadInvites]);
 
-  // Invite by email: always a pending token invite — the RPC never adds
-  // anyone directly (no membership without opening the link, and no
-  // "does this email have an account" oracle).
+  // Invite by email. Goes through the invite-collaborator edge function,
+  // which creates the pending invite row *and* provisions an account for a
+  // first-time invitee — that's what lets the instance keep self-service
+  // sign-up switched off. Either way the owner gets back a link to share;
+  // nobody is added to a trip without opening it themselves.
   const createInvite = async (email: string, role: 'editor' | 'viewer' = 'editor'): Promise<InviteResult> => {
-    const { data, error: rpcError } = await supabase.rpc('create_trip_invite', {
-      p_trip_id: tripId,
-      p_email: email,
-      p_role: role,
-    });
-    if (rpcError) throw rpcError;
-    const result = data as InviteResult;
+    const { data, error: fnError } = await supabase.functions.invoke<InviteResult & { error?: string }>(
+      'invite-collaborator',
+      { body: { tripId, email, role, origin: window.location.origin } },
+    );
+    // A non-2xx from an edge function surfaces as FunctionsHttpError with the
+    // body unread, so dig the real message out rather than showing the
+    // generic "Edge Function returned a non-2xx status code".
+    if (fnError) {
+      const ctx = (fnError as { context?: Response }).context;
+      let message = fnError.message;
+      if (ctx && typeof ctx.json === 'function') {
+        try {
+          const body = await ctx.json();
+          if (body?.error) message = body.error;
+        } catch { /* keep the generic message */ }
+      }
+      throw new Error(message);
+    }
+    if (!data || data.error) throw new Error(data?.error ?? 'Could not create the invite');
     await loadInvites();
-    return result;
+    return data;
   };
 
   const revokeInvite = async (token: string) => {

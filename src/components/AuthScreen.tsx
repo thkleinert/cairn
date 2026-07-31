@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CairnIcon } from './CairnIcon';
 import { useAuth } from '../hooks/useAuth';
+import { signupsEnabled } from '../lib/supabase';
 
 type Mode = 'signin' | 'signup' | 'reset';
 
@@ -28,6 +29,19 @@ export function AuthScreen({ invite }: Props = {}) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  // On an invite-only instance there is no self-service sign-up to offer;
+  // invitees arrive already provisioned via their invite link.
+  const [canSignUp, setCanSignUp] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    signupsEnabled().then(enabled => {
+      if (cancelled || enabled) return;
+      setCanSignUp(false);
+      setMode(m => (m === 'signup' ? 'signin' : m));
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,8 +91,8 @@ export function AuthScreen({ invite }: Props = {}) {
         {invite && mode !== 'reset' && (
           <div className="auth-invite-banner">
             <strong>{invite.inviter}</strong> invited you to join{' '}
-            <strong>{invite.tripName}</strong> as {invite.role}. Sign in or create an
-            account to join.
+            <strong>{invite.tripName}</strong> as {invite.role}.{' '}
+            {canSignUp ? 'Sign in or create an account to join.' : 'Sign in to join.'}
           </div>
         )}
 
@@ -114,14 +128,16 @@ export function AuthScreen({ invite }: Props = {}) {
           </button>
         )}
 
-        <button
-          className="auth-toggle"
-          onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
-        >
-          {mode === 'signin' ? "Don't have an account? Sign up."
-            : mode === 'signup' ? 'Already have an account? Sign in'
-            : 'Back to sign in'}
-        </button>
+        {(canSignUp || mode === 'reset') && (
+          <button
+            className="auth-toggle"
+            onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
+          >
+            {mode === 'signin' ? "Don't have an account? Sign up."
+              : mode === 'signup' ? 'Already have an account? Sign in'
+              : 'Back to sign in'}
+          </button>
+        )}
       </div>
     </div>
   );
