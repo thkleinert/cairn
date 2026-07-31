@@ -38,7 +38,7 @@ traveling with.
   - [1. Prerequisites](#1-prerequisites)
   - [2. Clone and Install](#2-clone-and-install)
   - [3. Create the Supabase Project](#3-create-the-supabase-project)
-  - [4. Get a Mapbox Token](#4-get-a-mapbox-token)
+  - [4. Get Mapbox Tokens](#4-get-mapbox-tokens)
   - [5. Get a Google Places API Key](#5-get-a-google-places-api-key)
   - [6. Configure Environment Variables](#6-configure-environment-variables)
   - [7. Run It](#7-run-it)
@@ -193,6 +193,10 @@ Plain email + password via Supabase Auth — no OAuth apps to configure, no
 third-party identity dance. Password reset by email works out of the box,
 and changing your password signs out every other session.
 
+Running a private instance? Turn sign-ups off and Cairn becomes
+[invite-only](#invite-only-mode): the screen drops its "create account"
+option, and a trip invite is the only way an account ever gets made.
+
 <br clear="left" />
 
 ---
@@ -288,11 +292,65 @@ npm install
 5. From **Project Settings → API**, note the **Project URL** and the
    **`anon` public key**.
 
-### 4. Get a Mapbox Token
+### 4. Get Mapbox Tokens
 
-Sign up at [mapbox.com](https://account.mapbox.com/) and copy your **default
-public token** (`pk.…`) from the Access Tokens page. The default scopes cover
-both map rendering and the Directions API used for visited-route drawing.
+Sign up at [mapbox.com](https://account.mapbox.com/) and create **two** public
+tokens (`pk.…`) on the Access Tokens page. Leave the scopes at their defaults
+— `styles:tiles`, `styles:read`, `fonts:read`, `datasets:read` cover both map
+rendering and the Directions API used for visited-route drawing.
+
+| Token | Used by | URL restrictions |
+|---|---|---|
+| **Browser** → `VITE_MAPBOX_TOKEN` | Map tiles and client-side routing | **Restricted** to your domains |
+| **Server** → `MAPBOX_TOKEN` secret | `trip-geojson` road snapping | **None** — see below |
+
+On the browser token, add your origins under **URL restrictions**:
+
+```
+https://your-domain.example
+http://localhost:5173
+```
+
+Mapbox does **not** support wildcard characters, so don't write `*.example.com`
+or a trailing `/*`. You don't need to — subdomains and subpaths of a listed URL
+match automatically, which also covers per-deployment preview URLs. Keep
+`localhost` in the list or the map is blank in development.
+
+> **Why two tokens?** URL restrictions are enforced via the `Referer` header,
+> so they only work for browser requests. The `trip-geojson` edge function
+> calls Directions server-side, where there is no `Referer` — a restricted
+> token gets **403** there. Using one restricted token for both is the trap:
+> the map keeps working, and the export silently degrades to straight lines
+> with no error anywhere. The server token is never shipped to clients; it
+> lives only in Supabase secrets.
+
+Since the browser token ships in your JS bundle, treat it as public — the
+restrictions limit casual quota theft, they don't make it a secret. Never
+commit either token; both belong in environment variables.
+
+<details>
+<summary>Verifying a token's restrictions actually work</summary>
+
+Mapbox only enforces URL restrictions on **billable** endpoints. Probing
+`/styles/v1/…` (style metadata) returns `200` no matter what you send, so it
+will happily tell you an unrestricted token is fine. Test a tile or a
+Directions request instead:
+
+```bash
+TOKEN=pk.your-browser-token
+URL="https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/1/0/0?access_token=$TOKEN"
+
+curl -s -o /dev/null -w "no referer : %{http_code}\n" "$URL"
+curl -s -o /dev/null -w "your domain: %{http_code}\n" -H "Referer: https://your-domain.example/" "$URL"
+```
+
+A correctly restricted token gives **403** then **200**.
+
+Note also that Directions answers a revoked token with HTTP **200** and a body
+of `{"message":"Not Authorized - Invalid Token"}` — check the body, not the
+status code, when confirming an old token is dead.
+
+</details>
 
 ### 5. Get a Google Places API Key
 
@@ -310,7 +368,7 @@ Create `.env.local` in the project root:
 ```bash
 VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
-VITE_MAPBOX_TOKEN=pk.eyJ...
+VITE_MAPBOX_TOKEN=pk.eyJ...        # the URL-restricted browser token
 VITE_GOOGLE_PLACES_KEY=AIza...
 ```
 
@@ -358,8 +416,12 @@ plain deploy does the right thing:
 ```bash
 supabase functions deploy invite-collaborator persist-photo trip-geojson
 supabase secrets set APP_ORIGINS="https://your-domain.example,http://localhost:5173"
-supabase secrets set MAPBOX_TOKEN=pk.your-own-token
+supabase secrets set MAPBOX_TOKEN=pk.your-unrestricted-server-token
 ```
+
+You can also set both secrets from the dashboard under **Project Settings →
+Edge Functions → Secrets**, which avoids installing the CLI. Secrets take
+effect immediately — no redeploy needed.
 
 **`invite-collaborator`** — creates the pending invite and, when the invitee
 has no account yet, provisions one through the Auth admin API and returns a
@@ -392,8 +454,11 @@ GET https://<project>.supabase.co/functions/v1/trip-geojson?token=<share_token>
 
 The `MAPBOX_TOKEN` secret is what enables road snapping; without it the
 export still works, but every leg is a straight line instead of a road
-route. Routing is capped and cached server-side, so a leaked share link
-can't burn unbounded Directions quota.
+route. It **must be the unrestricted server token** from
+[step 4](#4-get-mapbox-tokens) — this call has no `Referer`, so a
+URL-restricted token gets 403 and you'd get straight lines with no error to
+explain why. Routing is capped and cached server-side, so a leaked share
+link can't burn unbounded Directions quota.
 
 ---
 
@@ -431,7 +496,15 @@ Worth understanding before you invite the whole group:
   Don't upload photos you wouldn't hand to everyone who might see the trip.
 - **The frontend ships hardened headers.** `public/_headers` sets a strict
   Content-Security-Policy scoped to the APIs the app actually uses, plus
-  HSTS, `frame-ancestors 'none'`, and friends.
+  HSTS, `frame-ancestors 'none'`, and friends. One consequence worth knowing
+  before you edit `public/sw.js`: a service worker inherits the CSP of the
+  response that served its script, and that policy governs the fetches the
+  *worker* makes. Make it fetch cross-origin and the request dies with
+  `ERR_FAILED` the moment the worker takes control.
+- **Client-side API keys are publishable, not secret.** The Supabase anon
+  key, the Google key and the browser Mapbox token all ship in the bundle by
+  design; safety comes from RLS and from key restrictions, so keep the
+  Mapbox URL restrictions and Google's API/domain restrictions in place.
 ### Invite-Only Mode
 
 By default anyone who finds your instance can create an account. They'd see
@@ -443,8 +516,14 @@ completely:
 
 1. Deploy the function and set `APP_ORIGINS` (see
    [Edge Functions](#9-edge-functions)).
-2. In **Authentication → Sign In / Providers → Email**, turn **Allow new
-   users to sign up** off.
+2. Confirm your redirect URLs are configured (see
+   [step 3](#3-create-the-supabase-project)). Without the `/**` pattern
+   Supabase rewrites the invite link's destination back to the Site URL, and
+   invitees land on the trip list instead of joining the trip.
+3. **Send yourself a test invite at a spare address and complete it**, while
+   self-service sign-up is still available as a fallback.
+4. Only then, in **Authentication → Sign In / Providers → Email**, turn
+   **Allow new users to sign up** off.
 
 Invites keep working exactly as before — the owner types an email, gets a
 link, and sends it — but now that link is the *only* way an account comes
