@@ -19,6 +19,7 @@ traveling with.
 [![Mapbox](https://img.shields.io/badge/Mapbox-GL%20JS-000000?logo=mapbox&logoColor=white)](https://docs.mapbox.com/mapbox-gl-js/)
 [![PWA](https://img.shields.io/badge/PWA-installable-5a0fc8)](#-install-it-like-an-app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/thkleinert/cairn/actions/workflows/ci.yml/badge.svg)](https://github.com/thkleinert/cairn/actions/workflows/ci.yml)
 
 <br />
 
@@ -262,7 +263,7 @@ project you own. Everything below fits in the free tiers.
 ### 2. Clone and Install
 
 ```bash
-git clone <your-fork-url>
+git clone <your-fork-url> cairn
 cd cairn
 npm install
 ```
@@ -271,8 +272,10 @@ npm install
 
 1. Create a new project in the [Supabase dashboard](https://supabase.com/dashboard).
 2. Open the **SQL Editor** and run the entire contents of
-   [`supabase/schema.sql`](supabase/schema.sql) in one go. This single file
-   creates everything:
+   [`supabase/schema.sql`](supabase/schema.sql) in one go. Run it once, on a
+   fresh project — it uses plain `create table` / `create policy`, so a second
+   run fails on objects that already exist. This single file creates
+   everything:
    - all tables (`trips`, `trip_members`, `places`, `tags`, `place_tags`,
      `place_images`, `trip_invites`, `place_comments`, `activity`, …),
    - every Row Level Security policy (all data is scoped to trip membership),
@@ -281,8 +284,14 @@ npm install
    - the public **`place-images`** storage bucket with image-only MIME and
      10 MB size limits,
    - the Realtime publication that makes collaborator edits show up live.
-3. Under **Authentication → Sign In / Providers**, make sure **Email**
-   sign-up is enabled (it is by default). No OAuth configuration is needed.
+3. Under **Authentication → Sign In / Providers → Email**, make sure
+   **Email** sign-up is enabled (it is by default). No OAuth configuration is
+   needed. Also decide what to do about **Confirm email**, which is on by
+   default: Supabase's built-in mailer only delivers to your own project
+   members and is rate-limited to a few messages an hour, so on a fresh
+   project the confirmation mail for your first sign-up may never arrive and
+   you won't be able to log in. Either turn **Confirm email** off, or
+   configure custom SMTP before you sign up.
 4. Under **Authentication → URL Configuration**, set the **Site URL** to your
    app's origin and add `https://your-domain.example/**` to **Redirect URLs**
    (plus `http://localhost:5173/**` for development). Invite and password-reset
@@ -363,7 +372,11 @@ status code, when confirming an old token is dead.
 
 ### 6. Configure Environment Variables
 
-Create `.env.local` in the project root:
+Copy the template and fill it in:
+
+```bash
+cp .env.example .env.local
+```
 
 ```bash
 VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
@@ -373,8 +386,13 @@ VITE_GOOGLE_PLACES_KEY=AIza...
 ```
 
 All four are *publishable* client-side keys — safety comes from RLS (Supabase)
-and key restrictions (Google/Mapbox), not from hiding them. If any are
-missing, the app boots into a setup checklist instead of crashing.
+and key restrictions (Google/Mapbox), not from hiding them.
+
+Only the two Supabase values gate the setup screen: without them the app boots
+into a checklist instead of crashing. The other two fail later and more
+quietly — a missing `VITE_MAPBOX_TOKEN` surfaces as "Couldn't load the map",
+and a missing `VITE_GOOGLE_PLACES_KEY` makes place search return nothing at
+all. If either of those symptoms appears, check this file first.
 
 ### 7. Run It
 
@@ -414,10 +432,19 @@ settings are pinned in [`supabase/config.toml`](supabase/config.toml) so a
 plain deploy does the right thing:
 
 ```bash
+npm install -g supabase        # or: npx supabase <command>
+supabase login                 # opens a browser
+supabase link --project-ref <your-project-ref>
+
 supabase functions deploy invite-collaborator persist-photo trip-geojson
 supabase secrets set APP_ORIGINS="https://your-domain.example,http://localhost:5173"
 supabase secrets set MAPBOX_TOKEN=pk.your-unrestricted-server-token
 ```
+
+`login` and `link` are not optional — without them the deploy fails with
+`Cannot find project ref. Have you run supabase link?`. Your project ref is
+the subdomain of your Supabase URL. (`--project-ref` also works per-command
+if you'd rather not link.)
 
 You can also set both secrets from the dashboard under **Project Settings →
 Edge Functions → Secrets**, which avoids installing the CLI. Secrets take
@@ -505,6 +532,7 @@ Worth understanding before you invite the whole group:
   key, the Google key and the browser Mapbox token all ship in the bundle by
   design; safety comes from RLS and from key restrictions, so keep the
   Mapbox URL restrictions and Google's API/domain restrictions in place.
+
 ### Invite-Only Mode
 
 By default anyone who finds your instance can create an account. They'd see
@@ -545,7 +573,9 @@ npm run preview  # serve the production build locally
 npm run lint     # eslint (includes the service worker)
 ```
 
-There is no test suite yet; `npm run build` is the type-safety gate.
+There is no test suite yet; `npm run build` is the type-safety gate. CI runs
+`npm run lint` and `npm run build` on every push and pull request to `main`
+(Node 22), so both must pass before a change lands.
 
 ---
 
