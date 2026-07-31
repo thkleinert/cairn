@@ -263,7 +263,7 @@ project you own. Everything below fits in the free tiers.
 
 ```bash
 git clone <your-fork-url>
-cd travel-planner
+cd cairn
 npm install
 ```
 
