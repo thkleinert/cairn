@@ -206,8 +206,8 @@ option, and a trip invite is the only way an account ever gets made.
 
 **No custom backend server.** The React app talks directly to Supabase and
 the map/places APIs; all server-side logic lives in Postgres — Row Level
-Security policies and a set of `SECURITY DEFINER` RPCs — plus two small edge
-functions (photo persistence and the GeoJSON export).
+Security policies and a set of `SECURITY DEFINER` RPCs — plus three small edge
+functions (collaborator invites, photo persistence, and the GeoJSON export).
 
 ```mermaid
 flowchart LR

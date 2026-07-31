@@ -1,16 +1,15 @@
-// trip-geojson — exports a trip's *visited* places as travel-map-shaped
-// GeoJSON, gated by the trip's public share token (same trust model as the
-// existing /shared/:token web view: whoever holds the token may read).
+// trip-geojson — exports a trip's *visited* places as GeoJSON, gated by the
+// trip's public share token (same trust model as the /shared/:token web view:
+// whoever holds the token may read).
 //
 //   GET /functions/v1/trip-geojson?token=<share_token>
 //
-// Response: a GeoJSON FeatureCollection in the exact shape the `travel-map`
-// repo consumes — one LineString per routed leg (Mapbox driving directions,
-// straight-line fallback where no road route exists), one Point per stop
-// (with a `name` for tooltips), coordinates as [lng, lat]. A non-standard
-// top-level `metadata` object carries the trip name/dates/centre so the
-// importer can build its `trips.js` entry; the importer strips it before
-// writing the file.
+// Response: a GeoJSON FeatureCollection — one LineString per routed leg
+// (Mapbox driving directions, straight-line fallback where no road route
+// exists), one Point per stop (with a `name` for tooltips), coordinates as
+// [lng, lat]. A non-standard top-level `metadata` object carries the trip
+// name, dates, centre point and stop count so an importer can build a
+// summary entry; strip it if you need strictly valid GeoJSON.
 //
 // verify_jwt is disabled (pinned in ../../config.toml so deploys can't
 // forget): auth is the share token itself, checked below.
@@ -156,7 +155,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Centre of the stops, for the trips.js `destCoords` fallback [lat, lng].
+  // Centre of the stops as [lat, lng], for an importer's map-centring fallback.
   const lats = places.map((p) => p.latitude);
   const lngs = places.map((p) => p.longitude);
   const center = places.length

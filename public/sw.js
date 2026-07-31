@@ -1,4 +1,4 @@
-// __BUILD_VERSION__ is stamped by the build (vite.config.ts) so every deploy
+// __BUILD_VERSION__ is replaced at build time by scripts/stamp-sw.mjs so every deploy
 // gets its own cache name automatically. The activate handler deletes any
 // cache whose name isn't the current one, so each deploy purges the previous
 // build's assets once the new worker takes over — without this, long-lived

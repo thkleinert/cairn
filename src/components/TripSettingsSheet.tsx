@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Trash2, UserPlus, UserX, Crown, Eye, Pencil, Plus, Copy, Check, Clock, Link2, RefreshCw } from 'lucide-react';
 import type { Trip } from '../types';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import { cleanupReplacedCover } from '../lib/trips';
 import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
@@ -165,8 +166,10 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
     setRemovingId(memberId);
     try {
       await removeCollaborator(userIdToRemove);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // Every other failure path in the app toasts; a console-only error left
+      // the row sitting there with no explanation.
+      toast('Could not remove collaborator');
     } finally {
       setRemovingId(null);
     }

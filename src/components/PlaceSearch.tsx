@@ -112,14 +112,18 @@ export function PlaceSearch({ onSelect }: Props) {
         sessionToken: sessionToken.current ?? undefined,
       },
       (result, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && result) {
+        // geometry is genuinely optional in Google's response — a result
+        // without coordinates can't become a map pin, and asserting through
+        // it would throw inside this callback where nothing catches it.
+        const location = result?.geometry?.location;
+        if (status === google.maps.places.PlacesServiceStatus.OK && result && location) {
           sessionToken.current = new google.maps.places.AutocompleteSessionToken();
           const image_url = result.photos?.[0]?.getUrl({ maxWidth: 800 });
           onSelect({
             name: result.name ?? prediction.structured_formatting.main_text,
             address: result.formatted_address ?? prediction.description,
-            latitude: result.geometry!.location!.lat(),
-            longitude: result.geometry!.location!.lng(),
+            latitude: location.lat(),
+            longitude: location.lng(),
             google_place_id: prediction.place_id,
             image_url,
           });

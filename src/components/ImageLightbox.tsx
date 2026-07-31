@@ -11,7 +11,7 @@ interface Props {
 }
 
 // Full-screen swipeable viewer for the "shot ideas" gallery — native
-// scroll-snap for the swipe (same technique as the old hero gallery),
+// scroll-snap for the swipe (no JS gesture handling needed),
 // tap-outside-the-photo-to-dismiss, and no library dependency.
 export function ImageLightbox({ images, startIndex, onClose, onRemove }: Props) {
   const [activeIndex, setActiveIndex] = useState(startIndex);

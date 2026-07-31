@@ -1,3 +1,16 @@
+-- ============================================================
+-- Cairn — complete database schema
+-- ------------------------------------------------------------
+-- Run this ONCE, in full, on a fresh Supabase project (SQL Editor).
+-- It creates every table, Row Level Security policy, RPC, trigger, the
+-- storage bucket, and the realtime publication the app needs.
+--
+-- It is deliberately NOT idempotent: plain `create table` / `create policy`
+-- statements mean a second run fails on the first object that already
+-- exists. That's the intended safety property — it will not silently
+-- half-apply over a database that already has data.
+-- ============================================================
+
 -- Enable required extensions
 create extension if not exists "uuid-ossp";
 
@@ -56,8 +69,8 @@ create table public.places (
   position        integer not null default 0,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
-  -- A visited place must carry its visit time — the travel-map export filters
-  -- on both, so a desynced row would silently vanish from it.
+  -- A visited place must carry its visit time — the GeoJSON export filters on
+  -- both and orders by visited_at, so a desynced row would silently vanish.
   constraint places_visited_at_coherent check (status <> 'visited' or visited_at is not null),
   constraint places_coords_bounded check (latitude between -90 and 90 and longitude between -180 and 180)
 );
@@ -138,9 +151,9 @@ as $$
   );
 $$;
 
--- PostgreSQL 15+ restricts non-superuser roles from reading custom GUC parameters
--- set by PostgREST (request.jwt.*). Inline the JWT parse inside a SECURITY DEFINER
--- function so it runs as postgres (superuser) which can access request.jwt.claims.
+-- Modern PostgreSQL restricts non-superuser roles from reading the custom GUC
+-- parameters PostgREST sets (request.jwt.*). Inline the JWT parse inside a
+-- SECURITY DEFINER function so it runs as postgres, which can read them.
 create or replace function public.auth_uid()
 returns uuid language sql security definer stable
 set search_path = extensions, public, auth
@@ -153,9 +166,10 @@ $$;
 
 grant execute on function public.auth_uid() to anon, authenticated;
 
--- SECURITY DEFINER RPC for trip creation — bypasses RLS INSERT evaluation entirely.
--- auth.uid() is called within SECURITY DEFINER context (postgres superuser) where
--- request.jwt.claims is readable, avoiding the PostgREST GUC restriction in PG17.
+-- SECURITY DEFINER RPC for trip creation — bypasses RLS INSERT evaluation
+-- entirely. auth.uid() runs in SECURITY DEFINER context where request.jwt.claims
+-- is readable, avoiding the same GUC restriction auth_uid() works around above.
+-- Every trip is created through here; the client never INSERTs into trips.
 create or replace function public.create_trip(
   p_name        text,
   p_description text default null,
@@ -196,10 +210,10 @@ alter table public.place_tags enable row level security;
 alter table public.place_images enable row level security;
 
 -- trips
--- owner_id check is first: avoids the window between INSERT and the after-insert
--- trigger that adds owner to trip_members (PostgREST evaluates SELECT policy on
--- RETURNING). Anonymous share access is NOT handled here — it goes through the
--- token-scoped get_shared_trip RPC below.
+-- owner_id is checked before membership so a freshly created trip is readable
+-- in the same statement that creates it, before the after-insert trigger has
+-- added the owner to trip_members. Anonymous share access is NOT handled here
+-- — it goes through the token-scoped get_shared_trip RPC below.
 create policy "trip_select" on public.trips for select
   using (
     owner_id = public.auth_uid()
@@ -215,7 +229,7 @@ create policy "trip_update" on public.trips for update
 
 -- Editors may change trip *content* only. owner_id and share_token sit outside
 -- this column grant, so a PATCH touching them is rejected outright — without
--- this, any member could seize ownership by writing owner_id. (updated_at is
+-- this, an editor could seize ownership by writing owner_id. (updated_at is
 -- written by a trigger, which column grants don't constrain.)
 revoke update on table public.trips from anon, authenticated;
 grant update (name, description, start_date, end_date, cover_image_url)
@@ -726,7 +740,7 @@ alter publication supabase_realtime add table
   public.places, public.tags, public.place_tags, public.place_images;
 
 -- ============================================================
--- PLACE COMMENTS  (feature/place-comments prototype)
+-- PLACE COMMENTS
 -- ------------------------------------------------------------
 -- A per-place discussion thread so collaborators can talk through a spot
 -- ("should we book this?") separately from the single-author notes field.
@@ -845,7 +859,7 @@ $$;
 grant execute on function public.add_place_comment(uuid, text) to authenticated;
 
 -- ============================================================
--- ACTIVITY FEED  (feature/place-comments prototype)
+-- ACTIVITY FEED
 -- ------------------------------------------------------------
 -- Powers the in-app notification bell: a row is recorded whenever someone adds
 -- a place or posts a comment, and each user sees activity from every trip they
@@ -1022,9 +1036,10 @@ grant execute on function public.mark_activity_seen() to authenticated;
 -- FUNCTION PRIVILEGES — make the grants above real
 -- ------------------------------------------------------------
 -- Postgres grants EXECUTE on every new function to PUBLIC by default, so the
--- per-function `grant execute … to authenticated` statements above were
--- documentation, not access control: anon could call any RPC (each one's own
--- auth.uid()/membership checks held the line alone). Strip the implicit
+-- per-function `grant execute … to authenticated` statements above are not by
+-- themselves access control: without this block anon could call any RPC, with
+-- each function's own auth.uid()/membership check holding the line alone.
+-- Strip the implicit
 -- grant from this file's functions, then re-grant per role. Deliberately an
 -- explicit list — `all functions in schema public` would also revoke
 -- extension helpers like uuid_generate_v4(), and column defaults execute
