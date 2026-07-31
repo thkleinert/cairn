@@ -573,6 +573,8 @@ npm run preview  # serve the production build locally
 npm run lint     # eslint (includes the service worker)
 ```
 
+`.nvmrc` pins the Node version CI uses, so `nvm use` picks a supported one.
+
 There is no test suite yet; `npm run build` is the type-safety gate. CI runs
 `npm run lint` and `npm run build` on every push and pull request to `main`
 (Node 22), so both must pass before a change lands.
