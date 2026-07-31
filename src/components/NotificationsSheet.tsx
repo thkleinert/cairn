@@ -4,6 +4,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import type { Notification } from '../hooks/useNotifications';
+import { authorName } from '../lib/people';
 
 interface Props {
   notifications: Notification[];
@@ -12,10 +13,6 @@ interface Props {
   onDismiss: (id: string) => void;
   onMarkAllRead: () => void;
   onClose: () => void;
-}
-
-function authorName(email: string): string {
-  return email.split('@')[0];
 }
 
 const THRESHOLD = 80; // px of horizontal travel to commit a swipe action

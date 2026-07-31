@@ -12,10 +12,12 @@
   --color-primary-dark: #0b7c72;
   --color-primary-light: #e6f7f5;
   --color-on-primary: #ffffff;
+  /* Success shares the body-text ink on purpose: this palette keeps colour
+     for the primary accent and danger only. Named separately so the intent
+     is visible at the usage sites. */
   --color-success: #131416;
   --color-danger: #dc2626;
   --color-muted: #9a9fa6;
-  --color-secondary: #5b6068;
   --color-text: #131416;
   --color-text-secondary: #5b6068;
   --color-border: #e9eaec;
@@ -506,7 +508,7 @@ select.input {
   bottom: 0; left: 0; right: 0;
   display: flex; justify-content: center; align-items: flex-end;
   padding-bottom: calc(env(safe-area-inset-bottom) + 14px);
-  height: calc(68px + env(safe-area-inset-bottom));
+  height: calc(var(--bottombar-height) + env(safe-area-inset-bottom));
   z-index: 10;
   pointer-events: none;
 }
@@ -1223,7 +1225,7 @@ select.input {
 .tag-chip--add {
   border-style: dashed;
   border-color: var(--color-border);
-  color: var(--color-secondary);
+  color: var(--color-text-secondary);
   padding: 6px 10px;
 }
 .tag-chip--add:hover { border-color: var(--color-primary); color: var(--color-primary); }
@@ -1621,7 +1623,6 @@ select.input {
     --color-success: #f2f3f4;
     --color-danger: #f87171;
     --color-muted: #6c7076;
-    --color-secondary: #a2a6ad;
     --color-text: #f2f3f4;
     --color-text-secondary: #a2a6ad;
     --color-border: #26282b;

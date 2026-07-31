@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
-import { TAG_COLORS } from '../constants';
+import { TAG_COLORS, SUGGESTED_ICONS } from '../constants';
 import type { Tag } from '../types';
 
 interface Props {
@@ -108,6 +108,20 @@ export function TagPickerSheet({ allTags, selectedTagIds, onToggleTag, onCreateT
                 }}
                 autoFocus
               />
+            </div>
+            {/* Same suggested-emoji row as the tag manager — creating a tag
+                from here used to offer only the free-text field, so the two
+                create forms produced different-looking tags. */}
+            <div className="icon-presets">
+              {SUGGESTED_ICONS.map(ic => (
+                <button
+                  key={ic}
+                  className={`icon-preset ${newIcon === ic ? 'icon-preset--active' : ''}`}
+                  onClick={() => setNewIcon(newIcon === ic ? '' : ic)}
+                >
+                  {ic}
+                </button>
+              ))}
             </div>
             <div className="color-presets">
               {TAG_COLORS.map(c => (

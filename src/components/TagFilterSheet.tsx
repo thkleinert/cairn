@@ -3,9 +3,8 @@ import { X, Plus, Trash2, Pencil, Check } from 'lucide-react';
 import type { Tag } from '../types';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
-import { TAG_COLORS } from '../constants';
+import { TAG_COLORS, SUGGESTED_ICONS } from '../constants';
 
-const SUGGESTED_ICONS = ['📍', '🍔', '📷', '🏛️', '🏖️', '🛍️', '☕', '🍷', '🏨', '🎭', '🌿', '⛪'];
 
 const TAG_PRESETS = [
   { name: 'Food',          icon: '🍔', color: '#ef4444' },

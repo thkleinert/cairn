@@ -151,6 +151,29 @@ as $$
   );
 $$;
 
+-- Membership via a place's parent trip. place_tags, place_images and
+-- place_comments all gate on "can I see/edit the trip this place belongs to?",
+-- which was the same exists(...) subquery copy-pasted eight times.
+create or replace function public.can_read_place(place uuid)
+returns boolean language sql security definer stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.places p
+    where p.id = place and public.is_trip_member(p.trip_id, public.auth_uid())
+  );
+$$;
+
+create or replace function public.can_write_place(place uuid)
+returns boolean language sql security definer stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.places p
+    where p.id = place and public.is_trip_editor(p.trip_id, public.auth_uid())
+  );
+$$;
+
 -- Modern PostgreSQL restricts non-superuser roles from reading the custom GUC
 -- parameters PostgREST sets (request.jwt.*). Inline the JWT parse inside a
 -- SECURITY DEFINER function so it runs as postgres, which can read them.
@@ -357,35 +380,29 @@ create policy "places_delete" on public.places for delete
 -- place_tags
 create policy "place_tags_select" on public.place_tags for select
   using (
-    exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+    public.can_read_place(place_id)
   );
 create policy "place_tags_insert" on public.place_tags for insert
   with check (
-    exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
+    public.can_write_place(place_id)
   );
 create policy "place_tags_delete" on public.place_tags for delete
   using (
-    exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
+    public.can_write_place(place_id)
   );
 
 -- place_images (rows; the stored files are covered in the STORAGE section)
 create policy "place_images_select" on public.place_images for select
   using (
-    exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+    public.can_read_place(place_id)
   );
 create policy "place_images_insert" on public.place_images for insert
   with check (
-    exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
+    public.can_write_place(place_id)
   );
 create policy "place_images_delete" on public.place_images for delete
   using (
-    exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_editor(p.trip_id, public.auth_uid()))
+    public.can_write_place(place_id)
   );
 
 -- ============================================================
@@ -678,8 +695,6 @@ grant execute on function public.get_shared_trip(uuid) to anon, authenticated;
 
 create index trips_owner_id_idx on public.trips(owner_id);
 create index trip_members_user_id_idx on public.trip_members(user_id);
-create index places_trip_id_idx on public.places(trip_id);
-create index places_google_place_id_idx on public.places(google_place_id);
 create index tags_trip_id_idx on public.tags(trip_id);
 -- The frontend's hot paths: place loads filter trip_id + order by position,
 -- every place fetch embeds place_images, tag deletion cascades by tag_id.
@@ -763,15 +778,13 @@ alter table public.place_comments enable row level security;
 -- Membership is checked through the parent place's trip, mirroring places/tags.
 create policy "place_comments_select" on public.place_comments for select
   using (
-    exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+    public.can_read_place(place_id)
   );
 
 create policy "place_comments_insert" on public.place_comments for insert
   with check (
     user_id = public.auth_uid()
-    and exists (select 1 from public.places p
-      where p.id = place_id and public.is_trip_member(p.trip_id, public.auth_uid()))
+    and public.can_read_place(place_id)
   );
 
 -- Author can delete their own; trip owner can delete anyone's (moderation).
@@ -1050,6 +1063,8 @@ revoke execute on function
   public.auth_uid(),
   public.is_trip_member(uuid, uuid),
   public.is_trip_editor(uuid, uuid),
+  public.can_read_place(uuid),
+  public.can_write_place(uuid),
   public.create_trip(text, text, date, date),
   public.get_trip_members(uuid),
   public.remove_collaborator(uuid, uuid),
@@ -1076,6 +1091,8 @@ from public, anon;
 grant execute on function public.auth_uid() to anon, authenticated;
 grant execute on function public.is_trip_member(uuid, uuid) to anon, authenticated;
 grant execute on function public.is_trip_editor(uuid, uuid) to anon, authenticated;
+grant execute on function public.can_read_place(uuid) to anon, authenticated;
+grant execute on function public.can_write_place(uuid) to anon, authenticated;
 
 -- The two genuinely anonymous entry points (share links + invite links).
 grant execute on function public.get_shared_trip(uuid) to anon;

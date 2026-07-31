@@ -9,3 +9,9 @@ export const TAG_COLORS: Array<{ value: string; name: string }> = [
   { value: '#8b5cf6', name: 'Violet' },
   { value: '#14b8a6', name: 'Teal' },
 ];
+
+// Suggested tag emoji — offered by both tag-creation forms (the tag manager
+// and the picker on a place). Shared so the two can't drift apart.
+export const SUGGESTED_ICONS: string[] = [
+  '📍', '🍔', '📷', '🏛️', '🏖️', '🛍️', '☕', '🍷', '🏨', '🎭', '🌿', '⛪',
+];

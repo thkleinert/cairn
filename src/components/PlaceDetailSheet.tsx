@@ -11,19 +11,7 @@ import {
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
-import { TAG_COLORS } from '../constants';
-
-// Deterministic avatar tint per author, so each person keeps one colour
-// across the thread — same idea as tag colours, hashed off the email.
-function avatarColor(email: string): string {
-  let hash = 0;
-  for (let i = 0; i < email.length; i++) hash = (hash * 31 + email.charCodeAt(i)) | 0;
-  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length].value;
-}
-
-function authorName(email: string): string {
-  return email.split('@')[0];
-}
+import { authorName, avatarColor } from '../lib/people';
 
 // Check that draws itself when the parent gains .visited-icon-btn--visited
 function CheckRing() {

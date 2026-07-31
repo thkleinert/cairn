@@ -256,7 +256,7 @@ project you own. Everything below fits in the free tiers.
 - A [Supabase](https://supabase.com) account — database, auth, storage
 - A [Mapbox](https://www.mapbox.com) account — map rendering & routing
 - A [Google Cloud](https://console.cloud.google.com) project — place search & photos
-- Node.js **20+** and npm
+- Node.js **20.19+**, **22.13+**, or **24+** (what the toolchain requires); npm
 - Any static host for the production build (Cloudflare Pages, Netlify,
   Vercel, …)
 
