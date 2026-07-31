@@ -1,18 +1,15 @@
-# Order matters: later matching rules override earlier ones per header.
-# The catch-all pins every response — including SPA-fallback HTML for
-# /trip/:id, /shared/:token and /invite/:token, which browsers would
-# otherwise heuristically cache and serve stale after a deploy — then
-# /assets/* opts the content-hashed build files back into immutable caching.
+# Cloudflare Pages does NOT let a later rule override an earlier one — it
+# CONCATENATES values for the same header. Measured: with Cache-Control on
+# both /* and /assets/*, hashed assets were served
+# "no-store, ..., public, max-age=31536000, immutable", no-store won, and
+# cf-cache-status came back BYPASS — every visit re-downloading the whole
+# bundle. So the catch-all below carries security headers ONLY, and every
+# Cache-Control is set on exactly one matching rule.
+#
+# (Concatenation is harmless for the security headers: repeating a CSP is
+# additive-restrictive, and the rest are identical wherever they apply.)
 
 /*
-  # no-transform stops Cloudflare injecting its JavaScript Detections
-  # bootstrap into the HTML. That bootstrap is an inline <script>, and the
-  # only ways to permit it are 'unsafe-inline' (which would defeat the CSP
-  # below) or a per-request nonce (impossible from a static _headers file),
-  # so every page load logged a CSP violation for a script this app doesn't
-  # need. Opting out here keeps the choice in the repo and scoped to this
-  # app, rather than disabling JS Detections for the whole zone.
-  Cache-Control: no-cache, no-store, must-revalidate, no-transform
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
@@ -20,13 +17,43 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Content-Security-Policy: default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://maps.gstatic.com; worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; manifest-src 'self'
 
-# IMPORTANT, and the cause of a real outage: a service worker inherits the CSP
-# of the response that delivered its script, and that policy governs fetches
-# the *worker* makes — checked against connect-src, not the page's img-src. So
-# sw.js must only ever fetch same-origin, or the request dies with ERR_FAILED
-# the moment the worker takes control. Adding a second CSP header here does
-# NOT relax it: browsers enforce every CSP header they receive, so the /*
-# policy above still applies to this file. Fix it in sw.js, not here.
+# ----------------------------------------------------------------------
+# HTML: never cached, and never transformed.
+#
+# The app serves real paths, so each SPA-fallback route needs its own rule
+# now that the catch-all no longer carries Cache-Control. Browsers would
+# otherwise heuristically cache this HTML and serve a stale shell — pointing
+# at hashed chunks that no longer exist — after a deploy.
+#
+# no-transform additionally stops Cloudflare injecting its JavaScript
+# Detections bootstrap. That bootstrap is an inline <script>, and the only
+# ways to permit it are 'unsafe-inline' (which would defeat the CSP above)
+# or a per-request nonce (impossible from a static _headers file), so it
+# logged a CSP violation on every page load for a script this app doesn't
+# need. Cost of opting out: Cloudflare also stops compressing the HTML
+# shell (~1.3 KB more per navigation), which is a fair trade for a clean
+# console and an intact policy. Verified: siblings without no-transform get
+# the script injected 4/4, this app 0/15.
+# ----------------------------------------------------------------------
+/
+  Cache-Control: no-cache, no-store, must-revalidate, no-transform
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate, no-transform
+/trip/*
+  Cache-Control: no-cache, no-store, must-revalidate, no-transform
+/shared/*
+  Cache-Control: no-cache, no-store, must-revalidate, no-transform
+/invite/*
+  Cache-Control: no-cache, no-store, must-revalidate, no-transform
+
+# The worker must always be revalidated, or a deploy can't roll out.
+# Note: a service worker inherits the CSP of the response that delivered its
+# script, and that policy governs fetches the *worker* makes — checked
+# against connect-src, not the page's img-src. sw.js must therefore only ever
+# fetch same-origin, or the request dies with ERR_FAILED the moment the
+# worker takes control. That is enforced in sw.js itself; it cannot be
+# relaxed here, because a second CSP header would only intersect with the one
+# above.
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
 
@@ -45,3 +72,5 @@
   Cache-Control: public, max-age=604800
 /apple-touch-icon.png
   Cache-Control: public, max-age=604800
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
