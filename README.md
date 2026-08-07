@@ -498,8 +498,8 @@ for a week, the project pauses, and the app is down until you restore it from
 the dashboard.
 
 [`infra/supabase-keepalive/`](infra/supabase-keepalive) is a small Cloudflare
-Worker that makes a few database requests a day on a cron trigger, which is
-the remedy Supabase documents. It needs only the publishable anon key, and it
+Worker that makes a few database requests a day — at times that vary daily —
+which is the remedy Supabase documents. It needs only the publishable anon key, and it
 calls an existing anon-callable RPC so it adds no new public surface. See its
 [README](infra/supabase-keepalive/README.md) for the reasoning and setup.
 

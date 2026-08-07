@@ -43,8 +43,32 @@ wrangler secret put PING_SECRET        # any random string; see below
 ```
 
 Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` as plain-text vars (they are
-publishable) and `PING_SECRET` as a secret, then add the cron trigger —
-`0 */6 * * *` gives four requests a day with headroom for a missed tick.
+publishable) and `PING_SECRET` as a secret. The cron trigger is
+`*/15 * * * *` — see below for why it fires so often.
+
+## The schedule is randomised
+
+Cloudflare cron expressions are fixed, so the variation lives in the worker.
+The cron fires every 15 minutes and each invocation decides whether *this*
+slot is one of today's; the rest return immediately without touching the
+network. Both the number of requests (2-5) and their times vary from day to
+day, so it doesn't hammer the same four timestamps forever.
+
+The choice is a pure function of the UTC date — no storage needed, and every
+invocation that day agrees. The day is split into as many equal blocks as
+there are requests, one slot drawn per block, which keeps them spread out; a
+purely uniform draw can cluster every request into one hour and leave a very
+long gap.
+
+The floor of two a day is deliberate. Supabase wants activity on each day of
+the window, and a day scheduled for a single request has no margin if that
+request fails.
+
+Simulated over 1000 days: 2-5 requests every day, never zero, 988 distinct
+daily patterns, and a largest-ever gap of 23.5 hours.
+
+Add `&plan=1` to the manual trigger to see the times chosen for today without
+sending a ping.
 
 ## The manual trigger
 

@@ -2,10 +2,10 @@ name = "cairn-supabase-keepalive"
 main = "worker.js"
 compatibility_date = "2026-01-01"
 
-# Four database requests a day — comfortably above Supabase's "a few user
-# requests each day" threshold, with headroom for a missed tick.
+# Fires every 15 minutes; the worker itself decides which slots actually send
+# a request (2-5 a day, at times that vary daily). See README.md.
 [triggers]
-crons = ["0 */6 * * *"]
+crons = ["*/15 * * * *"]
 
 # Publishable client-side values, safe as plain vars. Replace with your own.
 # PING_SECRET is NOT here on purpose — set it with `wrangler secret put`.
