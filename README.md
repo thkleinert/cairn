@@ -45,6 +45,7 @@ traveling with.
   - [7. Run It](#7-run-it)
   - [8. Deploy](#8-deploy)
   - [9. Edge Functions](#9-edge-functions)
+- [Keeping a Free-Plan Project Awake](#keeping-a-free-plan-project-awake)
 - [Install It Like an App](#-install-it-like-an-app)
 - [Security Model](#security-model)
   - [Invite-Only Mode](#invite-only-mode)
@@ -489,6 +490,23 @@ link can't burn unbounded Directions quota.
 
 ---
 
+## Keeping a Free-Plan Project Awake
+
+Supabase pauses Free Plan projects after about a week of low **database**
+activity, which for a personal instance is easy to hit — nobody opens the app
+for a week, the project pauses, and the app is down until you restore it from
+the dashboard.
+
+[`infra/supabase-keepalive/`](infra/supabase-keepalive) is a small Cloudflare
+Worker that makes a few database requests a day on a cron trigger, which is
+the remedy Supabase documents. It needs only the publishable anon key, and it
+calls an existing anon-callable RPC so it adds no new public surface. See its
+[README](infra/supabase-keepalive/README.md) for the reasoning and setup.
+
+Not needed on a paid plan — those projects are never paused for inactivity.
+
+---
+
 ## 📲 Install It Like an App
 
 Cairn is an installable PWA. On a phone, open it in the browser and use
@@ -600,6 +618,8 @@ supabase/
     invite-collaborator/  Creates invites; provisions accounts for new invitees
     persist-photo/        Copies expiring Google photos into your own bucket
     trip-geojson/         Share-token-gated GeoJSON export of the visited route
+infra/
+  supabase-keepalive/  Cron Worker that stops a Free-Plan project pausing
 public/           PWA manifest, service worker, viewport shim, headers
 scripts/          Build helpers (service-worker cache stamping)
 docs/             Logo & README screenshots

@@ -1,0 +1,14 @@
+name = "cairn-supabase-keepalive"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Four database requests a day — comfortably above Supabase's "a few user
+# requests each day" threshold, with headroom for a missed tick.
+[triggers]
+crons = ["0 */6 * * *"]
+
+# Publishable client-side values, safe as plain vars. Replace with your own.
+# PING_SECRET is NOT here on purpose — set it with `wrangler secret put`.
+[vars]
+SUPABASE_URL = "https://your-project-ref.supabase.co"
+SUPABASE_ANON_KEY = "eyJ..."
