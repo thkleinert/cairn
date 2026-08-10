@@ -1,7 +1,7 @@
 import { useState, useEffect, lazy } from 'react';
 import { MapBoundary } from './MapBoundary';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
-import type { Trip } from '../types';
+import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTags } from '../hooks/useTags';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
@@ -11,6 +11,7 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 // fetching the moment a trip opens.
 const MapView = lazy(() => import('./MapView').then(m => ({ default: m.MapView })));
 import { PlaceSearch } from './PlaceSearch';
+import { MapPickSheet } from './MapPickSheet';
 import { PlaceDetailSheet } from './PlaceDetailSheet';
 import { TagFilterSheet } from './TagFilterSheet';
 import { TripSettingsSheet } from './TripSettingsSheet';
@@ -44,6 +45,8 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   const [openSheet, setOpenSheet] = useState<Sheet>('none');
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [showSearch, setShowSearch] = useState(false);
+  // The map point being turned into a place (long-press), if any.
+  const [pickedPoint, setPickedPoint] = useState<PickedPoint | null>(null);
   // Once created, the map stays mounted (hidden) across Map↔List toggles —
   // unmounting destroys the mapbox instance, and every toggle back would
   // re-download the style/tiles and refit bounds, losing the viewport.
@@ -65,11 +68,15 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
 
   useEscapeClose(() => setShowSearch(false));
 
+  // Shared by both entry points — the search field and a long-press on the
+  // map — so a place added either way lands identically and opens its sheet.
+  // google_place_id is optional: a custom place isn't on Google at all.
   const handleAddPlace = async (placeData: {
-    name: string; address: string; latitude: number;
-    longitude: number; google_place_id: string; image_url?: string;
+    name: string; address?: string; latitude: number;
+    longitude: number; google_place_id?: string; image_url?: string; notes?: string;
   }) => {
     setShowSearch(false);
+    setPickedPoint(null);
     const newPlace = await addPlace(placeData);
     if (newPlace) setSelectedPlaceId(newPlace.id);
   };
@@ -128,14 +135,16 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
                 activeTags={activeTags}
                 allTags={tags}
                 onSelectPlace={(place) => setSelectedPlaceId(place.id)}
+                onPickPoint={setPickedPoint}
+                pendingPoint={pickedPoint}
               />
             </MapBoundary>
           </div>
         )}
-        {viewMode === 'map' && !loading && places.length === 0 && !showSearch && (
+        {viewMode === 'map' && !loading && places.length === 0 && !showSearch && !pickedPoint && (
           <div className="map-empty-hint">
             <Plus size={16} />
-            Tap the + button to add your first place
+            Tap + to add your first place — or press and hold anywhere on the map
           </div>
         )}
         {viewMode === 'list' && (
@@ -188,6 +197,14 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
       </div>
 
       {/* Sheets */}
+      {pickedPoint && (
+        <MapPickSheet
+          point={pickedPoint}
+          onAdd={handleAddPlace}
+          onClose={() => setPickedPoint(null)}
+        />
+      )}
+
       {selectedPlace && (
         <PlaceDetailSheet
           place={selectedPlace}

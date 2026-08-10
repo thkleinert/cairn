@@ -70,3 +70,29 @@ export interface GooglePlacePrediction {
     secondary_text: string;
   };
 }
+
+// A point the user long-pressed on the map. `hintName` is the POI label
+// Mapbox had already rendered under their finger, if any — free, instant,
+// and available before the Google lookup resolves.
+export interface PickedPoint {
+  lat: number;
+  lng: number;
+  hintName?: string;
+}
+
+// A Google POI found around a picked point.
+export interface NearbyPlace {
+  place_id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  /** Metres from the picked point. */
+  distance: number;
+  image_url?: string;
+}
+
+export interface PointLookup {
+  address: string | null;
+  nearby: NearbyPlace[];
+}
