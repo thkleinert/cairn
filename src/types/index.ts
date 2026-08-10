@@ -70,3 +70,34 @@ export interface GooglePlacePrediction {
     secondary_text: string;
   };
 }
+
+// A point the user long-pressed on the map. `hintName` is the POI label
+// Mapbox had already rendered under their finger, if any — free, instant,
+// and available before the Google lookup resolves.
+export interface PickedPoint {
+  lat: number;
+  lng: number;
+  hintName?: string;
+}
+
+// A Google POI found around a picked point.
+export interface NearbyPlace {
+  place_id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  /** Metres from the picked point. */
+  distance: number;
+  image_url?: string;
+}
+
+export interface PointLookup {
+  address: string | null;
+  nearby: NearbyPlace[];
+  // False when Google never answered (script blocked, quota exhausted, key
+  // rejected, network down). An empty `nearby` means "nothing within 150 m"
+  // ONLY when this is true — otherwise the UI would state a failure as a fact
+  // about the world, and the result must not be cached.
+  ok: boolean;
+}

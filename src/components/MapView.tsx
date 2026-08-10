@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import type { Place, Tag } from '../types';
+import type { Place, PickedPoint, Tag } from '../types';
 import { buildVisitedRouteGeoJSON, type RouteFeatureCollection } from '../lib/routing';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
@@ -40,12 +40,54 @@ function ensureRouteLayers(map: mapboxgl.Map) {
   });
 }
 
+// Long-press to drop a pin — the gesture Google Maps itself uses, so no mode
+// to enter or leave. A short tap stays free for panning and marker taps.
+const LONG_PRESS_MS = 500;
+// A press that drifts further than this was a pan, not a press.
+const LONG_PRESS_MOVE_PX = 10;
+// Fingertip-sized box for reading the POI label under the press.
+const POI_QUERY_PAD_PX = 12;
+// Android fires `contextmenu` from the same long press our touch timer is
+// already timing; either may land first, so ignore a second pick this soon.
+const PICK_DEDUPE_MS = 800;
+
+// Only the two fields we read. Declared locally because mapbox-gl's own
+// GeoJSONFeature inherits `properties` from @types/geojson, which is a
+// devDependency of mapbox-gl and so isn't installed here — same reason
+// lib/routing.ts spells out its own GeoJSON shapes.
+type QueriedFeature = { sourceLayer?: string; properties?: Record<string, unknown> | null };
+
+// The POI label the style has *already drawn* at this point — free, instant,
+// and exactly the name the user is looking at, which a nearby search need not
+// agree with. Used only to prefill; the Google lookup still runs.
+function renderedPoiName(map: mapboxgl.Map, pt: mapboxgl.Point): string | undefined {
+  try {
+    const box: [mapboxgl.PointLike, mapboxgl.PointLike] = [
+      [pt.x - POI_QUERY_PAD_PX, pt.y - POI_QUERY_PAD_PX],
+      [pt.x + POI_QUERY_PAD_PX, pt.y + POI_QUERY_PAD_PX],
+    ];
+    // Deliberately unfiltered by layer id: those differ between the light and
+    // dark styles, but both carry POI labels in a `poi_label` source layer.
+    const features = map.queryRenderedFeatures(box) as unknown as QueriedFeature[];
+    const name = features.find(f => f.sourceLayer === 'poi_label' && f.properties?.name)?.properties?.name;
+    return typeof name === 'string' ? name : undefined;
+  } catch {
+    // queryRenderedFeatures throws while a style is mid-swap; a missing hint
+    // costs nothing, so never let it break the pick itself.
+    return undefined;
+  }
+}
+
 interface Props {
   places: Place[];
   selectedPlace: Place | null;
   activeTags: string[];
   allTags: Tag[];
   onSelectPlace: (place: Place) => void;
+  // Long-press / right-click on empty map — omit to disable pin dropping.
+  onPickPoint?: (point: PickedPoint) => void;
+  // The provisional pin shown while the "add here" sheet is open.
+  pendingPoint?: PickedPoint | null;
 }
 
 // Outer element is positioned by Mapbox (it owns its transform);
@@ -76,7 +118,7 @@ function styleMarker(inner: HTMLDivElement, emoji: string | null, isVisited: boo
   if (outer) outer.style.zIndex = isSelected ? '10' : '1';
 }
 
-export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPlace }: Props) {
+export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPlace, onPickPoint, pendingPoint }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, { marker: mapboxgl.Marker; anchor: string }>>(new Map());
@@ -99,6 +141,8 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
   placesRef.current = places;
   const onSelectPlaceRef = useRef(onSelectPlace);
   onSelectPlaceRef.current = onSelectPlace;
+  const onPickPointRef = useRef(onPickPoint);
+  onPickPointRef.current = onPickPoint;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -126,10 +170,102 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     const onStyleData = () => applyRouteData();
     map.on('styledata', onStyleData);
 
+    // ---- Long-press / right-click to drop a pin ----
+    // Hand-rolled rather than leaning on `contextmenu` alone: iOS Safari
+    // doesn't raise that event for a long press on the canvas, so touch
+    // devices would otherwise have no gesture at all.
+    const canvas = map.getCanvasContainer();
+    let pressTimer: ReturnType<typeof setTimeout> | null = null;
+    let pressStart: { x: number; y: number } | null = null;
+    let lastPickAt = 0;
+
+    const cancelPress = () => {
+      if (pressTimer) clearTimeout(pressTimer);
+      pressTimer = null;
+      pressStart = null;
+    };
+
+    const firePick = (clientX: number, clientY: number) => {
+      // Nothing here — not the haptic, not the swallowed context menu — may
+      // happen when the caller didn't ask for pin dropping (the shared
+      // read-only trip view renders this map without onPickPoint).
+      const onPick = onPickPointRef.current;
+      if (!onPick) return;
+      const now = Date.now();
+      if (now - lastPickAt < PICK_DEDUPE_MS) return;
+      lastPickAt = now;
+      const rect = canvas.getBoundingClientRect();
+      const pt = new mapboxgl.Point(clientX - rect.left, clientY - rect.top);
+      // .wrap() is essential, not cosmetic: renderWorldCopies is on by default
+      // and the map opens at zoom 2, so several copies of the world are on
+      // screen. unproject deliberately doesn't wrap, so a press on the copy
+      // right of the prime meridian yields lng ≈ 362 — which the places table's
+      // places_coords_bounded CHECK rejects, failing the insert at the very end
+      // of the flow with only a generic toast.
+      const lngLat = map.unproject(pt).wrap();
+      // Confirm the press landed — without it a long press feels like nothing
+      // happened until the sheet animates in.
+      navigator.vibrate?.(15);
+      onPick({
+        lat: lngLat.lat,
+        lng: lngLat.lng,
+        hintName: renderedPoiName(map, pt),
+      });
+    };
+
+    // A press that starts on an existing pin belongs to that pin.
+    const onMarker = (target: EventTarget | null) =>
+      !!(target as HTMLElement | null)?.closest?.('.mapboxgl-marker');
+
+    const onTouchStart = (e: TouchEvent) => {
+      cancelPress();
+      if (!onPickPointRef.current) return;
+      // Two fingers is a pinch-zoom, not a press.
+      if (e.touches.length !== 1 || onMarker(e.target)) return;
+      const t = e.touches[0];
+      pressStart = { x: t.clientX, y: t.clientY };
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        if (pressStart) firePick(pressStart.x, pressStart.y);
+      }, LONG_PRESS_MS);
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!pressTimer || !pressStart) return;
+      const t = e.touches[0];
+      if (Math.hypot(t.clientX - pressStart.x, t.clientY - pressStart.y) > LONG_PRESS_MOVE_PX) {
+        cancelPress();
+      }
+    };
+
+    const onContextMenu = (e: MouseEvent) => {
+      // Only swallow the browser's own menu when we're actually replacing it
+      // with something. On the read-only shared view there's no pick to offer,
+      // so the user keeps "Open in new tab", "Inspect" and their extensions.
+      if (!onPickPointRef.current || onMarker(e.target)) return;
+      // We provide the action a right-click would otherwise offer, and on
+      // Android this suppresses the OS text-selection menu over the canvas.
+      e.preventDefault();
+      cancelPress();
+      firePick(e.clientX, e.clientY);
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: true });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: true });
+    canvas.addEventListener('touchend', cancelPress);
+    canvas.addEventListener('touchcancel', cancelPress);
+    canvas.addEventListener('contextmenu', onContextMenu);
+
     const markers = markersRef.current;
     return () => {
       darkQuery.removeEventListener('change', onSchemeChange);
       map.off('styledata', onStyleData);
+      cancelPress();
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', cancelPress);
+      canvas.removeEventListener('touchcancel', cancelPress);
+      canvas.removeEventListener('contextmenu', onContextMenu);
       mapRef.current?.remove();
       mapRef.current = null;
       // The markers belong to the map instance that was just destroyed. Left
@@ -221,6 +357,38 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
       duration: 600,
     });
   }, [selId, selLng, selLat]);
+
+  // Provisional pin for the point being added. Coordinates as deps, not the
+  // object: TripView re-creates it on every render of the open sheet, and on
+  // identity the pin would be torn down and re-added (re-animating) each time.
+  const pendingLng = pendingPoint?.lng;
+  const pendingLat = pendingPoint?.lat;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || pendingLng === undefined || pendingLat === undefined) return;
+
+    // Same three-layer shape as the real markers, and for the same reason:
+    // Mapbox owns the outer element's transform (it positions the marker with
+    // an inline transform), and a CSS animation on that element would beat the
+    // inline style and rip the pin to the canvas origin for the animation's
+    // duration — then leave it unrotated once the inline style won again.
+    const outer = document.createElement('div');
+    const drop = document.createElement('div');
+    drop.className = 'map-pending-pin-drop';
+    const inner = document.createElement('div');
+    inner.className = 'map-pending-pin';
+    drop.appendChild(inner);
+    outer.appendChild(drop);
+    const marker = new mapboxgl.Marker({ element: outer, anchor: 'bottom' })
+      .setLngLat([pendingLng, pendingLat])
+      .addTo(map);
+
+    // Lift the point clear of the sheet that's about to cover the lower half,
+    // without changing zoom — the user chose this spot by looking at it.
+    map.easeTo({ center: [pendingLng, pendingLat], offset: [0, -110], duration: 400 });
+
+    return () => { marker.remove(); };
+  }, [pendingLng, pendingLat]);
 
   // Fit bounds once on initial load — never yank the viewport on add/remove.
   // Extra bottom padding so markers don't land under the floating bottom

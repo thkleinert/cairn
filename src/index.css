@@ -1756,6 +1756,115 @@ select.input {
 .map-empty-hint svg { color: var(--color-primary); }
 
 /* ============================================================
+   DROP A PIN — provisional marker + the "add a place here" sheet
+   ============================================================ */
+
+/* Three layers, exactly like .map-marker: Mapbox positions the outer element
+   with an inline transform, so the entrance animation lives on this wrapper
+   and the rotation lives on the inner element. Putting either on the marker
+   element itself makes the CSS animation outrank Mapbox's inline transform —
+   the pin renders at the canvas origin for the whole animation, then settles
+   unrotated once the inline style wins back. */
+.map-pending-pin-drop {
+  animation: pendingPinDrop var(--dur-slow) var(--spring-bounce) backwards;
+}
+@keyframes pendingPinDrop {
+  from { transform: translateY(-14px); opacity: 0; }
+}
+
+/* Deliberately unlike a real place marker: tinted and pulsing, so it never
+   reads as a place that has already been saved. */
+.map-pending-pin {
+  width: 26px; height: 26px;
+  background: var(--color-primary);
+  border: 2px solid var(--marker-paper);
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  animation: pendingPinPulse 1.8s ease-in-out 0.4s infinite;
+}
+@keyframes pendingPinPulse {
+  50% { box-shadow: 0 2px 10px rgba(0,0,0,0.3), 0 0 0 8px rgba(13,148,136,0.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-pending-pin-drop, .map-pending-pin { animation: none; }
+}
+
+.pick-point-address {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.pick-status {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-bottom: 14px;
+}
+
+.pick-section-label {
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-bottom: 6px;
+}
+
+.pick-poi-list {
+  list-style: none;
+  /* Six-ish rows before it scrolls — the sheet's own max-height still wins,
+     this just stops a dense city block filling the whole thing. */
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0 -20px;
+}
+
+.pick-poi {
+  width: 100%;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 20px;
+  text-align: left;
+  min-height: var(--tap-target);
+  border-bottom: 1px solid var(--color-border);
+}
+.pick-poi:last-child { border-bottom: none; }
+.pick-poi:active { background: var(--color-bg); }
+.pick-poi:disabled { opacity: 0.5; }
+
+.pick-poi-thumb {
+  width: 40px; height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--color-bg);
+}
+.pick-poi-thumb--empty {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-muted);
+}
+
+/* min-width:0 so a long POI name ellipsises instead of shoving the
+   distance off the row. */
+.pick-poi-text {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+}
+.pick-poi-text .prediction-main,
+.pick-poi-text .prediction-sub {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.pick-poi-distance {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+
+.pick-custom-btn { width: 100%; margin-top: 4px; }
+
+/* ============================================================
    NOTIFICATIONS — bell + badge, and the activity sheet
    ============================================================ */
 .notif-bell { position: relative; }
