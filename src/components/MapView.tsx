@@ -186,16 +186,27 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     };
 
     const firePick = (clientX: number, clientY: number) => {
+      // Nothing here — not the haptic, not the swallowed context menu — may
+      // happen when the caller didn't ask for pin dropping (the shared
+      // read-only trip view renders this map without onPickPoint).
+      const onPick = onPickPointRef.current;
+      if (!onPick) return;
       const now = Date.now();
       if (now - lastPickAt < PICK_DEDUPE_MS) return;
       lastPickAt = now;
       const rect = canvas.getBoundingClientRect();
       const pt = new mapboxgl.Point(clientX - rect.left, clientY - rect.top);
-      const lngLat = map.unproject(pt);
+      // .wrap() is essential, not cosmetic: renderWorldCopies is on by default
+      // and the map opens at zoom 2, so several copies of the world are on
+      // screen. unproject deliberately doesn't wrap, so a press on the copy
+      // right of the prime meridian yields lng ≈ 362 — which the places table's
+      // places_coords_bounded CHECK rejects, failing the insert at the very end
+      // of the flow with only a generic toast.
+      const lngLat = map.unproject(pt).wrap();
       // Confirm the press landed — without it a long press feels like nothing
       // happened until the sheet animates in.
       navigator.vibrate?.(15);
-      onPickPointRef.current?.({
+      onPick({
         lat: lngLat.lat,
         lng: lngLat.lng,
         hintName: renderedPoiName(map, pt),
@@ -208,6 +219,7 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
 
     const onTouchStart = (e: TouchEvent) => {
       cancelPress();
+      if (!onPickPointRef.current) return;
       // Two fingers is a pinch-zoom, not a press.
       if (e.touches.length !== 1 || onMarker(e.target)) return;
       const t = e.touches[0];
@@ -227,10 +239,13 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     };
 
     const onContextMenu = (e: MouseEvent) => {
+      // Only swallow the browser's own menu when we're actually replacing it
+      // with something. On the read-only shared view there's no pick to offer,
+      // so the user keeps "Open in new tab", "Inspect" and their extensions.
+      if (!onPickPointRef.current || onMarker(e.target)) return;
       // We provide the action a right-click would otherwise offer, and on
       // Android this suppresses the OS text-selection menu over the canvas.
       e.preventDefault();
-      if (onMarker(e.target)) return;
       cancelPress();
       firePick(e.clientX, e.clientY);
     };
@@ -352,9 +367,19 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
     const map = mapRef.current;
     if (!map || pendingLng === undefined || pendingLat === undefined) return;
 
-    const el = document.createElement('div');
-    el.className = 'map-pending-pin';
-    const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+    // Same three-layer shape as the real markers, and for the same reason:
+    // Mapbox owns the outer element's transform (it positions the marker with
+    // an inline transform), and a CSS animation on that element would beat the
+    // inline style and rip the pin to the canvas origin for the animation's
+    // duration — then leave it unrotated once the inline style won again.
+    const outer = document.createElement('div');
+    const drop = document.createElement('div');
+    drop.className = 'map-pending-pin-drop';
+    const inner = document.createElement('div');
+    inner.className = 'map-pending-pin';
+    drop.appendChild(inner);
+    outer.appendChild(drop);
+    const marker = new mapboxgl.Marker({ element: outer, anchor: 'bottom' })
       .setLngLat([pendingLng, pendingLat])
       .addTo(map);
 

@@ -95,4 +95,9 @@ export interface NearbyPlace {
 export interface PointLookup {
   address: string | null;
   nearby: NearbyPlace[];
+  // False when Google never answered (script blocked, quota exhausted, key
+  // rejected, network down). An empty `nearby` means "nothing within 150 m"
+  // ONLY when this is true — otherwise the UI would state a failure as a fact
+  // about the world, and the result must not be cached.
+  ok: boolean;
 }

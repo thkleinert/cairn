@@ -13,7 +13,7 @@ const NEARBY_RADIUS_M = 150;
 const MAX_NEARBY = 8;
 const GOOGLE_READY_TIMEOUT_MS = 8000;
 
-const EMPTY: PointLookup = { address: null, nearby: [] };
+const UNAVAILABLE: PointLookup = { address: null, nearby: [], ok: false };
 
 function distanceMetres(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371000;
@@ -48,10 +48,22 @@ function whenGoogleReady(): Promise<boolean> {
   });
 }
 
-let services: { places: google.maps.places.PlacesService; geocoder: google.maps.Geocoder } | null = null;
+type Services = { places: google.maps.places.PlacesService; geocoder: google.maps.Geocoder };
 
-async function getServices() {
-  if (services) return services;
+let services: Services | null = null;
+// Memoised so a blocked script costs one 8s timeout for the whole session, not
+// one per lookup — and, since each lookup calls getServices twice, not two.
+// Holds the in-flight promise, so concurrent callers share a single wait.
+let servicesPromise: Promise<Services | null> | null = null;
+
+function getServices(): Promise<Services | null> {
+  if (services) return Promise.resolve(services);
+  if (servicesPromise) return servicesPromise;
+  servicesPromise = initServices();
+  return servicesPromise;
+}
+
+async function initServices() {
   if (!(await whenGoogleReady())) return null;
   // PlacesService needs an element to attribute results to; it is never
   // attached to the document — we render the "powered by Google" notice
@@ -78,17 +90,27 @@ function reverseGeocode(point: { lat: number; lng: number }): Promise<string | n
   });
 }
 
-function nearbySearch(point: { lat: number; lng: number }): Promise<NearbyPlace[]> {
+// null means Google didn't answer — distinct from [] ("nothing within 150 m"),
+// which is a real answer the UI is allowed to state as fact.
+function nearbySearch(point: { lat: number; lng: number }): Promise<NearbyPlace[] | null> {
   return getServices().then(svc => {
-    if (!svc) return [];
-    return new Promise<NearbyPlace[]>(resolve => {
+    if (!svc) return null;
+    return new Promise<NearbyPlace[] | null>(resolve => {
       svc.places.nearbySearch(
         { location: point, radius: NEARBY_RADIUS_M },
         (results, status) => {
+          const S = google.maps.places.PlacesServiceStatus;
           // ZERO_RESULTS is an ordinary outcome for open countryside, not a
-          // failure — an empty list is the correct answer there.
-          if (status !== google.maps.places.PlacesServiceStatus.OK || !results) {
+          // failure — an empty list is the correct answer there. Everything
+          // else (REQUEST_DENIED, OVER_QUERY_LIMIT once the Pro-tier free cap
+          // is gone, UNKNOWN_ERROR, a dropped connection) is us failing to ask,
+          // and must never be presented as "there is nothing here".
+          if (status === S.ZERO_RESULTS) {
             resolve([]);
+            return;
+          }
+          if (status !== S.OK || !results) {
+            resolve(null);
             return;
           }
           const mapped = results.flatMap(r => {
@@ -124,23 +146,49 @@ function cacheKey(point: { lat: number; lng: number }) {
   return `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
 }
 
-const cache = new Map<string, Promise<PointLookup>>();
+const CACHE_MAX = 50;
+// Entries carry NearbyPlace.image_url, which is one of Google's ephemeral
+// session photo URLs. Serving a long-stale one is worse than re-fetching:
+// addPlace marks the place in usePlaces' healingRef *before* trying to persist
+// it, so when the expired URL fails to fetch, the self-heal that would have
+// re-resolved a fresh photo is suppressed for the rest of the session and the
+// place keeps a dead cover image. A TTL well inside the URL's life avoids that
+// while still covering the case this cache is for — the same spot pressed
+// twice in a row, which is what would otherwise bill twice.
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+const cache = new Map<string, { at: number; value: Promise<PointLookup> }>();
 
 export function lookupPoint(point: { lat: number; lng: number }): Promise<PointLookup> {
   const key = cacheKey(point);
   const cached = cache.get(key);
-  if (cached) return cached;
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+  if (cached) cache.delete(key);
 
   const pending = Promise.all([reverseGeocode(point), nearbySearch(point)])
-    .then(([address, nearby]) => ({ address, nearby }))
+    .then(([address, nearby]): PointLookup => {
+      // Only a real answer earns its place in the cache. Caching a failure
+      // would make it permanent for that spot: the user waits for the map to
+      // come alive, presses again, and gets the same stale "nothing here".
+      if (nearby === null) {
+        cache.delete(key);
+        return { address, nearby: [], ok: false };
+      }
+      return { address, nearby, ok: true };
+    })
     .catch(() => {
-      // A rejected entry must not be served to every later press of this spot.
       cache.delete(key);
-      return EMPTY;
+      return UNAVAILABLE;
     });
 
-  // Bounded: a long session panning around a city shouldn't grow this forever.
-  if (cache.size > 50) cache.clear();
-  cache.set(key, pending);
+  // Bounded, but evict oldest-first rather than wiping the map: clearing it
+  // wholesale would re-bill a Nearby Search for a spot already looked up,
+  // which is exactly what this cache exists to prevent.
+  while (cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next();
+    if (oldest.done) break;
+    cache.delete(oldest.value);
+  }
+  cache.set(key, { at: Date.now(), value: pending });
   return pending;
 }

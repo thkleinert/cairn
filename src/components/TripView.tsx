@@ -76,9 +76,15 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     longitude: number; google_place_id?: string; image_url?: string; notes?: string;
   }) => {
     setShowSearch(false);
-    setPickedPoint(null);
     const newPlace = await addPlace(placeData);
-    if (newPlace) setSelectedPlaceId(newPlace.id);
+    // Only tear the pick sheet down once the row actually exists. Closing it
+    // first discarded everything typed into the custom-place form whenever the
+    // insert failed (offline, RLS, any Supabase error), leaving the user a
+    // toast and no way to retry short of finding the same coordinate again.
+    if (!newPlace) return false;
+    setPickedPoint(null);
+    setSelectedPlaceId(newPlace.id);
+    return true;
   };
 
   const handleToggleTag = (id: string) => {

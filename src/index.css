@@ -1759,8 +1759,21 @@ select.input {
    DROP A PIN — provisional marker + the "add a place here" sheet
    ============================================================ */
 
-/* Deliberately unlike a real place marker: hollow, tinted, and pulsing, so
-   it never reads as a place that has already been saved. */
+/* Three layers, exactly like .map-marker: Mapbox positions the outer element
+   with an inline transform, so the entrance animation lives on this wrapper
+   and the rotation lives on the inner element. Putting either on the marker
+   element itself makes the CSS animation outrank Mapbox's inline transform —
+   the pin renders at the canvas origin for the whole animation, then settles
+   unrotated once the inline style wins back. */
+.map-pending-pin-drop {
+  animation: pendingPinDrop var(--dur-slow) var(--spring-bounce) backwards;
+}
+@keyframes pendingPinDrop {
+  from { transform: translateY(-14px); opacity: 0; }
+}
+
+/* Deliberately unlike a real place marker: tinted and pulsing, so it never
+   reads as a place that has already been saved. */
 .map-pending-pin {
   width: 26px; height: 26px;
   background: var(--color-primary);
@@ -1768,17 +1781,13 @@ select.input {
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
   box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-  animation: pendingPinDrop var(--dur-slow) var(--spring-bounce) backwards,
-             pendingPinPulse 1.8s ease-in-out 0.4s infinite;
-}
-@keyframes pendingPinDrop {
-  from { transform: rotate(-45deg) translateY(-14px); opacity: 0; }
+  animation: pendingPinPulse 1.8s ease-in-out 0.4s infinite;
 }
 @keyframes pendingPinPulse {
   50% { box-shadow: 0 2px 10px rgba(0,0,0,0.3), 0 0 0 8px rgba(13,148,136,0.18); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .map-pending-pin { animation: none; }
+  .map-pending-pin-drop, .map-pending-pin { animation: none; }
 }
 
 .pick-point-address {

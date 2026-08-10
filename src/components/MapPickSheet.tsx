@@ -15,9 +15,17 @@ interface Props {
     google_place_id?: string;
     image_url?: string;
     notes?: string;
-  }) => Promise<unknown>;
+  }) => Promise<boolean>;
   onClose: () => void;
 }
+
+// The sheet mounts mid-press, 500ms into a touch that is still in progress and
+// before the finger lifts. The compatibility mouse click the browser then
+// synthesises can be hit-tested against the *current* DOM rather than
+// retargeted to the original touchstart target, in which case it lands on the
+// freshly-mounted overlay and closes the sheet the press just opened. Ignoring
+// backdrop clicks for a beat after mount costs nothing and removes it.
+const BACKDROP_ARM_MS = 400;
 
 // Opened by a long-press on the map. Offers both ways to turn a bare
 // coordinate into a place: pick one of the POIs Google knows about there, or
@@ -53,12 +61,21 @@ export function MapPickSheet({ point, onAdd, onClose }: Props) {
     if (mode === 'custom') nameInputRef.current?.focus();
   }, [mode]);
 
+  // See BACKDROP_ARM_MS — the press that opened this sheet hasn't ended yet.
+  const armedRef = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => { armedRef.current = true; }, BACKDROP_ARM_MS);
+    return () => clearTimeout(t);
+  }, []);
+
   const submit = async (place: Parameters<Props['onAdd']>[0]) => {
     if (submitting) return;
     setSubmitting(true);
-    await onAdd(place);
-    // No setSubmitting(false): onAdd closes the sheet, and re-enabling the
-    // buttons on an unmounting component just warns.
+    // onAdd closes this sheet only when the insert succeeded. On failure it
+    // returns false and leaves us mounted, so the buttons must come back —
+    // the user still has their typed form and can retry.
+    const added = await onAdd(place);
+    if (!added) setSubmitting(false);
   };
 
   const addNearby = (p: NearbyPlace) => submit({
@@ -86,9 +103,10 @@ export function MapPickSheet({ point, onAdd, onClose }: Props) {
 
   const coords = `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`;
   const nearby = lookup?.nearby ?? [];
+  const lookupFailed = !!lookup && !lookup.ok;
 
   return (
-    <div className="bottom-sheet-overlay" onClick={onClose}>
+    <div className="bottom-sheet-overlay" onClick={() => { if (armedRef.current) onClose(); }}>
       <div
         className="bottom-sheet"
         ref={sheetRef}
@@ -114,6 +132,15 @@ export function MapPickSheet({ point, onAdd, onClose }: Props) {
         <p className="pick-point-address">
           {lookup ? (lookup.address ?? coords) : 'Locating…'}
         </p>
+
+        {/* The custom path is the one that still works with Google down, so
+            lead with it rather than leaving the user on a dead end. */}
+        {lookupFailed && mode === 'pick' && (
+          <button className="btn-primary pick-custom-btn u-mb8" onClick={() => setMode('custom')}>
+            <PencilLine size={16} />
+            Name this spot yourself
+          </button>
+        )}
 
         {mode === 'pick' ? (
           <>
@@ -146,8 +173,16 @@ export function MapPickSheet({ point, onAdd, onClose }: Props) {
               </>
             )}
 
-            {lookup && nearby.length === 0 && (
+            {/* Two genuinely different states. Only the first is a statement
+                about the world; the second is a statement about us. */}
+            {lookup && lookup.ok && nearby.length === 0 && (
               <p className="pick-status">Google doesn't list anything within 150 m of this spot.</p>
+            )}
+
+            {lookupFailed && (
+              <p className="pick-status">
+                Couldn't reach Google to see what's here. You can still add this spot yourself.
+              </p>
             )}
 
             <button className="btn-secondary pick-custom-btn" onClick={() => setMode('custom')}>
