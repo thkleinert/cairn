@@ -1877,20 +1877,97 @@ select.input {
    would drift away from the caret. */
 .notes-editor { position: relative; }
 
-.notes-textarea {
-  min-height: 108px;
-  line-height: 1.55;
-}
+/* Wraps the textarea so the @-suggestion popup can anchor to the field
+   rather than the sheet — the sheet scrolls, and a popup pinned to it
+   would drift away from the caret. */
+.mention-field { position: relative; flex: 1; min-width: 0; }
 
-.notes-hint {
-  font-size: 12px;
-  color: var(--color-muted);
-  margin-top: 6px;
+.mention-input {
+  /* Auto-grown in JS; height must not be pinned by the shared .input rule. */
+  height: auto;
+  min-height: 40px;
+  padding: 9px 12px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
+  font-size: 15px;
 }
-.notes-hint strong { color: var(--color-primary); font-weight: 700; }
 
 /* Read mode. A button, not a div: tapping anywhere in the note starts
    editing, so it needs to be reachable by keyboard too. */
+.note-list { display: flex; flex-direction: column; gap: 2px; }
+.note-list-empty { margin-bottom: 6px; }
+
+.note-bullets { list-style: none; }
+
+.note-bullet {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 4px 6px 0;
+  border-radius: var(--radius-sm);
+  /* Transition is for the reorder shuffle; the dragged row overrides it
+     inline so it tracks the pointer 1:1. */
+  transition: transform 0.18s var(--glide);
+  background: var(--color-surface);
+}
+.note-bullet--dragging {
+  position: relative;
+  z-index: 2;
+  box-shadow: var(--shadow-sheet);
+}
+
+/* Grip is the drag handle. touch-action:none so the browser doesn't claim
+   the gesture for scrolling before pointermove ever fires. */
+.note-bullet-grip {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; min-height: 28px;
+  margin-top: 1px;
+  color: var(--color-muted);
+  cursor: grab;
+  touch-action: none;
+  opacity: 0.55;
+}
+.note-bullet-grip:active { cursor: grabbing; opacity: 1; }
+
+.note-bullet-dot {
+  flex-shrink: 0;
+  width: 5px; height: 5px;
+  margin: 12px 8px 0 9px;
+  border-radius: 50%;
+  background: var(--color-muted);
+}
+
+.note-bullet-body {
+  flex: 1; min-width: 0;
+  padding: 4px 2px;
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  border-radius: 4px;
+}
+.note-bullet-body:active { background: var(--color-bg); }
+
+.note-bullet-delete {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  margin-top: 2px;
+  border-radius: 50%;
+  color: var(--color-muted);
+  opacity: 0.6;
+}
+.note-bullet-delete:active { background: var(--color-bg); color: var(--color-danger, #ef4444); opacity: 1; }
+
+.note-add-row {
+  display: flex; align-items: flex-start; gap: 6px;
+  margin-top: 4px;
+}
+.note-add-icon { flex-shrink: 0; color: var(--color-muted); margin: 12px 2px 0 8px; }
+.note-add-input { border-color: transparent; background: transparent; }
+.note-add-input:focus { border-color: var(--color-primary); background: var(--color-surface); }
+
 .notes-rendered {
   display: block;
   width: 100%;
@@ -1923,6 +2000,9 @@ select.input {
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 .mention-chip:active { background: color-mix(in srgb, var(--color-primary) 24%, transparent); }
+/* No onSelectPlace wired (the read-only shared view) — still tinted so the
+   link is legible as a place, but not pretending to be tappable. */
+.mention-chip--inert { cursor: default; }
 
 .mention-suggestions {
   position: absolute;
@@ -1960,21 +2040,28 @@ select.input {
 .place-notes-list { list-style: none; }
 
 .place-note {
-  width: 100%;
-  display: flex; flex-direction: column; gap: 6px;
-  text-align: left;
-  padding: 12px 14px;
-  margin-bottom: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px 8px;
+  margin-bottom: 10px;
   border-radius: var(--radius-sm);
   background: var(--color-bg);
   border-left: 3px solid var(--color-border);
-  transition: border-color 0.15s;
 }
-.place-note:active { border-left-color: var(--color-primary); }
 
 .place-note-head {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
+.place-note-head--button {
+  width: 100%;
+  text-align: left;
+  padding: 2px 0 4px;
+  border-radius: 4px;
+}
+.place-note-head--button:active { opacity: 0.6; }
+
+/* Nested inside a place card, which already supplies the padding. */
+.place-note .note-bullet,
+.place-note .note-add-input:focus { background: transparent; }
 .place-note-name {
   font-size: 15px; font-weight: 700;
   letter-spacing: -0.01em;
@@ -1989,14 +2076,6 @@ select.input {
   /* Tag colours are user-chosen and can be light; the shadow keeps the white
      label legible without second-guessing their palette. */
   text-shadow: 0 1px 2px rgba(0,0,0,0.35);
-}
-
-.place-note-body {
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--color-text-secondary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .notes-empty {

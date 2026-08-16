@@ -3,6 +3,7 @@ import { MapBoundary } from './MapBoundary';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen } from 'lucide-react';
 import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
+import { useTripNotes } from '../hooks/useTripNotes';
 import { useTags } from '../hooks/useTags';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -37,6 +38,10 @@ type ViewMode = 'map' | 'list';
 export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, initialOpenComments, openNonce }: Props) {
   const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
+  const {
+    notes: allNotes, tripNotes, notesByPlace,
+    addNote, updateNote, removeNote, reorderNotes,
+  } = useTripNotes(trip.id);
 
   // Selection is an id — the place object is always derived fresh from `places`,
   // so realtime refetches and edits never leave the sheet stale.
@@ -57,10 +62,8 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   }, [viewMode]);
 
   const selectedPlace = places.find(p => p.id === selectedPlaceId) ?? null;
-  // Badge counts what's actually written down: the trip note (if any) plus
-  // every place carrying one.
-  const noteCount =
-    (trip.notes?.trim() ? 1 : 0) + places.filter(p => (p.notes ?? '').trim()).length;
+  // Badge counts every bullet written down for this trip, at either scope.
+  const noteCount = allNotes.length;
   const isOwner = trip.owner_id === userId;
 
   // Re-open the deep-linked place whenever a new jump target arrives (nonce
@@ -226,10 +229,14 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
 
       {openSheet === 'notes' && (
         <TripNotesSheet
-          trip={trip}
           places={places}
           allTags={tags}
-          onSaveNotes={(notes) => handleUpdateTrip({ notes })}
+          tripNotes={tripNotes}
+          notesByPlace={notesByPlace}
+          onAdd={addNote}
+          onUpdate={updateNote}
+          onRemove={removeNote}
+          onReorder={reorderNotes}
           onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
           onClose={() => setOpenSheet('none')}
         />
@@ -250,6 +257,12 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onUploadImage={(file) => uploadPlaceImage(selectedPlace.id, file)}
           onRemoveImage={(imageId) => removePlaceImage(selectedPlace.id, imageId)}
           onCreateTag={createTag}
+          notes={notesByPlace.get(selectedPlace.id) ?? []}
+          allPlaces={places}
+          onAddNote={(body) => addNote(body, selectedPlace.id)}
+          onUpdateNote={updateNote}
+          onRemoveNote={removeNote}
+          onReorderNotes={reorderNotes}
         />
       )}
 
