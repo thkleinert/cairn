@@ -1893,11 +1893,13 @@ textarea.mention-input {
   resize: none;
   overflow: hidden;
   line-height: 1.5;
-  font-size: 15px;
+  /* 16px is a hard floor, not a design choice: iOS Safari zooms the whole page
+     in when you focus a field smaller than this, and the page stays panned
+     afterwards — which is what was chopping the left edge off every heading.
+     .note-bullet-body matches it so text doesn't resize when you tap to edit. */
+  font-size: 16px;
 }
 
-/* Read mode. A button, not a div: tapping anywhere in the note starts
-   editing, so it needs to be reachable by keyboard too. */
 /* Width of the marker column (grip / dot / +). All three rows use it so the
    markers share one vertical axis and the text starts at the same x. */
 :root { --note-gutter: 22px; }
@@ -1957,10 +1959,10 @@ textarea.mention-input {
 
 .note-bullet-body {
   flex: 1; min-width: 0;
-  /* Matches textarea.mention-input's horizontal padding so a bullet doesn't
-     shift sideways when you tap it to edit. */
+  /* Matches textarea.mention-input's padding and size so a bullet neither
+     shifts sideways nor resizes when you tap it to edit. */
   padding: 4px 4px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1984,6 +1986,12 @@ textarea.mention-input {
 .note-add-row {
   display: flex; align-items: flex-start; gap: 8px;
 }
+
+/* Tuck the + closer to the bullets it belongs to — it's an affordance hanging
+   off the list, not another entry in it. Only when bullets actually precede
+   it: with an empty list the row is first in the block, and pulling it up ran
+   the focused field's border straight through the heading above. */
+.note-bullets:not(:empty) + .note-add-row { margin-top: -8px; }
 .note-add-icon {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -1994,22 +2002,6 @@ textarea.mention-input {
 .note-add-input { border-color: transparent; background: transparent; }
 .note-add-input:focus { border-color: var(--color-primary); background: var(--color-surface); }
 
-.notes-rendered {
-  display: block;
-  width: 100%;
-  text-align: left;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--color-text);
-  padding: 12px 14px;
-  border: 1.5px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  transition: border-color 0.15s;
-}
-.notes-rendered:active { border-color: var(--color-border); }
 
 .mention-chip {
   display: inline;
