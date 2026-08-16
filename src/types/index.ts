@@ -41,6 +41,20 @@ export interface PlaceComment {
   created_at: string;
 }
 
+// One bullet. `place_id` null means it belongs to the whole trip; set means
+// it belongs to that place. Rows rather than a text blob so two members
+// editing notes at once don't silently overwrite each other.
+export interface TripNote {
+  id: string;
+  trip_id: string;
+  place_id?: string | null;
+  body: string;
+  position: number;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Place {
   id: string;
   trip_id: string;
@@ -51,7 +65,6 @@ export interface Place {
   google_place_id?: string;
   status: PlaceStatus;
   visited_at?: string | null;
-  notes?: string | null;
   source_urls: string[];
   image_url?: string;
   added_by?: string;
@@ -60,6 +73,9 @@ export interface Place {
   updated_at: string;
   tags?: Tag[];
   images?: PlaceImage[];
+  // Only populated by get_shared_trip — the authenticated app reads bullets
+  // through useTripNotes instead.
+  note_items?: Pick<TripNote, 'id' | 'body' | 'position'>[];
 }
 
 export interface GooglePlacePrediction {

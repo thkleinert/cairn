@@ -5,11 +5,12 @@ import { useComments } from '../hooks/useComments';
 import { ImageLightbox } from './ImageLightbox';
 import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
+import { NoteList } from './NoteList';
 import {
   X, ExternalLink,
   Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
 } from 'lucide-react';
-import type { Place, Tag, PlaceImage } from '../types';
+import type { Place, Tag, PlaceImage, TripNote } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
 import { authorName, avatarColor } from '../lib/people';
 
@@ -42,6 +43,14 @@ interface Props {
   onAddImage: (url: string, caption?: string) => Promise<PlaceImage | null>;
   onUploadImage?: (file: File) => Promise<PlaceImage | null>;
   onRemoveImage: (imageId: string) => void;
+  // Bullets for this place. Absent on the read-only shared view, which gets a
+  // flattened copy on the place itself instead.
+  notes?: TripNote[];
+  allPlaces?: Place[];
+  onAddNote?: (body: string) => Promise<unknown> | void;
+  onUpdateNote?: (id: string, body: string) => Promise<unknown> | void;
+  onRemoveNote?: (id: string) => Promise<unknown> | void;
+  onReorderNotes?: (orderedIds: string[]) => void;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
   readOnly?: boolean;
   // When opened from a comment notification, expand + scroll to the thread.
@@ -53,8 +62,8 @@ export function PlaceDetailSheet({
   place, allTags, onClose, onToggleVisited, onUpdate, onDelete,
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
   scrollToComments = false, onCommentsShown,
+  notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onReorderNotes,
 }: Props) {
-  const [notes, setNotes] = useState(place.notes ?? '');
   const [selectedTags, setSelectedTags] = useState<string[]>((place.tags ?? []).map(t => t.id));
   const [dirty, setDirty] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -95,20 +104,20 @@ export function PlaceDetailSheet({
   }, [scrollToComments, commentsLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    setNotes(place.notes ?? '');
     setSelectedTags((place.tags ?? []).map(t => t.id));
     setDirty(false);
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const images: PlaceImage[] = place.images ?? [];
+  // get_shared_trip flattens a place's bullets onto the place itself, since the
+  // anonymous view has no trip-notes subscription of its own.
+  const sharedNotes = readOnly ? (place.note_items ?? []) : notes;
   const sourceUrls = place.source_urls ?? [];
   const assignedTags = allTags.filter(t => selectedTags.includes(t.id));
 
+  // Notes are no longer part of this draft — each bullet saves itself the
+  // moment it's committed, so only the tag selection needs flushing here.
   const handleSave = () => {
-    // null, not undefined: undefined is dropped from the JSON payload entirely,
-    // so clearing a note would never reach the database and the old text
-    // resurrects on the next refetch.
-    onUpdate({ notes: notes || null });
     onSetTags(selectedTags);
     setDirty(false);
   };
@@ -244,19 +253,28 @@ export function PlaceDetailSheet({
           </div>
         )}
 
-        {/* Notes */}
-        {(!readOnly || notes) && (
+        {/* Notes — one row per bullet, each independently editable */}
+        {(!readOnly || sharedNotes.length > 0) && (
           <div className="detail-section">
             <label className="detail-label">Notes</label>
             {readOnly ? (
-              <p className="detail-static-text">{notes}</p>
+              <ul className="note-bullets">
+                {sharedNotes.map(n => (
+                  <li key={n.id} className="note-bullet">
+                    <span className="note-bullet-dot" aria-hidden="true" />
+                    <span className="note-bullet-body">{n.body}</span>
+                  </li>
+                ))}
+              </ul>
             ) : (
-              <textarea
-                className="input detail-textarea"
-                placeholder="Add notes…"
-                value={notes}
-                onChange={e => { setNotes(e.target.value); setDirty(true); }}
-                rows={3}
+              <NoteList
+                notes={notes}
+                places={allPlaces}
+                onAdd={(body) => onAddNote?.(body)}
+                onUpdate={(id, body) => onUpdateNote?.(id, body)}
+                onRemove={(id) => onRemoveNote?.(id)}
+                onReorder={(ids) => onReorderNotes?.(ids)}
+                addPlaceholder="Add a note…"
               />
             )}
           </div>

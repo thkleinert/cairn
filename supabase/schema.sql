@@ -22,6 +22,10 @@ create table public.trips (
   id          uuid primary key default uuid_generate_v4(),
   name        text not null,
   description text,
+  -- Free-form trip-wide scratchpad, distinct from `description` (a short
+  -- subtitle shown in the trip list). This is where door codes, booking refs
+  -- and arrival times land, which is why it is scrubbed from get_shared_trip.
+  notes       text,
   start_date  date,
   end_date    date,
   share_token uuid unique default uuid_generate_v4(),
@@ -74,6 +78,11 @@ create table public.places (
   constraint places_visited_at_coherent check (status <> 'visited' or visited_at is not null),
   constraint places_coords_bounded check (latitude between -90 and 90 and longitude between -180 and 180)
 );
+
+-- Target of trip_notes' composite (place_id, trip_id) foreign key, which is
+-- what stops a note being attached to a place in a different trip. Declared
+-- here because that FK is created further down and needs this to already exist.
+alter table public.places add constraint places_id_trip_unique unique (id, trip_id);
 
 create table public.place_tags (
   place_id uuid not null references public.places(id) on delete cascade,
@@ -255,7 +264,7 @@ create policy "trip_update" on public.trips for update
 -- this, an editor could seize ownership by writing owner_id. (updated_at is
 -- written by a trigger, which column grants don't constrain.)
 revoke update on table public.trips from anon, authenticated;
-grant update (name, description, start_date, end_date, cover_image_url)
+grant update (name, description, notes, start_date, end_date, cover_image_url)
   on public.trips to authenticated;
 
 -- share_token is likewise excluded from SELECT: it's a bearer credential for
@@ -264,7 +273,7 @@ grant update (name, description, start_date, end_date, cover_image_url)
 -- the RPCs below. Client-side selects must therefore name their columns —
 -- select('*') on trips fails with a column permission error by design.
 revoke select on table public.trips from anon, authenticated;
-grant select (id, name, description, start_date, end_date, cover_image_url,
+grant select (id, name, description, notes, start_date, end_date, cover_image_url,
               owner_id, created_at, updated_at)
   on public.trips to authenticated;
 
@@ -644,6 +653,88 @@ $$;
 grant execute on function public.revoke_trip_invite(uuid) to authenticated;
 
 -- ============================================================
+-- TRIP NOTES (bullets)
+-- ------------------------------------------------------------
+-- Notes are rows, not a text blob on trips/places. A single text value is
+-- last-write-wins, so two members editing notes at once meant one of them
+-- silently lost their edit. A row per bullet syncs independently over
+-- realtime, exactly like places do.
+--
+-- One table serves both scopes: place_id null is a note about the whole trip,
+-- place_id set is a bullet on that place.
+-- ============================================================
+
+create table public.trip_notes (
+  id         uuid primary key default uuid_generate_v4(),
+  trip_id    uuid not null references public.trips(id) on delete cascade,
+  place_id   uuid,
+  body       text not null,
+  position   int  not null default 0,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  -- An empty bullet is a UI state, never a stored row.
+  constraint trip_notes_body_not_blank check (length(btrim(body)) > 0),
+
+  -- A note's place must belong to the note's trip. MATCH SIMPLE means a null
+  -- place_id skips the check, which is exactly right for trip-wide notes — and
+  -- it keeps trip_id trustworthy, which every policy below depends on.
+  constraint trip_notes_place_in_trip
+    foreign key (place_id, trip_id)
+    references public.places(id, trip_id) on delete cascade
+);
+
+create index trip_notes_lookup_idx
+  on public.trip_notes(trip_id, place_id, position);
+
+create trigger trip_notes_updated_at before update on public.trip_notes
+  for each row execute function public.set_updated_at();
+
+alter table public.trip_notes enable row level security;
+
+create policy "trip_notes_select" on public.trip_notes for select
+  using (public.is_trip_member(trip_id, public.auth_uid()));
+
+-- created_by must be the caller (or null), for the same reason places.added_by
+-- is constrained: otherwise an editor could attribute a note to another member.
+create policy "trip_notes_insert" on public.trip_notes for insert
+  with check (
+    public.is_trip_editor(trip_id, public.auth_uid())
+    and (created_by is null or created_by = public.auth_uid())
+  );
+
+create policy "trip_notes_update" on public.trip_notes for update
+  using (public.is_trip_editor(trip_id, public.auth_uid()));
+
+create policy "trip_notes_delete" on public.trip_notes for delete
+  using (public.is_trip_editor(trip_id, public.auth_uid()));
+
+alter table public.trip_notes replica identity full;
+alter publication supabase_realtime add table public.trip_notes;
+
+-- Whole order written atomically, like reorder_places: per-row updates could
+-- partially fail and leave server, client and realtime disagreeing.
+create or replace function public.reorder_trip_notes(p_trip_id uuid, p_note_ids uuid[])
+returns void
+language plpgsql security definer
+set search_path = public, auth
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.is_trip_editor(p_trip_id, auth.uid()) then
+    raise exception 'Not an editor of this trip';
+  end if;
+  update public.trip_notes n
+    set position = u.ord - 1
+  from unnest(p_note_ids) with ordinality as u(id, ord)
+  where n.id = u.id and n.trip_id = p_trip_id;
+end;
+$$;
+
+grant execute on function public.reorder_trip_notes(uuid, uuid[]) to authenticated;
+
+-- ============================================================
 -- READ-ONLY TRIP SHARING (token-scoped RPC)
 -- ------------------------------------------------------------
 -- /shared/:token renders from this single anon-callable RPC — the same trust
@@ -658,7 +749,10 @@ language sql security definer stable
 set search_path = public
 as $$
   select jsonb_build_object(
-    'trip', to_jsonb(t) - 'share_token' - 'owner_id',
+    -- Denylist, so every column added to `trips` is published here unless it
+    -- is named. `notes` is the trip's private scratchpad (door codes, booking
+    -- references) and must never reach an anonymous token holder.
+    'trip', to_jsonb(t) - 'share_token' - 'owner_id' - 'notes',
     'tags', coalesce(
       (select jsonb_agg(to_jsonb(tg)) from public.tags tg where tg.trip_id = t.id),
       '[]'::jsonb),
@@ -666,7 +760,7 @@ as $$
       select jsonb_agg(
         -- scrub like the trip object: anonymous token holders get the trip
         -- content, not live auth.users UUIDs or Google internals.
-        (to_jsonb(p) - 'added_by' - 'google_place_id') || jsonb_build_object(
+        (to_jsonb(p) - 'added_by' - 'google_place_id' - 'notes') || jsonb_build_object(
           'tags', coalesce(
             (select jsonb_agg(to_jsonb(tg2))
              from public.place_tags pt
@@ -676,6 +770,14 @@ as $$
           'images', coalesce(
             (select jsonb_agg(to_jsonb(pi) order by pi.position)
              from public.place_images pi where pi.place_id = p.id),
+            '[]'::jsonb),
+          -- Scoped to this place, so a trip-wide note (place_id is null) can
+          -- never be swept in here.
+          'note_items', coalesce(
+            (select jsonb_agg(
+               jsonb_build_object('id', n.id, 'body', n.body, 'position', n.position)
+               order by n.position, n.created_at)
+             from public.trip_notes n where n.place_id = p.id),
             '[]'::jsonb)
         )
         order by p.position

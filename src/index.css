@@ -110,7 +110,11 @@ img { display: block; }
   padding: 0 14px;
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-sm);
-  font-size: 15px;
+  /* 16px is a floor, not a preference: iOS Safari zooms the whole page in when
+     you focus a control smaller than this, and leaves it panned afterwards.
+     Every focusable control in the app must stay at or above it — .search-input
+     and textarea.mention-input are at 16px for the same reason. */
+  font-size: 16px;
   color: var(--color-text);
   background: var(--color-surface);
   outline: none;
@@ -728,19 +732,22 @@ select.input {
    BOTTOM SHEETS
    ============================================================ */
 .bottom-sheet-overlay {
-  /* Pinned to the visible viewport, NOT inset:0. A sheet with an autofocused
-     input (New Trip, Add Place) opens the keyboard; on iOS the layout viewport
-     — and so a plain inset:0 / bottom:0 — doesn't shrink for it, leaving the
-     bottom-aligned sheet stranded behind the keyboard at the bottom of the
-     page. --visual-height (window.visualViewport) tracks the keyboard, and
-     --visual-offset-top tracks how far iOS has shifted the visible area down to
-     keep the focused input clear of the keyboard. Anchoring top to that offset
-     with that height makes the overlay exactly cover what's on screen, so the
-     bottom-aligned sheet sits right above the keyboard through show/hide/re-show
-     cycles (offsetTop is 0 on first open but non-zero once iOS scrolls). */
+  /* Pinned to all four edges, NOT sized from visualViewport. It used to be
+     `top: offsetTop; height: visual-height`, which is only correct while those
+     numbers exactly describe what's on screen — and when they under-report
+     (iOS keyboard plus Safari's form accessory bar) the overlay stops short and
+     the map behind it shows through below the sheet. Anchoring top and bottom
+     means a bad measurement can misplace the sheet but can never open a hole.
+
+     The keyboard is handled as a bottom *inset* instead: the sheet is
+     bottom-aligned to the padding edge, so it sits above the keyboard while
+     the backdrop still covers the whole screen. min-height guards the case
+     where a fixed element's containing block is shorter than the screen. */
   position: fixed;
-  top: var(--visual-offset-top, 0px); left: 0; right: 0;
-  height: var(--visual-height, 100dvh);
+  top: 0; left: 0; right: 0; bottom: 0;
+  min-height: var(--app-height, 100dvh);
+  padding-bottom: var(--keyboard-inset, 0px);
+  box-sizing: border-box;
   background: var(--color-overlay);
   z-index: 50;
   display: flex; flex-direction: column; justify-content: flex-end;
@@ -753,7 +760,7 @@ select.input {
   background: var(--color-surface);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: 12px 20px 32px;
-  max-height: var(--sheet-max-height);
+  max-height: min(var(--sheet-max-height), 100%);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   animation: slideUp 0.45s var(--spring);
@@ -979,7 +986,6 @@ select.input {
   transition: transform 0.2s var(--spring);
 }
 .section-caret--open { transform: rotate(90deg); }
-.detail-textarea { min-height: 80px; }
 
 .source-pills {
   display: flex; flex-wrap: wrap; gap: 8px;
@@ -1556,8 +1562,13 @@ select.input {
 
 /* Generated invite link + copy button */
 .collab-invite-link { display: flex; gap: 8px; align-items: stretch; }
+/* Readonly, but tapping it focuses and selects the URL, so iOS zooms it like
+   any other text field — it cannot go below 16px either. Fewer characters of
+   the link are visible as a result; the copy button beside it is the intended
+   way to take it. */
 .collab-invite-link .input {
-  flex: 1; min-width: 0; font-size: 13px; color: var(--color-text-secondary);
+  flex: 1; min-width: 0; color: var(--color-text-secondary);
+  text-overflow: ellipsis;
 }
 .collab-copy-btn {
   flex-shrink: 0;
@@ -1865,6 +1876,270 @@ select.input {
 .pick-custom-btn { width: 100%; margin-top: 4px; }
 
 /* ============================================================
+   TRIP NOTES — the whole trip's writing in one sheet
+   ============================================================ */
+.trip-notes-sheet { min-height: 60dvh; }
+
+.notes-block { margin-bottom: 20px; }
+.notes-block:last-of-type { margin-bottom: 0; }
+
+/* Anchors the @-suggestion popup, which is positioned against this box
+   rather than the sheet — the sheet scrolls, and a popup pinned to it
+   would drift away from the caret. */
+
+/* Wraps the textarea so the @-suggestion popup can anchor to the field
+   rather than the sheet — the sheet scrolls, and a popup pinned to it
+   would drift away from the caret. */
+.mention-field { position: relative; flex: 1; min-width: 0; }
+
+/* textarea.input is element+class, so a bare .mention-input loses to it and
+   neither resize:none nor the padding below would take effect — the resize
+   grabber stayed visible in the corner of every add box. */
+textarea.mention-input {
+  /* Auto-grown in JS; height must not be pinned by the shared .input rule. */
+  height: auto;
+  min-height: 40px;
+  padding: 9px 4px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
+  /* 16px is a hard floor, not a design choice: iOS Safari zooms the whole page
+     in when you focus a field smaller than this, and the page stays panned
+     afterwards — which is what was chopping the left edge off every heading.
+     .note-bullet-body matches it so text doesn't resize when you tap to edit. */
+  font-size: 16px;
+}
+
+/* Width of the marker column (grip / dot / +). All three rows use it so the
+   markers share one vertical axis and the text starts at the same x. */
+:root { --note-gutter: 22px; }
+
+/* No gap: the add row's own top padding already supplies the rhythm, and an
+   extra gap here made the space after the last bullet visibly larger than the
+   space between bullets. */
+.note-list { display: flex; flex-direction: column; }
+
+.note-bullets { list-style: none; }
+
+.note-bullet {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 4px 6px 0;
+  border-radius: var(--radius-sm);
+  /* Transition is for the reorder shuffle; the dragged row overrides it
+     inline so it tracks the pointer 1:1. */
+  transition: transform 0.18s var(--glide);
+  background: var(--color-surface);
+}
+.note-bullet--dragging {
+  position: relative;
+  z-index: 2;
+  box-shadow: var(--shadow-sheet);
+}
+
+/* Grip is the drag handle. touch-action:none so the browser doesn't claim
+   the gesture for scrolling before pointermove ever fires. */
+.note-bullet-grip {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: var(--note-gutter); min-height: 28px;
+  margin-top: 1px;
+  color: var(--color-muted);
+  cursor: grab;
+  touch-action: none;
+  opacity: 0.55;
+}
+.note-bullet-grip:active { cursor: grabbing; opacity: 1; }
+
+/* Occupies the full gutter and centres a 5px dot inside it, rather than being
+   a 5px box nudged into place with margins — margins can't stay aligned with
+   the grip when either changes size. */
+.note-bullet-dot {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: var(--note-gutter); min-height: 28px;
+  margin-top: 1px;
+}
+.note-bullet-dot::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--color-muted);
+}
+
+.note-bullet-body {
+  flex: 1; min-width: 0;
+  /* Matches textarea.mention-input's padding and size so a bullet neither
+     shifts sideways nor resizes when you tap it to edit. */
+  padding: 4px 4px;
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  border-radius: 4px;
+}
+.note-bullet-body:active { background: var(--color-bg); }
+
+.note-bullet-delete {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  margin-top: 2px;
+  border-radius: 50%;
+  color: var(--color-muted);
+  opacity: 0.6;
+}
+.note-bullet-delete:active { background: var(--color-bg); color: var(--color-danger, #ef4444); opacity: 1; }
+
+/* Same gap as .note-bullet, so the text column lines up exactly. */
+.note-add-row {
+  display: flex; align-items: flex-start; gap: 8px;
+}
+
+/* Tuck the + closer to the bullets it belongs to — it's an affordance hanging
+   off the list, not another entry in it. Only when bullets actually precede
+   it: with an empty list the row is first in the block, and pulling it up ran
+   the focused field's border straight through the heading above. */
+.note-bullets:not(:empty) + .note-add-row { margin-top: -8px; }
+.note-add-icon {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: var(--note-gutter); min-height: 28px;
+  margin-top: 7px;
+  color: var(--color-muted);
+}
+.note-add-input { border-color: transparent; background: transparent; }
+.note-add-input:focus { border-color: var(--color-primary); background: var(--color-surface); }
+
+
+.mention-chip {
+  display: inline;
+  color: var(--color-primary);
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  /* Chips wrap mid-note, so a box-decoration break keeps the tint on every
+     line rather than only the first. */
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 1px 3px;
+  margin: 0 -1px;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+.mention-chip:active { background: color-mix(in srgb, var(--color-primary) 24%, transparent); }
+/* No onSelectPlace wired (the read-only shared view) — still tinted so the
+   link is legible as a place, but not pretending to be tappable. */
+.mention-chip--inert { cursor: default; }
+
+.mention-suggestions {
+  position: absolute;
+  left: 0; right: 0;
+  top: calc(100% - 4px);
+  z-index: 5;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sheet);
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mention-suggestion {
+  width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  text-align: left;
+  min-height: 44px;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+.mention-suggestion:last-child { border-bottom: none; }
+.mention-suggestion--active { background: var(--color-bg); }
+.mention-suggestion-name {
+  flex: 1; min-width: 0;
+  font-size: 15px; font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* One heading level: "For the whole trip" and each place name are siblings.
+   Not uppercase like .pick-section-label — these carry proper nouns, and
+   shouting a place name reads as a label rather than a destination. */
+.notes-heading {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+/* One line, always. A long place name or a pile of tags truncates rather than
+   wrapping — a heading that reflows to two or three lines buries the notes
+   underneath it. nowrap plus min-width:0 is what lets the children shrink at
+   all; without min-width a flex item refuses to go below its content width. */
+.notes-heading-link {
+  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+  width: 100%; min-width: 0;
+  text-align: left;
+  padding: 4px 0;
+  border-radius: 4px;
+  color: var(--color-text);
+  font: inherit;
+}
+.notes-heading-link:active { opacity: 0.55; }
+
+.notes-heading-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shrinkable, so flexbox trims whichever of name/tags is longer rather than
+   always sacrificing the name. No overflow:hidden here — clipping the group
+   sliced pills through the middle, which reads as a rendering fault. Each pill
+   truncates its own label instead (below) and keeps its rounded shape. */
+.notes-heading-tags {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex; gap: 4px;
+}
+
+/* Pushed to the far edge so it reads as "go here" rather than punctuation
+   after the name. */
+.notes-heading-chevron { margin-left: auto; color: var(--color-muted); flex-shrink: 0; }
+
+.place-note-tag {
+  /* Shrinks by ellipsising its own text, so a squeezed pill still looks like a
+     pill. min-width guarantees at least the emoji plus a character or two
+     survives, rather than collapsing to a sliver. */
+  flex: 0 1 auto;
+  min-width: 3.5ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px; font-weight: 600;
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 99px;
+  /* Tag colours are user-chosen and can be light; the shadow keeps the white
+     label legible without second-guessing their palette. */
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+}
+
+.notes-empty {
+  display: flex; align-items: center; gap: 8px;
+  justify-content: center;
+  color: var(--color-muted);
+  font-size: 13px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+
+/* ============================================================
    NOTIFICATIONS — bell + badge, and the activity sheet
    ============================================================ */
 .notif-bell { position: relative; }
@@ -1971,9 +2246,4 @@ select.input {
 
 .tag-delete-confirm { color: var(--color-danger); }
 
-.detail-static-text {
-  font-size: 14px; line-height: 1.5;
-  color: var(--color-text);
-  white-space: pre-wrap;
-}
 .auth-forgot { margin-top: 4px; }

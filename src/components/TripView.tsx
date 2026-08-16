@@ -1,8 +1,9 @@
 import { useState, useEffect, lazy } from 'react';
 import { MapBoundary } from './MapBoundary';
-import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
+import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen } from 'lucide-react';
 import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
+import { useTripNotes } from '../hooks/useTripNotes';
 import { useTags } from '../hooks/useTags';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -12,6 +13,7 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 const MapView = lazy(() => import('./MapView').then(m => ({ default: m.MapView })));
 import { PlaceSearch } from './PlaceSearch';
 import { MapPickSheet } from './MapPickSheet';
+import { TripNotesSheet } from './TripNotesSheet';
 import { PlaceDetailSheet } from './PlaceDetailSheet';
 import { TagFilterSheet } from './TagFilterSheet';
 import { TripSettingsSheet } from './TripSettingsSheet';
@@ -30,12 +32,16 @@ interface Props {
   openNonce?: number;
 }
 
-type Sheet = 'none' | 'tag-filter' | 'settings';
+type Sheet = 'none' | 'tag-filter' | 'settings' | 'notes';
 type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, initialOpenComments, openNonce }: Props) {
   const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
+  const {
+    tripNotes, notesByPlace, loading: notesLoading,
+    addNote, updateNote, removeNote, reorderNotes,
+  } = useTripNotes(trip.id);
 
   // Selection is an id — the place object is always derived fresh from `places`,
   // so realtime refetches and edits never leave the sheet stale.
@@ -116,6 +122,13 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
         </button>
         <h1 className="trip-topbar-title">{trip.name}</h1>
         <div className="topbar-actions">
+          <button
+            className="btn-icon"
+            onClick={() => setOpenSheet('notes')}
+            aria-label="Trip notes"
+          >
+            <NotebookPen size={20} />
+          </button>
           <button
             className={`btn-icon ${activeTags.length > 0 ? 'btn-icon--active' : ''}`}
             onClick={() => setOpenSheet('tag-filter')}
@@ -211,6 +224,22 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
         />
       )}
 
+      {openSheet === 'notes' && (
+        <TripNotesSheet
+          places={places}
+          allTags={tags}
+          tripNotes={tripNotes}
+          notesByPlace={notesByPlace}
+          loading={notesLoading}
+          onAdd={addNote}
+          onUpdate={updateNote}
+          onRemove={removeNote}
+          onReorder={reorderNotes}
+          onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
+          onClose={() => setOpenSheet('none')}
+        />
+      )}
+
       {selectedPlace && (
         <PlaceDetailSheet
           place={selectedPlace}
@@ -226,6 +255,12 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onUploadImage={(file) => uploadPlaceImage(selectedPlace.id, file)}
           onRemoveImage={(imageId) => removePlaceImage(selectedPlace.id, imageId)}
           onCreateTag={createTag}
+          notes={notesByPlace.get(selectedPlace.id) ?? []}
+          allPlaces={places}
+          onAddNote={(body) => addNote(body, selectedPlace.id)}
+          onUpdateNote={updateNote}
+          onRemoveNote={removeNote}
+          onReorderNotes={reorderNotes}
         />
       )}
 
