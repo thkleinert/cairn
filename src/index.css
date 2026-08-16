@@ -1869,7 +1869,7 @@ select.input {
    ============================================================ */
 .trip-notes-sheet { min-height: 60dvh; }
 
-.notes-block { margin-bottom: 22px; }
+.notes-block { margin-bottom: 20px; }
 .notes-block:last-of-type { margin-bottom: 0; }
 
 /* Anchors the @-suggestion popup, which is positioned against this box
@@ -1882,7 +1882,10 @@ select.input {
    would drift away from the caret. */
 .mention-field { position: relative; flex: 1; min-width: 0; }
 
-.mention-input {
+/* textarea.input is element+class, so a bare .mention-input loses to it and
+   neither resize:none nor the padding below would take effect — the resize
+   grabber stayed visible in the corner of every add box. */
+textarea.mention-input {
   /* Auto-grown in JS; height must not be pinned by the shared .input rule. */
   height: auto;
   min-height: 40px;
@@ -2037,37 +2040,36 @@ select.input {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.place-notes-list { list-style: none; }
-
-.place-note {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 10px 12px 8px;
-  margin-bottom: 10px;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  border-left: 3px solid var(--color-border);
+/* One heading level: "For the whole trip" and each place name are siblings.
+   Not uppercase like .pick-section-label — these carry proper nouns, and
+   shouting a place name reads as a label rather than a destination. */
+.notes-heading {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+  margin-bottom: 4px;
 }
 
-.place-note-head {
+.notes-heading-link {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
-.place-note-head--button {
   width: 100%;
   text-align: left;
-  padding: 2px 0 4px;
+  padding: 4px 0;
   border-radius: 4px;
+  color: var(--color-text);
+  font: inherit;
 }
-.place-note-head--button:active { opacity: 0.6; }
+.notes-heading-link:active { opacity: 0.55; }
 
-/* Nested inside a place card, which already supplies the padding. */
-.place-note .note-bullet,
-.place-note .note-add-input:focus { background: transparent; }
-.place-note-name {
-  font-size: 15px; font-weight: 700;
-  letter-spacing: -0.01em;
-}
+/* Inherits .notes-heading — declared only so the chevron's margin-left:auto
+   has a sibling to push against. */
+.notes-heading-name { min-width: 0; }
 
-.place-note-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+/* Pushed to the far edge so it reads as "go here" rather than punctuation
+   after the name. */
+.notes-heading-chevron { margin-left: auto; color: var(--color-muted); flex-shrink: 0; }
+
 .place-note-tag {
   font-size: 11px; font-weight: 600;
   color: #fff;
