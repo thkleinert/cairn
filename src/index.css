@@ -1865,6 +1865,150 @@ select.input {
 .pick-custom-btn { width: 100%; margin-top: 4px; }
 
 /* ============================================================
+   TRIP NOTES — the whole trip's writing in one sheet
+   ============================================================ */
+.trip-notes-sheet { min-height: 60dvh; }
+
+.notes-block { margin-bottom: 22px; }
+.notes-block:last-of-type { margin-bottom: 0; }
+
+/* Anchors the @-suggestion popup, which is positioned against this box
+   rather than the sheet — the sheet scrolls, and a popup pinned to it
+   would drift away from the caret. */
+.notes-editor { position: relative; }
+
+.notes-textarea {
+  min-height: 108px;
+  line-height: 1.55;
+}
+
+.notes-hint {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 6px;
+}
+.notes-hint strong { color: var(--color-primary); font-weight: 700; }
+
+/* Read mode. A button, not a div: tapping anywhere in the note starts
+   editing, so it needs to be reachable by keyboard too. */
+.notes-rendered {
+  display: block;
+  width: 100%;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text);
+  padding: 12px 14px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  transition: border-color 0.15s;
+}
+.notes-rendered:active { border-color: var(--color-border); }
+
+.mention-chip {
+  display: inline;
+  color: var(--color-primary);
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  /* Chips wrap mid-note, so a box-decoration break keeps the tint on every
+     line rather than only the first. */
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 1px 3px;
+  margin: 0 -1px;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+.mention-chip:active { background: color-mix(in srgb, var(--color-primary) 24%, transparent); }
+
+.mention-suggestions {
+  position: absolute;
+  left: 0; right: 0;
+  top: calc(100% - 4px);
+  z-index: 5;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sheet);
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mention-suggestion {
+  width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  text-align: left;
+  min-height: 44px;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+.mention-suggestion:last-child { border-bottom: none; }
+.mention-suggestion--active { background: var(--color-bg); }
+.mention-suggestion-name {
+  flex: 1; min-width: 0;
+  font-size: 15px; font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.place-notes-list { list-style: none; }
+
+.place-note {
+  width: 100%;
+  display: flex; flex-direction: column; gap: 6px;
+  text-align: left;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  border-left: 3px solid var(--color-border);
+  transition: border-color 0.15s;
+}
+.place-note:active { border-left-color: var(--color-primary); }
+
+.place-note-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.place-note-name {
+  font-size: 15px; font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.place-note-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.place-note-tag {
+  font-size: 11px; font-weight: 600;
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 99px;
+  /* Tag colours are user-chosen and can be light; the shadow keeps the white
+     label legible without second-guessing their palette. */
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+}
+
+.place-note-body {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notes-empty {
+  display: flex; align-items: center; gap: 8px;
+  justify-content: center;
+  color: var(--color-muted);
+  font-size: 13px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+
+/* ============================================================
    NOTIFICATIONS — bell + badge, and the activity sheet
    ============================================================ */
 .notif-bell { position: relative; }

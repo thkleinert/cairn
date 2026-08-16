@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy } from 'react';
 import { MapBoundary } from './MapBoundary';
-import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus } from 'lucide-react';
+import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen } from 'lucide-react';
 import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTags } from '../hooks/useTags';
@@ -12,6 +12,7 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 const MapView = lazy(() => import('./MapView').then(m => ({ default: m.MapView })));
 import { PlaceSearch } from './PlaceSearch';
 import { MapPickSheet } from './MapPickSheet';
+import { TripNotesSheet } from './TripNotesSheet';
 import { PlaceDetailSheet } from './PlaceDetailSheet';
 import { TagFilterSheet } from './TagFilterSheet';
 import { TripSettingsSheet } from './TripSettingsSheet';
@@ -30,7 +31,7 @@ interface Props {
   openNonce?: number;
 }
 
-type Sheet = 'none' | 'tag-filter' | 'settings';
+type Sheet = 'none' | 'tag-filter' | 'settings' | 'notes';
 type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, initialOpenComments, openNonce }: Props) {
@@ -56,6 +57,10 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   }, [viewMode]);
 
   const selectedPlace = places.find(p => p.id === selectedPlaceId) ?? null;
+  // Badge counts what's actually written down: the trip note (if any) plus
+  // every place carrying one.
+  const noteCount =
+    (trip.notes?.trim() ? 1 : 0) + places.filter(p => (p.notes ?? '').trim()).length;
   const isOwner = trip.owner_id === userId;
 
   // Re-open the deep-linked place whenever a new jump target arrives (nonce
@@ -116,6 +121,14 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
         </button>
         <h1 className="trip-topbar-title">{trip.name}</h1>
         <div className="topbar-actions">
+          <button
+            className="btn-icon"
+            onClick={() => setOpenSheet('notes')}
+            aria-label="Trip notes"
+          >
+            <NotebookPen size={20} />
+            {noteCount > 0 && <span className="badge">{noteCount}</span>}
+          </button>
           <button
             className={`btn-icon ${activeTags.length > 0 ? 'btn-icon--active' : ''}`}
             onClick={() => setOpenSheet('tag-filter')}
@@ -208,6 +221,17 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           point={pickedPoint}
           onAdd={handleAddPlace}
           onClose={() => setPickedPoint(null)}
+        />
+      )}
+
+      {openSheet === 'notes' && (
+        <TripNotesSheet
+          trip={trip}
+          places={places}
+          allTags={tags}
+          onSaveNotes={(notes) => handleUpdateTrip({ notes })}
+          onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
+          onClose={() => setOpenSheet('none')}
         />
       )}
 

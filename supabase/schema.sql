@@ -22,6 +22,10 @@ create table public.trips (
   id          uuid primary key default uuid_generate_v4(),
   name        text not null,
   description text,
+  -- Free-form trip-wide scratchpad, distinct from `description` (a short
+  -- subtitle shown in the trip list). This is where door codes, booking refs
+  -- and arrival times land, which is why it is scrubbed from get_shared_trip.
+  notes       text,
   start_date  date,
   end_date    date,
   share_token uuid unique default uuid_generate_v4(),
@@ -255,7 +259,7 @@ create policy "trip_update" on public.trips for update
 -- this, an editor could seize ownership by writing owner_id. (updated_at is
 -- written by a trigger, which column grants don't constrain.)
 revoke update on table public.trips from anon, authenticated;
-grant update (name, description, start_date, end_date, cover_image_url)
+grant update (name, description, notes, start_date, end_date, cover_image_url)
   on public.trips to authenticated;
 
 -- share_token is likewise excluded from SELECT: it's a bearer credential for
@@ -264,7 +268,7 @@ grant update (name, description, start_date, end_date, cover_image_url)
 -- the RPCs below. Client-side selects must therefore name their columns —
 -- select('*') on trips fails with a column permission error by design.
 revoke select on table public.trips from anon, authenticated;
-grant select (id, name, description, start_date, end_date, cover_image_url,
+grant select (id, name, description, notes, start_date, end_date, cover_image_url,
               owner_id, created_at, updated_at)
   on public.trips to authenticated;
 
@@ -658,7 +662,10 @@ language sql security definer stable
 set search_path = public
 as $$
   select jsonb_build_object(
-    'trip', to_jsonb(t) - 'share_token' - 'owner_id',
+    -- Denylist, so every column added to `trips` is published here unless it
+    -- is named. `notes` is the trip's private scratchpad (door codes, booking
+    -- references) and must never reach an anonymous token holder.
+    'trip', to_jsonb(t) - 'share_token' - 'owner_id' - 'notes',
     'tags', coalesce(
       (select jsonb_agg(to_jsonb(tg)) from public.tags tg where tg.trip_id = t.id),
       '[]'::jsonb),

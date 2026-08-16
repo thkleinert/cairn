@@ -4,6 +4,10 @@ export interface Trip {
   id: string;
   name: string;
   description?: string;
+  // Trip-wide scratchpad, distinct from `description` (the short subtitle in
+  // the trip list). Deliberately absent from the public shared view — see the
+  // scrub in get_shared_trip.
+  notes?: string | null;
   start_date?: string | null;
   end_date?: string | null;
   cover_image_url?: string | null;

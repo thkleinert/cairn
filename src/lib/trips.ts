@@ -12,7 +12,7 @@ import type { Trip } from '../types';
 // credential; the owner reads it via the get_share_token RPC), so trips
 // queries must name their columns — select('*') fails on the column grant.
 export const TRIP_COLUMNS =
-  'id, name, description, start_date, end_date, cover_image_url, owner_id, created_at, updated_at';
+  'id, name, description, notes, start_date, end_date, cover_image_url, owner_id, created_at, updated_at';
 
 export async function updateTrip(id: string, updates: Partial<Trip>): Promise<Trip | null> {
   const { data, error } = await supabase
