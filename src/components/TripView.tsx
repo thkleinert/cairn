@@ -39,7 +39,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   const {
-    notes: allNotes, tripNotes, notesByPlace,
+    tripNotes, notesByPlace,
     addNote, updateNote, removeNote, reorderNotes,
   } = useTripNotes(trip.id);
 
@@ -62,8 +62,6 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   }, [viewMode]);
 
   const selectedPlace = places.find(p => p.id === selectedPlaceId) ?? null;
-  // Badge counts every bullet written down for this trip, at either scope.
-  const noteCount = allNotes.length;
   const isOwner = trip.owner_id === userId;
 
   // Re-open the deep-linked place whenever a new jump target arrives (nonce
@@ -130,7 +128,6 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             aria-label="Trip notes"
           >
             <NotebookPen size={20} />
-            {noteCount > 0 && <span className="badge">{noteCount}</span>}
           </button>
           <button
             className={`btn-icon ${activeTags.length > 0 ? 'btn-icon--active' : ''}`}

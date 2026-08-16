@@ -57,6 +57,17 @@
     var offsetTop = vv ? vv.offsetTop : 0;
     document.documentElement.style.setProperty('--visual-height', height + 'px');
     document.documentElement.style.setProperty('--visual-offset-top', offsetTop + 'px');
+
+    // How much of the layout viewport the keyboard (plus its accessory bar)
+    // covers. On iOS innerHeight doesn't shrink for the keyboard, so the
+    // shortfall against the visual viewport is exactly that. Used as a bottom
+    // inset rather than as an overlay height: an overlay *sized* from these
+    // numbers leaves the page showing through whenever they under-report,
+    // which is how the map ended up visible below the notes sheet.
+    // Android with resizes-content shrinks innerHeight itself, so this is 0
+    // there and the sheet already sits above the keyboard.
+    var inset = vv ? Math.max(0, Math.round(window.innerHeight - height - offsetTop)) : 0;
+    document.documentElement.style.setProperty('--keyboard-inset', inset + 'px');
   }
   setVisualHeight();
   if (window.visualViewport) {

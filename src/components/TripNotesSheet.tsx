@@ -60,7 +60,7 @@ export function TripNotesSheet({
             onRemove={onRemove}
             onReorder={onReorder}
             onSelectPlace={onSelectPlace}
-            addPlaceholder="Arrival times, booking refs… type @ to link a place"
+            addPlaceholder="Add a general note…"
           />
         </section>
 

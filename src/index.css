@@ -732,19 +732,22 @@ select.input {
    BOTTOM SHEETS
    ============================================================ */
 .bottom-sheet-overlay {
-  /* Pinned to the visible viewport, NOT inset:0. A sheet with an autofocused
-     input (New Trip, Add Place) opens the keyboard; on iOS the layout viewport
-     — and so a plain inset:0 / bottom:0 — doesn't shrink for it, leaving the
-     bottom-aligned sheet stranded behind the keyboard at the bottom of the
-     page. --visual-height (window.visualViewport) tracks the keyboard, and
-     --visual-offset-top tracks how far iOS has shifted the visible area down to
-     keep the focused input clear of the keyboard. Anchoring top to that offset
-     with that height makes the overlay exactly cover what's on screen, so the
-     bottom-aligned sheet sits right above the keyboard through show/hide/re-show
-     cycles (offsetTop is 0 on first open but non-zero once iOS scrolls). */
+  /* Pinned to all four edges, NOT sized from visualViewport. It used to be
+     `top: offsetTop; height: visual-height`, which is only correct while those
+     numbers exactly describe what's on screen — and when they under-report
+     (iOS keyboard plus Safari's form accessory bar) the overlay stops short and
+     the map behind it shows through below the sheet. Anchoring top and bottom
+     means a bad measurement can misplace the sheet but can never open a hole.
+
+     The keyboard is handled as a bottom *inset* instead: the sheet is
+     bottom-aligned to the padding edge, so it sits above the keyboard while
+     the backdrop still covers the whole screen. min-height guards the case
+     where a fixed element's containing block is shorter than the screen. */
   position: fixed;
-  top: var(--visual-offset-top, 0px); left: 0; right: 0;
-  height: var(--visual-height, 100dvh);
+  top: 0; left: 0; right: 0; bottom: 0;
+  min-height: var(--app-height, 100dvh);
+  padding-bottom: var(--keyboard-inset, 0px);
+  box-sizing: border-box;
   background: var(--color-overlay);
   z-index: 50;
   display: flex; flex-direction: column; justify-content: flex-end;
@@ -757,7 +760,7 @@ select.input {
   background: var(--color-surface);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: 12px 20px 32px;
-  max-height: var(--sheet-max-height);
+  max-height: min(var(--sheet-max-height), 100%);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   animation: slideUp 0.45s var(--spring);
