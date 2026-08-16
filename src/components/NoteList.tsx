@@ -165,7 +165,10 @@ export function NoteList({
 
       {!readOnly && (
         <div className="note-add-row">
-          <Plus size={16} className="note-add-icon" />
+          {/* Wrapped so it occupies the same fixed gutter as the grip and the
+              bullet dot — a bare icon sized 16 sits off-centre against a 22px
+              grip and the column visibly steps in. */}
+          <span className="note-add-icon" aria-hidden="true"><Plus size={15} /></span>
           <MentionTextarea
             value={draft}
             onChange={setDraft}

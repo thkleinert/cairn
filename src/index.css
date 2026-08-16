@@ -1889,7 +1889,7 @@ textarea.mention-input {
   /* Auto-grown in JS; height must not be pinned by the shared .input rule. */
   height: auto;
   min-height: 40px;
-  padding: 9px 12px;
+  padding: 9px 4px;
   resize: none;
   overflow: hidden;
   line-height: 1.5;
@@ -1898,7 +1898,14 @@ textarea.mention-input {
 
 /* Read mode. A button, not a div: tapping anywhere in the note starts
    editing, so it needs to be reachable by keyboard too. */
-.note-list { display: flex; flex-direction: column; gap: 2px; }
+/* Width of the marker column (grip / dot / +). All three rows use it so the
+   markers share one vertical axis and the text starts at the same x. */
+:root { --note-gutter: 22px; }
+
+/* No gap: the add row's own top padding already supplies the rhythm, and an
+   extra gap here made the space after the last bullet visibly larger than the
+   space between bullets. */
+.note-list { display: flex; flex-direction: column; }
 .note-list-empty { margin-bottom: 6px; }
 
 .note-bullets { list-style: none; }
@@ -1923,7 +1930,7 @@ textarea.mention-input {
 .note-bullet-grip {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  width: 22px; min-height: 28px;
+  width: var(--note-gutter); min-height: 28px;
   margin-top: 1px;
   color: var(--color-muted);
   cursor: grab;
@@ -1932,17 +1939,27 @@ textarea.mention-input {
 }
 .note-bullet-grip:active { cursor: grabbing; opacity: 1; }
 
+/* Occupies the full gutter and centres a 5px dot inside it, rather than being
+   a 5px box nudged into place with margins — margins can't stay aligned with
+   the grip when either changes size. */
 .note-bullet-dot {
   flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: var(--note-gutter); min-height: 28px;
+  margin-top: 1px;
+}
+.note-bullet-dot::before {
+  content: '';
   width: 5px; height: 5px;
-  margin: 12px 8px 0 9px;
   border-radius: 50%;
   background: var(--color-muted);
 }
 
 .note-bullet-body {
   flex: 1; min-width: 0;
-  padding: 4px 2px;
+  /* Matches textarea.mention-input's horizontal padding so a bullet doesn't
+     shift sideways when you tap it to edit. */
+  padding: 4px 4px;
   font-size: 15px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1963,11 +1980,17 @@ textarea.mention-input {
 }
 .note-bullet-delete:active { background: var(--color-bg); color: var(--color-danger, #ef4444); opacity: 1; }
 
+/* Same gap as .note-bullet, so the text column lines up exactly. */
 .note-add-row {
-  display: flex; align-items: flex-start; gap: 6px;
-  margin-top: 4px;
+  display: flex; align-items: flex-start; gap: 8px;
 }
-.note-add-icon { flex-shrink: 0; color: var(--color-muted); margin: 12px 2px 0 8px; }
+.note-add-icon {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: var(--note-gutter); min-height: 28px;
+  margin-top: 7px;
+  color: var(--color-muted);
+}
 .note-add-input { border-color: transparent; background: transparent; }
 .note-add-input:focus { border-color: var(--color-primary); background: var(--color-surface); }
 
@@ -2051,9 +2074,13 @@ textarea.mention-input {
   margin-bottom: 4px;
 }
 
+/* One line, always. A long place name or a pile of tags truncates rather than
+   wrapping — a heading that reflows to two or three lines buries the notes
+   underneath it. nowrap plus min-width:0 is what lets the children shrink at
+   all; without min-width a flex item refuses to go below its content width. */
 .notes-heading-link {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  width: 100%;
+  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+  width: 100%; min-width: 0;
   text-align: left;
   padding: 4px 0;
   border-radius: 4px;
@@ -2062,15 +2089,37 @@ textarea.mention-input {
 }
 .notes-heading-link:active { opacity: 0.55; }
 
-/* Inherits .notes-heading — declared only so the chevron's margin-left:auto
-   has a sibling to push against. */
-.notes-heading-name { min-width: 0; }
+.notes-heading-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shrinkable, so flexbox trims whichever of name/tags is longer rather than
+   always sacrificing the name. No overflow:hidden here — clipping the group
+   sliced pills through the middle, which reads as a rendering fault. Each pill
+   truncates its own label instead (below) and keeps its rounded shape. */
+.notes-heading-tags {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex; gap: 4px;
+}
 
 /* Pushed to the far edge so it reads as "go here" rather than punctuation
    after the name. */
 .notes-heading-chevron { margin-left: auto; color: var(--color-muted); flex-shrink: 0; }
 
 .place-note-tag {
+  /* Shrinks by ellipsising its own text, so a squeezed pill still looks like a
+     pill. min-width guarantees at least the emoji plus a character or two
+     survives, rather than collapsing to a sliver. */
+  flex: 0 1 auto;
+  min-width: 3.5ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px; font-weight: 600;
   color: #fff;
   padding: 2px 7px;

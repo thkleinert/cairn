@@ -73,11 +73,15 @@ export function TripNotesSheet({
                 onClick={() => onSelectPlace(place.id)}
               >
                 <span className="notes-heading-name">{place.name}</span>
-                {tagsOf(place).map(t => (
-                  <span key={t.id} className="place-note-tag" style={{ background: t.color }}>
-                    {t.icon ? `${t.icon} ` : ''}{t.name}
+                {tagsOf(place).length > 0 && (
+                  <span className="notes-heading-tags">
+                    {tagsOf(place).map(t => (
+                      <span key={t.id} className="place-note-tag" style={{ background: t.color }}>
+                        {t.icon ? `${t.icon} ` : ''}{t.name}
+                      </span>
+                    ))}
                   </span>
-                ))}
+                )}
                 <ChevronRight size={15} className="notes-heading-chevron" />
               </button>
             </h3>
