@@ -986,7 +986,6 @@ select.input {
   transition: transform 0.2s var(--spring);
 }
 .section-caret--open { transform: rotate(90deg); }
-.detail-textarea { min-height: 80px; }
 
 .source-pills {
   display: flex; flex-wrap: wrap; gap: 8px;
@@ -1887,7 +1886,6 @@ select.input {
 /* Anchors the @-suggestion popup, which is positioned against this box
    rather than the sheet — the sheet scrolls, and a popup pinned to it
    would drift away from the caret. */
-.notes-editor { position: relative; }
 
 /* Wraps the textarea so the @-suggestion popup can anchor to the field
    rather than the sheet — the sheet scrolls, and a popup pinned to it
@@ -1920,7 +1918,6 @@ textarea.mention-input {
    extra gap here made the space after the last bullet visibly larger than the
    space between bullets. */
 .note-list { display: flex; flex-direction: column; }
-.note-list-empty { margin-bottom: 6px; }
 
 .note-bullets { list-style: none; }
 
@@ -2249,9 +2246,4 @@ textarea.mention-input {
 
 .tag-delete-confirm { color: var(--color-danger); }
 
-.detail-static-text {
-  font-size: 14px; line-height: 1.5;
-  color: var(--color-text);
-  white-space: pre-wrap;
-}
 .auth-forgot { margin-top: 4px; }

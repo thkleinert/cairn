@@ -39,7 +39,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   const {
-    tripNotes, notesByPlace,
+    tripNotes, notesByPlace, loading: notesLoading,
     addNote, updateNote, removeNote, reorderNotes,
   } = useTripNotes(trip.id);
 
@@ -230,6 +230,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           allTags={tags}
           tripNotes={tripNotes}
           notesByPlace={notesByPlace}
+          loading={notesLoading}
           onAdd={addNote}
           onUpdate={updateNote}
           onRemove={removeNote}

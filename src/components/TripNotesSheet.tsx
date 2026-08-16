@@ -9,6 +9,7 @@ interface Props {
   allTags: Tag[];
   tripNotes: TripNote[];
   notesByPlace: Map<string, TripNote[]>;
+  loading: boolean;
   onAdd: (body: string, placeId?: string | null) => Promise<unknown> | void;
   onUpdate: (id: string, body: string) => Promise<unknown> | void;
   onRemove: (id: string) => Promise<unknown> | void;
@@ -23,7 +24,7 @@ interface Props {
 // are omitted — on a long trip they'd be most of the page, and this is a
 // reading surface.
 export function TripNotesSheet({
-  places, allTags, tripNotes, notesByPlace,
+  places, allTags, tripNotes, notesByPlace, loading,
   onAdd, onUpdate, onRemove, onReorder, onSelectPlace, onClose,
 }: Props) {
   const { sheetRef, handleProps } = useSwipeToClose(onClose);
@@ -98,7 +99,10 @@ export function TripNotesSheet({
           </section>
         ))}
 
-        {withNotes.length === 0 && tripNotes.length === 0 && (
+        {/* `loading` matters here: without it the sheet asserts the trip has
+            nothing written down for the moment before the first fetch lands,
+            so opening it always flashed this line. */}
+        {!loading && withNotes.length === 0 && tripNotes.length === 0 && (
           <p className="notes-empty">
             <NotebookPen size={16} />
             Everything you write down for this trip collects here.

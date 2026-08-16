@@ -14,9 +14,7 @@ interface Props {
   onReorder: (orderedIds: string[]) => void;
   /** Tapping an @mention jumps to that place. Omit to render mentions inert. */
   onSelectPlace?: (placeId: string) => void;
-  readOnly?: boolean;
   addPlaceholder?: string;
-  emptyText?: string;
 }
 
 // A flat bullet list. Each bullet is its own row in the database, so it can be
@@ -24,7 +22,7 @@ interface Props {
 // bullets don't overwrite each other, which a single text field could not do.
 export function NoteList({
   notes, places, onAdd, onUpdate, onRemove, onReorder, onSelectPlace,
-  readOnly = false, addPlaceholder = 'Add a note…', emptyText,
+  addPlaceholder = 'Add a note…',
 }: Props) {
   const [draft, setDraft] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -38,7 +36,7 @@ export function NoteList({
       items: notes,
       getId: (n: TripNote) => n.id,
       onReorder,
-      enabled: !readOnly && !editingId && notes.length > 1,
+      enabled: !editingId && notes.length > 1,
     });
 
   const commitAdd = async () => {
@@ -51,7 +49,6 @@ export function NoteList({
   };
 
   const startEdit = (note: TripNote) => {
-    if (readOnly) return;
     setEditingId(note.id);
     setEditDraft(note.body);
   };
@@ -90,10 +87,6 @@ export function NoteList({
 
   return (
     <div className="note-list">
-      {notes.length === 0 && emptyText && (
-        <p className="pick-status note-list-empty">{emptyText}</p>
-      )}
-
       <ul className="note-bullets">
         {order.map((note, i) => {
           const isDragging = dragId === note.id;
@@ -109,7 +102,7 @@ export function NoteList({
               onPointerMove={isDragging ? handlePointerMove : undefined}
               onPointerUp={isDragging ? handlePointerUp : undefined}
             >
-              {!readOnly && notes.length > 1 && (
+              {notes.length > 1 && (
                 <span
                   className="note-bullet-grip"
                   aria-hidden="true"
@@ -120,7 +113,7 @@ export function NoteList({
                   <GripVertical size={15} />
                 </span>
               )}
-              {(readOnly || notes.length <= 1) && <span className="note-bullet-dot" aria-hidden="true" />}
+              {notes.length <= 1 && <span className="note-bullet-dot" aria-hidden="true" />}
 
               {editingId === note.id ? (
                 <MentionTextarea
@@ -138,17 +131,17 @@ export function NoteList({
                 <span
                   className="note-bullet-body"
                   onClick={() => startEdit(note)}
-                  role={readOnly ? undefined : 'button'}
-                  tabIndex={readOnly ? undefined : 0}
+                  role="button"
+                  tabIndex={0}
                   onKeyDown={e => {
-                    if (!readOnly && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); startEdit(note); }
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(note); }
                   }}
                 >
                   {renderBody(note.body)}
                 </span>
               )}
 
-              {!readOnly && editingId !== note.id && (
+              {editingId !== note.id && (
                 <button
                   type="button"
                   className="note-bullet-delete"
@@ -163,30 +156,28 @@ export function NoteList({
         })}
       </ul>
 
-      {!readOnly && (
-        <div className="note-add-row">
-          {/* Wrapped so it occupies the same fixed gutter as the grip and the
-              bullet dot — a bare icon sized 16 sits off-centre against a 22px
-              grip and the column visibly steps in. */}
-          <span className="note-add-icon" aria-hidden="true"><Plus size={15} /></span>
-          <MentionTextarea
-            value={draft}
-            onChange={setDraft}
-            onSubmit={commitAdd}
-            // Deliberately not onBlur: committing on blur would post a
-            // half-typed bullet every time the keyboard dismissed.
-            places={places}
-            placeholder={addPlaceholder}
-            ariaLabel="Add a note"
-            className="note-add-input"
-          />
-          {draft.trim() && (
-            <button type="button" className="btn-icon btn-icon-sm" onClick={commitAdd} aria-label="Add note">
-              <Plus size={18} />
-            </button>
-          )}
-        </div>
-      )}
+      <div className="note-add-row">
+        {/* Wrapped so it occupies the same fixed gutter as the grip and the
+            bullet dot — a bare icon sized 16 sits off-centre against a 22px
+            grip and the column visibly steps in. */}
+        <span className="note-add-icon" aria-hidden="true"><Plus size={15} /></span>
+        <MentionTextarea
+          value={draft}
+          onChange={setDraft}
+          onSubmit={commitAdd}
+          // Deliberately not onBlur: committing on blur would post a
+          // half-typed bullet every time the keyboard dismissed.
+          places={places}
+          placeholder={addPlaceholder}
+          ariaLabel="Add a note"
+          className="note-add-input"
+        />
+        {draft.trim() && (
+          <button type="button" className="btn-icon btn-icon-sm" onClick={commitAdd} aria-label="Add note">
+            <Plus size={18} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

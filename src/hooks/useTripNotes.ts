@@ -142,5 +142,5 @@ export function useTripNotes(tripId: string | undefined) {
     if (error) { toast('Could not save the new order'); fetchNotes(); }
   }, [tripId, fetchNotes]);
 
-  return { notes, tripNotes, notesByPlace, loading, addNote, updateNote, removeNote, reorderNotes };
+  return { tripNotes, notesByPlace, loading, addNote, updateNote, removeNote, reorderNotes };
 }
