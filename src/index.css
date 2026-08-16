@@ -110,7 +110,11 @@ img { display: block; }
   padding: 0 14px;
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-sm);
-  font-size: 15px;
+  /* 16px is a floor, not a preference: iOS Safari zooms the whole page in when
+     you focus a control smaller than this, and leaves it panned afterwards.
+     Every focusable control in the app must stay at or above it — .search-input
+     and textarea.mention-input are at 16px for the same reason. */
+  font-size: 16px;
   color: var(--color-text);
   background: var(--color-surface);
   outline: none;
@@ -1556,8 +1560,13 @@ select.input {
 
 /* Generated invite link + copy button */
 .collab-invite-link { display: flex; gap: 8px; align-items: stretch; }
+/* Readonly, but tapping it focuses and selects the URL, so iOS zooms it like
+   any other text field — it cannot go below 16px either. Fewer characters of
+   the link are visible as a result; the copy button beside it is the intended
+   way to take it. */
 .collab-invite-link .input {
-  flex: 1; min-width: 0; font-size: 13px; color: var(--color-text-secondary);
+  flex: 1; min-width: 0; color: var(--color-text-secondary);
+  text-overflow: ellipsis;
 }
 .collab-copy-btn {
   flex-shrink: 0;
