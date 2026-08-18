@@ -15,6 +15,10 @@ export function useTripNotes(tripId: string | undefined) {
   // Realtime events arrive in bursts and each triggers a refetch; without this
   // the last response to *resolve* wins even when it carries an older snapshot.
   const fetchSeqRef = useRef(0);
+  // addNote reorders after a mid-list insert, but reorderNotes is defined
+  // below it. A ref breaks that cycle without reshuffling the file into
+  // dependency order.
+  const reorderRef = useRef<((ids: string[]) => Promise<void>) | null>(null);
 
   const fetchNotes = useCallback(async () => {
     if (!tripId) { setLoading(false); return; }
@@ -65,7 +69,20 @@ export function useTripNotes(tripId: string | undefined) {
     return map;
   }, [notes]);
 
-  const addNote = useCallback(async (body: string, placeId?: string | null) => {
+  /**
+   * Append a bullet, or slot one in directly after `afterId`.
+   *
+   * The insert always lands at the end of its scope and the caller's intended
+   * order is applied afterwards by reorder_trip_notes. Two round trips, but
+   * the alternative — renumbering the rows below to open a gap — is several
+   * writes that can partially fail, and the RPC already does exactly this
+   * atomically. Enter-in-the-middle-of-a-list is not a hot path.
+   */
+  const addNote = useCallback(async (
+    body: string,
+    placeId?: string | null,
+    opts?: { depth?: number; afterId?: string | null },
+  ) => {
     const trimmed = body.trim();
     // The DB rejects a blank body outright; don't bother the network with it.
     if (!tripId || !trimmed) return null;
@@ -82,14 +99,61 @@ export function useTripNotes(tripId: string | undefined) {
         place_id: placeId ?? null,
         body: trimmed,
         position,
+        depth: opts?.depth ?? 0,
         created_by: auth.user?.id ?? null,
       })
       .select()
       .single();
     if (error || !data) { toast('Could not add note'); return null; }
-    setNotes(prev => [...prev, data as TripNote]);
-    return data as TripNote;
+    const created = data as TripNote;
+    setNotes(prev => [...prev, created]);
+
+    // Only when it isn't already where it belongs — appending after the last
+    // bullet, which is the common case, needs no reorder at all.
+    const afterId = opts?.afterId;
+    if (afterId && scope.length > 0 && scope[scope.length - 1].id !== afterId) {
+      const ordered = scope.map(n => n.id);
+      const at = ordered.indexOf(afterId);
+      if (at !== -1) {
+        ordered.splice(at + 1, 0, created.id);
+        await reorderRef.current?.(ordered);
+      }
+    }
+    return created;
   }, [tripId, notes]);
+
+  /**
+   * Re-nest a bullet and everything under it.
+   *
+   * `ids` is the bullet plus its descendants — the caller works those out from
+   * the rendered outline, since with a flat depth list "descendants" means the
+   * run of following bullets that are deeper, and only the view knows the run.
+   * Written as one update per level rather than per row: every id moving by
+   * the same delta shares a target depth, so this is at most a couple of
+   * statements no matter how large the subtree.
+   */
+  const setNoteDepths = useCallback(async (updates: { id: string; depth: number }[]) => {
+    if (updates.length === 0) return;
+    const previous = notes;
+    const next = new Map(updates.map(u => [u.id, u.depth]));
+    setNotes(prev => prev.map(n => next.has(n.id) ? { ...n, depth: next.get(n.id)! } : n));
+
+    // Group by target depth so a subtree of any size costs one statement per
+    // distinct level rather than one per bullet.
+    const byDepth = new Map<number, string[]>();
+    for (const u of updates) {
+      const list = byDepth.get(u.depth);
+      if (list) list.push(u.id); else byDepth.set(u.depth, [u.id]);
+    }
+    for (const [depth, ids] of byDepth) {
+      const { error } = await supabase.from('trip_notes').update({ depth }).in('id', ids);
+      if (error) {
+        toast('Could not change the indent');
+        setNotes(previous);
+        return;
+      }
+    }
+  }, [notes]);
 
   const removeNote = useCallback(async (id: string) => {
     // Snapshot for rollback: a delete is the one operation where refetching on
@@ -104,6 +168,35 @@ export function useTripNotes(tripId: string | undefined) {
     }
     return null;
   }, [notes]);
+
+  /**
+   * Put a deleted bullet back exactly where it was — the Undo behind a swipe.
+   *
+   * Re-inserted with its original id, position and depth rather than appended,
+   * so undo restores the outline rather than dumping the bullet at the bottom
+   * at the outer level. Nothing references a note's id, so reusing it is safe.
+   */
+  const restoreNote = useCallback(async (note: TripNote) => {
+    setNotes(prev => prev.some(n => n.id === note.id)
+      ? prev
+      : [...prev, note].sort((a, b) => a.position - b.position ||
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+
+    const { data: auth } = await supabase.auth.getUser();
+    const { error } = await supabase.from('trip_notes').insert({
+      id: note.id,
+      trip_id: note.trip_id,
+      place_id: note.place_id ?? null,
+      body: note.body,
+      position: note.position,
+      depth: note.depth,
+      // The insert policy requires created_by to be the caller or null, so a
+      // collaborator's note comes back authorless rather than not at all.
+      // Losing the byline is a smaller loss than losing the note.
+      created_by: note.created_by === auth.user?.id ? note.created_by : null,
+    });
+    if (error) { toast('Could not restore the note'); fetchNotes(); }
+  }, [fetchNotes]);
 
   const updateNote = useCallback(async (id: string, body: string) => {
     const trimmed = body.trim();
@@ -142,5 +235,10 @@ export function useTripNotes(tripId: string | undefined) {
     if (error) { toast('Could not save the new order'); fetchNotes(); }
   }, [tripId, fetchNotes]);
 
-  return { tripNotes, notesByPlace, loading, addNote, updateNote, removeNote, reorderNotes };
+  reorderRef.current = reorderNotes;
+
+  return {
+    tripNotes, notesByPlace, loading,
+    addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,
+  };
 }

@@ -40,7 +40,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   const {
     tripNotes, notesByPlace, loading: notesLoading,
-    addNote, updateNote, removeNote, reorderNotes,
+    addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,
   } = useTripNotes(trip.id);
 
   // Selection is an id — the place object is always derived fresh from `places`,
@@ -237,6 +237,8 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onAdd={addNote}
           onUpdate={updateNote}
           onRemove={removeNote}
+          onRestore={restoreNote}
+          onSetDepths={setNoteDepths}
           onReorder={reorderNotes}
           onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
           onClose={() => setShowNotes(false)}
@@ -259,9 +261,11 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onCreateTag={createTag}
           notes={notesByPlace.get(selectedPlace.id) ?? []}
           allPlaces={places}
-          onAddNote={(body) => addNote(body, selectedPlace.id)}
+          onAddNote={(body, opts) => addNote(body, selectedPlace.id, opts)}
           onUpdateNote={updateNote}
           onRemoveNote={removeNote}
+          onRestoreNote={restoreNote}
+          onSetNoteDepths={setNoteDepths}
           onReorderNotes={reorderNotes}
         />
       )}

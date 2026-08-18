@@ -6,6 +6,8 @@ import { ImageLightbox } from './ImageLightbox';
 import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
 import { NoteList } from './NoteList';
+import { NoteBody } from './NoteBody';
+import { normaliseDepths } from '../lib/outline';
 import {
   X,
   Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
@@ -38,9 +40,11 @@ interface Props {
   // flattened copy on the place itself instead.
   notes?: TripNote[];
   allPlaces?: Place[];
-  onAddNote?: (body: string) => Promise<unknown> | void;
+  onAddNote?: (body: string, opts: { depth: number; afterId: string | null }) => Promise<TripNote | null> | void;
   onUpdateNote?: (id: string, body: string) => Promise<unknown> | void;
   onRemoveNote?: (id: string) => Promise<unknown> | void;
+  onRestoreNote?: (note: TripNote) => Promise<unknown> | void;
+  onSetNoteDepths?: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorderNotes?: (orderedIds: string[]) => void;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
   readOnly?: boolean;
@@ -53,7 +57,8 @@ export function PlaceDetailSheet({
   place, allTags, onClose, onToggleVisited, onDelete,
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
   scrollToComments = false, onCommentsShown,
-  notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onReorderNotes,
+  notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onRestoreNote,
+  onSetNoteDepths, onReorderNotes,
 }: Props) {
   const [selectedTags, setSelectedTags] = useState<string[]>((place.tags ?? []).map(t => t.id));
   const [dirty, setDirty] = useState(false);
@@ -238,10 +243,21 @@ export function PlaceDetailSheet({
             <label className="detail-label">Notes</label>
             {readOnly ? (
               <ul className="note-bullets">
-                {sharedNotes.map(n => (
-                  <li key={n.id} className="note-bullet">
-                    <span className="note-bullet-dot" aria-hidden="true" />
-                    <span className="note-bullet-body">{n.body}</span>
+                {normaliseDepths(sharedNotes).map(n => (
+                  <li
+                    key={n.id}
+                    className="note-bullet"
+                    style={{ '--note-depth': n.depth } as React.CSSProperties}
+                  >
+                    <div className="note-bullet-slide">
+                      <span className="note-bullet-dot" aria-hidden="true" />
+                      <span className="note-bullet-body">
+                        {/* Mentions render inert here — no onSelectPlace — but
+                            links still resolve, so a shared trip shows the
+                            same host pills the editor does. */}
+                        <NoteBody body={n.body} places={allPlaces} />
+                      </span>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -249,11 +265,13 @@ export function PlaceDetailSheet({
               <NoteList
                 notes={notes}
                 places={allPlaces}
-                onAdd={(body) => onAddNote?.(body)}
+                onAdd={(body, opts) => onAddNote?.(body, opts)}
                 onUpdate={(id, body) => onUpdateNote?.(id, body)}
                 onRemove={(id) => onRemoveNote?.(id)}
+                onRestore={onRestoreNote}
+                onSetDepths={(updates) => onSetNoteDepths?.(updates)}
                 onReorder={(ids) => onReorderNotes?.(ids)}
-                addPlaceholder="Add a note…"
+                placeholder="Add a note…"
               />
             )}
           </div>

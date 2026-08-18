@@ -10,6 +10,13 @@ interface Props {
   onSubmit?: () => void;
   onBlur?: () => void;
   onCancel?: () => void;
+  /**
+   * Backspace pressed with the caret at position 0 and nothing selected.
+   * Return true to say it was handled and the keystroke should be swallowed —
+   * that's how an outline removes an empty bullet and steps back up to the
+   * previous one instead of deleting a character that isn't there.
+   */
+  onBackspaceAtStart?: () => boolean | Promise<boolean>;
   places: Place[];
   placeholder?: string;
   autoFocus?: boolean;
@@ -21,7 +28,7 @@ interface Props {
 // "@". Shared by the add-a-bullet box and inline bullet editing so the two
 // can't drift apart.
 export function MentionTextarea({
-  value, onChange, onSubmit, onBlur, onCancel, places,
+  value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, places,
   placeholder, autoFocus, className = '', ariaLabel,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -82,6 +89,18 @@ export function MentionTextarea({
         setDismissedFor(value);
         return;
       }
+    }
+    // Only a bare caret at the very start counts: with a selection, Backspace
+    // is deleting that selection, and mid-text it's deleting a character.
+    if (
+      e.key === 'Backspace' && onBackspaceAtStart &&
+      e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0
+    ) {
+      // Prevent first: the handler may be async, and by the time it resolves
+      // the browser has already eaten a character from the row above.
+      e.preventDefault();
+      void Promise.resolve(onBackspaceAtStart());
+      return;
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && onSubmit) {
       e.preventDefault();

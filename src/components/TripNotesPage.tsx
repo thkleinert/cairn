@@ -9,9 +9,15 @@ interface Props {
   tripNotes: TripNote[];
   notesByPlace: Map<string, TripNote[]>;
   loading: boolean;
-  onAdd: (body: string, placeId?: string | null) => Promise<unknown> | void;
+  onAdd: (
+    body: string,
+    placeId: string | null,
+    opts: { depth: number; afterId: string | null },
+  ) => Promise<TripNote | null> | void;
   onUpdate: (id: string, body: string) => Promise<unknown> | void;
   onRemove: (id: string) => Promise<unknown> | void;
+  onRestore: (note: TripNote) => Promise<unknown> | void;
+  onSetDepths: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorder: (orderedIds: string[]) => void;
   onSelectPlace: (placeId: string) => void;
   onClose: () => void;
@@ -32,7 +38,7 @@ interface Props {
 // long trip they'd be most of the page, and this is a reading surface.
 export function TripNotesPage({
   places, allTags, tripNotes, notesByPlace, loading,
-  onAdd, onUpdate, onRemove, onReorder, onSelectPlace, onClose,
+  onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace, onClose,
 }: Props) {
   useEscapeClose(onClose);
 
@@ -55,12 +61,14 @@ export function TripNotesPage({
           <NoteList
             notes={tripNotes}
             places={places}
-            onAdd={(body) => onAdd(body, null)}
+            onAdd={(body, opts) => onAdd(body, null, opts)}
             onUpdate={onUpdate}
             onRemove={onRemove}
+            onRestore={onRestore}
+            onSetDepths={onSetDepths}
             onReorder={onReorder}
             onSelectPlace={onSelectPlace}
-            addPlaceholder="Add a general note…"
+            placeholder="Add a general note…"
           />
         </section>
 
@@ -88,12 +96,14 @@ export function TripNotesPage({
             <NoteList
               notes={notesByPlace.get(place.id) ?? []}
               places={places}
-              onAdd={(body) => onAdd(body, place.id)}
+              onAdd={(body, opts) => onAdd(body, place.id, opts)}
               onUpdate={onUpdate}
               onRemove={onRemove}
+              onRestore={onRestore}
+              onSetDepths={onSetDepths}
               onReorder={onReorder}
               onSelectPlace={onSelectPlace}
-              addPlaceholder="Add a note to this place…"
+              placeholder="Add a note to this place…"
             />
           </section>
         ))}

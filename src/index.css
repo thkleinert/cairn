@@ -1683,6 +1683,22 @@ select.input {
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
   animation: toastIn 0.25s cubic-bezier(0.32,0.72,0,1);
 }
+/* The stack stays click-through so a passing toast never eats a tap meant for
+   the page under it — but an action has to be reachable, so it opts back in.
+   Only the button: the toast body itself is still not a target. */
+.toast-action {
+  pointer-events: auto;
+  flex-shrink: 0;
+  margin: -4px -8px -4px 4px;
+  padding: 6px 10px;
+  border-radius: 99px;
+  color: var(--color-surface);
+  font-size: 13px; font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.toast-action:active { background: rgba(255, 255, 255, 0.16); }
+
 .toast--error svg { color: #f87171; }
 .toast--success svg { color: #4ade80; }
 .toast--info svg { color: #60a5fa; }
@@ -1905,20 +1921,26 @@ textarea.mention-input {
   font-size: 16px;
 }
 
-/* Width of the marker column (grip / dot / +). All three rows use it so the
-   markers share one vertical axis and the text starts at the same x. */
-:root { --note-gutter: 22px; }
+/* Width of the marker column (the bullet dot). Rows share it so every dot sits
+   on one vertical axis and the text starts at the same x. */
+:root {
+  --note-gutter: 22px;
+  /* One nesting level. Enough that a level is unmistakable at a glance,
+     small enough that MAX_DEPTH levels still leave a readable text column on
+     a 390px screen. */
+  --note-indent: 20px;
+}
 
-/* No gap: the add row's own top padding already supplies the rhythm, and an
-   extra gap here made the space after the last bullet visibly larger than the
-   space between bullets. */
-.note-list { display: flex; flex-direction: column; }
+.note-list { display: flex; flex-direction: column; position: relative; }
 
 .note-bullets { list-style: none; }
 
+/* The row is the swipe track: it holds the delete backing still while
+   .note-bullet-slide moves across it, and it owns the indent so the backing
+   is revealed at the bullet's own left edge rather than the list's. */
 .note-bullet {
-  display: flex; align-items: flex-start; gap: 8px;
-  padding: 6px 4px 6px 0;
+  position: relative;
+  margin-left: calc(var(--note-depth, 0) * var(--note-indent));
   border-radius: var(--radius-sm);
   /* Transition is for the reorder shuffle; the dragged row overrides it
      inline so it tracks the pointer 1:1. */
@@ -1926,28 +1948,61 @@ textarea.mention-input {
   background: var(--color-surface);
 }
 .note-bullet--dragging {
-  position: relative;
   z-index: 2;
   box-shadow: var(--shadow-sheet);
 }
+/* Clip the sliding layer only while it is actually moving. Permanent overflow
+   hidden would crop the @-mention popup, which has to escape the row. */
+.note-bullet--swiping { overflow: hidden; }
 
-/* Grip is the drag handle. touch-action:none so the browser doesn't claim
-   the gesture for scrolling before pointermove ever fires. */
-.note-bullet-grip {
-  flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  width: var(--note-gutter); min-height: 28px;
-  margin-top: 1px;
-  color: var(--color-muted);
-  cursor: grab;
-  touch-action: none;
-  opacity: 0.55;
+/* The guide line down a nested group, drawn on the row rather than as a
+   container because the list is flat — there is no element wrapping a
+   subtree to hang a border on. Sits in the parent's gutter, one indent step
+   to the left of this row's own dot. */
+.note-bullet--nested::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--note-indent) + var(--note-gutter) / 2);
+  top: 0; bottom: 0;
+  width: 1.5px;
+  background: var(--color-border);
+  border-radius: 1px;
 }
-.note-bullet-grip:active { cursor: grabbing; opacity: 1; }
+
+/* Everything that visually *is* the row. Separate from the <li> so a swipe
+   translates the content while the delete backing beneath stays put. */
+.note-bullet-slide {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 4px 6px 0;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  /* Vertical scrolling stays the browser's; only horizontal is ours to
+     claim. Without this the page would not scroll from a row at all. */
+  touch-action: pan-y;
+}
+
+/* Revealed as the row slides off it. Invisible until the swipe actually
+   starts: at rest the sliding layer covers it, but the row's rounded corners
+   let a red fringe show through on every bullet in the list. */
+.note-bullet-trail {
+  position: absolute;
+  inset: 0;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 18px;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger, #ef4444);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.note-bullet--swiping .note-bullet-trail { opacity: 0.55; }
+/* Full strength once the swipe is far enough that letting go would delete —
+   the gesture says what it is about to do before it does it. */
+.note-bullet--swiping .note-bullet-trail--armed { opacity: 1; }
 
 /* Occupies the full gutter and centres a 5px dot inside it, rather than being
-   a 5px box nudged into place with margins — margins can't stay aligned with
-   the grip when either changes size. */
+   a 5px box nudged into place with margins. */
 .note-bullet-dot {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -1959,6 +2014,17 @@ textarea.mention-input {
   width: 5px; height: 5px;
   border-radius: 50%;
   background: var(--color-muted);
+  transition: box-shadow 0.15s, background 0.15s;
+}
+/* The dot doubles as the drag handle, so it needs the grab affordance and has
+   to keep the browser from treating the press as the start of a scroll. */
+.note-bullet-dot--draggable { cursor: grab; touch-action: none; }
+.note-bullet-dot--draggable:active { cursor: grabbing; }
+.note-bullet-dot--draggable:active::before {
+  background: var(--color-text);
+  /* Halo rather than a size change: growing the dot shifts the text baseline
+     it is aligned against. */
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-muted) 25%, transparent);
 }
 
 .note-bullet-body {
@@ -1974,36 +2040,55 @@ textarea.mention-input {
   border-radius: 4px;
 }
 .note-bullet-body:active { background: var(--color-bg); }
+.note-bullet-body--placeholder { color: var(--color-muted); }
 
-.note-bullet-delete {
-  flex-shrink: 0;
+/* The empty strip under the last bullet: tapping it opens a new one. Replaces
+   the old "+ Add a note" row — same job, no chrome under every list. Sized to
+   a comfortable thumb target rather than being invisible-but-tiny. */
+.note-tap-to-add {
+  height: 40px;
+  margin-top: -4px;
+  border-radius: var(--radius-sm);
+  cursor: text;
+}
+
+/* Sits on top of the keyboard while a bullet is focused. --keyboard-inset is
+   0 when no keyboard is up (and on Android, which resizes the viewport
+   itself), so the bar simply rests on the bottom edge there. */
+.note-toolbar {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: var(--keyboard-inset, 0px);
+  z-index: 70;
+  display: flex; align-items: center;
+  gap: 4px;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  animation: noteToolbarIn 0.16s ease-out;
+}
+/* With the keyboard up there is no safe-area gap to clear — the keyboard
+   already covers it, and padding for it leaves a bar of dead space. */
+@supports (bottom: env(safe-area-inset-bottom)) {
+  .note-toolbar { padding-bottom: max(6px, calc(6px + env(safe-area-inset-bottom) - var(--keyboard-inset, 0px))); }
+}
+
+@keyframes noteToolbarIn { from { transform: translateY(100%); } }
+
+.note-toolbar-btn {
   display: flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px;
-  margin-top: 2px;
-  border-radius: 50%;
-  color: var(--color-muted);
-  opacity: 0.6;
+  width: 44px; height: 40px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  transition: background 0.12s, opacity 0.12s;
 }
-.note-bullet-delete:active { background: var(--color-bg); color: var(--color-danger, #ef4444); opacity: 1; }
+.note-toolbar-btn:active { background: var(--color-bg); }
+.note-toolbar-btn:disabled { opacity: 0.3; }
+.note-toolbar-btn--danger { color: var(--color-danger, #ef4444); }
+/* Pushed to the far end: it ends the interaction, the others act within it. */
+.note-toolbar-done { margin-left: auto; color: var(--color-primary); }
 
-/* Same gap as .note-bullet, so the text column lines up exactly. */
-.note-add-row {
-  display: flex; align-items: flex-start; gap: 8px;
-}
-
-/* Tuck the + closer to the bullets it belongs to — it's an affordance hanging
-   off the list, not another entry in it. Only when bullets actually precede
-   it: with an empty list the row is first in the block, and pulling it up ran
-   the focused field's border straight through the heading above. */
-.note-bullets:not(:empty) + .note-add-row { margin-top: -8px; }
-.note-add-icon {
-  flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  width: var(--note-gutter); min-height: 28px;
-  margin-top: 7px;
-  color: var(--color-muted);
-}
-.note-add-input { border-color: transparent; background: transparent; }
 .note-add-input:focus { border-color: var(--color-primary); background: var(--color-surface); }
 
 
