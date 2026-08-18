@@ -1,8 +1,11 @@
 import type { Place } from '../types';
 
-// @-mentions of places inside trip notes.
+// What a note body carries beyond plain text: @-mentions of places, and links.
+// Both are stored literally and recognised at render time — nothing in the
+// database is a token, so a note always reads as what was typed.
 //
-// Stored as plain text — the note holds literally "@Café Korb", not an id —
+// Mentions are stored as plain text — the note holds literally "@Café Korb",
+// not an id —
 // and resolved against the trip's current places at render time. The tradeoff
 // is deliberate: the textarea stays something a human can read and edit on a
 // phone, with no rich-text dependency, and a mention that stops resolving
@@ -11,10 +14,53 @@ import type { Place } from '../types';
 // name both resolve to the first. Both are visible to the user rather than
 // silent corruption, which is the right way round for a notes field.
 
-export interface MentionSegment {
-  type: 'text' | 'mention';
+export interface NoteSegment {
+  type: 'text' | 'mention' | 'url';
   value: string;
   place?: Place;
+  /** Set on 'url' segments: the value with a scheme guaranteed. */
+  href?: string;
+}
+
+// Only an explicit scheme or a leading "www." counts as a link. A bare
+// "example.com" rule would turn "Closed Mondays.Book ahead" — a missing space
+// after a full stop — into a link, and a note is prose first.
+const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s<>"']+/iy;
+
+// Re-checked after trailing punctuation is trimmed, so that what's left is
+// still a link rather than the remains of one — "www.." must not become a
+// pill labelled "www".
+const URL_VALID = /^(?:https?:\/\/[^\s<>"']+|www\.[^\s<>"'.]+\.[^\s<>"']+)$/i;
+
+// Sentence punctuation that follows a URL far more often than it ends one.
+const TRAILING = '.,;:!?';
+
+/**
+ * Trim what a writer's sentence contributed rather than the URL.
+ * Parentheses are balanced rather than stripped outright, because Wikipedia
+ * and Maps links carry them legitimately — "…/wiki/Vienna_(state)".
+ */
+function trimTrailingPunctuation(url: string): string {
+  let end = url.length;
+  for (;;) {
+    while (end > 0 && TRAILING.includes(url[end - 1])) end -= 1;
+    if (end > 0 && url[end - 1] === ')') {
+      const slice = url.slice(0, end);
+      const opens = slice.split('(').length - 1;
+      const closes = slice.split(')').length - 1;
+      if (closes > opens) { end -= 1; continue; }
+    }
+    return url.slice(0, end);
+  }
+}
+
+/** What a link is labelled with: its host, which is the part worth reading. */
+export function displayHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
 }
 
 // Longest-first so "Hotel Wandl" wins over a hypothetical "Hotel", and a
@@ -27,13 +73,13 @@ function byMatchPriority(places: Place[]): Place[] {
 }
 
 /**
- * Split note text into plain runs and resolved @mentions.
+ * Split note text into plain runs, resolved @mentions, and links.
  * An `@` whose following text matches no place stays plain text.
  */
-export function parseMentions(text: string, places: Place[]): MentionSegment[] {
+export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
   if (!text) return [];
   const ordered = byMatchPriority(places);
-  const segments: MentionSegment[] = [];
+  const segments: NoteSegment[] = [];
   let buffer = '';
   let i = 0;
 
@@ -42,7 +88,30 @@ export function parseMentions(text: string, places: Place[]): MentionSegment[] {
   };
 
   while (i < text.length) {
-    if (text[i] !== '@') { buffer += text[i]; i += 1; continue; }
+    // Links are tested first so an '@' inside one (a userinfo prefix, a query
+    // parameter) can't split the URL in half by starting a mention mid-link.
+    // Gated on the only two characters a link can start with, so the common
+    // case is a char compare rather than a regex attempt per position.
+    const c = text[i];
+    if (c === 'h' || c === 'H' || c === 'w' || c === 'W') {
+      URL_PATTERN.lastIndex = i;
+      const link = URL_PATTERN.exec(text);
+      if (link) {
+        const url = trimTrailingPunctuation(link[0]);
+        if (URL_VALID.test(url)) {
+          flush();
+          segments.push({
+            type: 'url',
+            value: url,
+            href: /^https?:\/\//i.test(url) ? url : `https://${url}`,
+          });
+          i += url.length;
+          continue;
+        }
+      }
+    }
+
+    if (c !== '@') { buffer += c; i += 1; continue; }
 
     const rest = text.slice(i + 1);
     const hit = ordered.find(p =>

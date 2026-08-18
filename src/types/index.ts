@@ -65,7 +65,6 @@ export interface Place {
   google_place_id?: string;
   status: PlaceStatus;
   visited_at?: string | null;
-  source_urls: string[];
   image_url?: string;
   added_by?: string;
   position: number;

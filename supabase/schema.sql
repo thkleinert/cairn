@@ -65,7 +65,6 @@ create table public.places (
   status          text not null default 'planned' check (status in ('planned','visited')),
   visited_at      timestamptz,
   notes           text,
-  source_urls     text[] not null default '{}',
   image_url       text,
   -- set null on user deletion: a NO ACTION FK here makes deleting any account
   -- that ever added a place to someone else's trip fail outright.

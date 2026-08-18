@@ -13,8 +13,8 @@ interface Props {
 }
 
 // Small shared popup for "paste a URL or upload a file" — used by the trip
-// cover photo, the place photo gallery, and place sources, so the pattern
-// (a lone + affordance that opens this) stays consistent across all three.
+// cover photo and the place photo gallery, so the pattern (a lone +
+// affordance that opens this) stays consistent across both.
 export function QuickAddSheet({ title, urlPlaceholder = 'https://…', onAddUrl, onUpload, uploadMultiple, onClose }: Props) {
   const [url, setUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);

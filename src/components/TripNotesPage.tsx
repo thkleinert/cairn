@@ -1,5 +1,4 @@
-import { X, NotebookPen, ChevronRight } from 'lucide-react';
-import { useSwipeToClose } from '../hooks/useSwipeToClose';
+import { ArrowLeft, NotebookPen, ChevronRight } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
 import type { Place, Tag, TripNote } from '../types';
@@ -18,16 +17,23 @@ interface Props {
   onClose: () => void;
 }
 
-// Everything written down for a trip, in one place. The trip-wide bullets and
-// each place sit at the same level: one heading, then its notes. A place's
-// name IS its heading, and tapping it opens the place. Places without notes
-// are omitted — on a long trip they'd be most of the page, and this is a
-// reading surface.
-export function TripNotesSheet({
+// Everything written down for a trip, as one full-screen outline: a list of
+// lists. The trip-wide bullets and each place sit at the same level — one
+// unbulleted heading, then its notes underneath.
+//
+// A full page rather than a bottom sheet because this is where a trip is
+// actually read and written, not glanced at: a sheet caps out around 60dvh,
+// and on a long trip that left the outline scrolling inside a window half the
+// height of the screen it had available.
+//
+// A place's name IS its heading, and tapping it opens the place — the detail
+// sheet layers over this page rather than replacing it, so dismissing it comes
+// back to the same scroll position. Places without notes are omitted; on a
+// long trip they'd be most of the page, and this is a reading surface.
+export function TripNotesPage({
   places, allTags, tripNotes, notesByPlace, loading,
   onAdd, onUpdate, onRemove, onReorder, onSelectPlace, onClose,
 }: Props) {
-  const { sheetRef, handleProps } = useSwipeToClose(onClose);
   useEscapeClose(onClose);
 
   const withNotes = places.filter(p => (notesByPlace.get(p.id)?.length ?? 0) > 0);
@@ -35,24 +41,17 @@ export function TripNotesSheet({
     allTags.filter(t => (place.tags ?? []).some(pt => pt.id === t.id));
 
   return (
-    <div className="bottom-sheet-overlay" onClick={onClose}>
-      <div
-        className="bottom-sheet trip-notes-sheet"
-        ref={sheetRef}
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Trip notes"
-      >
-        <div className="bottom-sheet-handle" {...handleProps} />
+    <div className="notes-page" role="dialog" aria-modal="true" aria-label="Trip notes">
+      <div className="trip-topbar">
+        <button className="btn-icon" onClick={onClose} aria-label="Back">
+          <ArrowLeft size={22} />
+        </button>
+        <h1 className="trip-topbar-title">Notes</h1>
+      </div>
 
-        <div className="sheet-header-row">
-          <h2 className="bottom-sheet-title">Notes</h2>
-          <button className="sheet-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
-        </div>
-
+      <div className="notes-page-body">
         <section className="notes-block">
-          <h3 className="notes-heading">For the whole trip</h3>
+          <h2 className="notes-heading">For the whole trip</h2>
           <NoteList
             notes={tripNotes}
             places={places}
@@ -67,7 +66,7 @@ export function TripNotesSheet({
 
         {withNotes.map(place => (
           <section className="notes-block" key={place.id}>
-            <h3 className="notes-heading">
+            <h2 className="notes-heading">
               <button
                 type="button"
                 className="notes-heading-link"
@@ -85,7 +84,7 @@ export function TripNotesSheet({
                 )}
                 <ChevronRight size={15} className="notes-heading-chevron" />
               </button>
-            </h3>
+            </h2>
             <NoteList
               notes={notesByPlace.get(place.id) ?? []}
               places={places}
@@ -99,7 +98,7 @@ export function TripNotesSheet({
           </section>
         ))}
 
-        {/* `loading` matters here: without it the sheet asserts the trip has
+        {/* `loading` matters here: without it the page asserts the trip has
             nothing written down for the moment before the first fetch lands,
             so opening it always flashed this line. */}
         {!loading && withNotes.length === 0 && tripNotes.length === 0 && (
