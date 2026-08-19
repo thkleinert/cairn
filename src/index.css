@@ -2085,9 +2085,9 @@ textarea.mention-input {
 }
 .note-toolbar-btn:active { background: var(--color-bg); }
 .note-toolbar-btn:disabled { opacity: 0.3; }
-.note-toolbar-btn--danger { color: var(--color-danger, #ef4444); }
-/* Pushed to the far end: it ends the interaction, the others act within it. */
-.note-toolbar-done { margin-left: auto; color: var(--color-primary); }
+/* Pushed to the far end: it ends the interaction, the others act within it.
+   No accent colour — the bar is uniformly monochrome, delete included. */
+.note-toolbar-done { margin-left: auto; }
 
 .note-add-input:focus { border-color: var(--color-primary); background: var(--color-surface); }
 

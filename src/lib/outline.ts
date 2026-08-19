@@ -82,6 +82,72 @@ export function shiftSubtree(
 }
 
 /**
+ * Where the bullet's previous and next siblings start, or -1 for none.
+ *
+ * A sibling shares this bullet's depth with no shallower bullet in between —
+ * a shallower one is the parent, and crossing it would move the bullet to a
+ * different parent rather than reorder it within this one. Move up/down stays
+ * inside the parent deliberately: an arrow that silently re-parents a bullet
+ * is how an outline gets shuffled into a shape nobody asked for.
+ */
+export function siblings(items: { depth: number }[], index: number): { prev: number; next: number } {
+  const depth = items[index]?.depth ?? 0;
+
+  let prev = -1;
+  for (let i = index - 1; i >= 0; i--) {
+    if (items[i].depth < depth) break;        // hit the parent
+    if (items[i].depth === depth) { prev = i; break; }
+  }
+
+  const after = subtreeEnd(items, index);
+  const next = after < items.length && items[after].depth === depth ? after : -1;
+
+  return { prev, next };
+}
+
+export function canMoveUp(items: { depth: number }[], index: number): boolean {
+  return index > 0 && siblings(items, index).prev !== -1;
+}
+
+export function canMoveDown(items: { depth: number }[], index: number): boolean {
+  return index >= 0 && index < items.length && siblings(items, index).next !== -1;
+}
+
+/**
+ * The list's ids after moving a bullet past its sibling in `direction`,
+ * carrying its own children with it — or null if there is no sibling that way.
+ *
+ * Returned as a whole id order rather than a pair of swaps because that is
+ * what reorder_trip_notes takes: one atomic write, so a move can't half-apply
+ * and leave client, server and realtime disagreeing about the order.
+ */
+export function moveSubtree<T extends { id: string; depth: number }>(
+  items: T[], index: number, direction: 1 | -1,
+): string[] | null {
+  const { prev, next } = siblings(items, index);
+  const start = index;
+  const end = subtreeEnd(items, index);
+  const moving = items.slice(start, end);
+  const rest = [...items.slice(0, start), ...items.slice(end)];
+
+  let insertAt: number;
+  if (direction === -1) {
+    if (prev === -1) return null;
+    // Indices below the removed block are unaffected, so the previous
+    // sibling's start is still where it was.
+    insertAt = prev;
+  } else {
+    if (next === -1) return null;
+    // The next sibling's whole subtree has to clear, and removing this block
+    // first shifts it left by the block's own length.
+    insertAt = subtreeEnd(items, next) - moving.length;
+  }
+
+  rest.splice(insertAt, 0, ...moving);
+  return rest.map(i => i.id);
+}
+
+/**
  * Deleting a bullet promotes its children rather than taking them with it.
  *
  * Dynalist deletes the whole subtree, which is defensible when deletion is a
