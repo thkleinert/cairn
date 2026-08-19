@@ -91,12 +91,16 @@ export function NoteList({
   // Every structural decision below reads `items`, never `order`.
   //
   // `order` is useDragReorder's own copy, synced from items in an effect, so
-  // it is one render stale every time the list changes — and the toolbar was
-  // reading it. Right after a bullet was added the toolbar could still be
-  // looking at the list as it was before, which is how indent, both arrows and
-  // outdent all came back disabled while three bullets were on screen: the
-  // stale copy held one item, so the focused bullet looked like an only child
-  // with nowhere to go. `order` now drives nothing but the drag animation.
+  // it lags by a render every time the list changes — and the toolbar was
+  // reading it, meaning that right after a bullet was added or moved the
+  // toolbar could answer "can this indent?" against the list as it was before.
+  // `order` now drives the drag animation and nothing else.
+  //
+  // This does not fully explain a report of indent, outdent and both arrows
+  // disabled at once on a list of three: the rows render from the same array,
+  // so a short `order` would have rendered short too. That state has not been
+  // reproduced. This is a correctness fix to a real stale read, not a
+  // confirmed diagnosis of it.
   const draftIndex = useMemo(() => {
     if (!draft) return -1;
     if (draft.afterId === null) return items.length;
