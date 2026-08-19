@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Trash2, Plus, Minus } from 'lucide-react';
 import { useDragReorder } from '../hooks/useDragReorder';
 import { useSwipeToDelete } from '../hooks/useSwipeToDelete';
@@ -35,6 +35,13 @@ interface Props {
   isCollapsed?: (id: string) => boolean;
   onToggleCollapse?: (id: string) => void;
   onExpand?: (id: string) => void;
+  /**
+   * Flip to true to open a new bullet at the end of this list and focus it.
+   * The section heading owns the affordance now, and it lives outside this
+   * component, so the request has to come in as a prop rather than a button.
+   */
+  startDraft?: boolean;
+  onDraftStarted?: () => void;
   /** Tapping an @mention jumps to that place. Omit to render mentions inert. */
   onSelectPlace?: (placeId: string) => void;
   placeholder?: string;
@@ -52,7 +59,7 @@ interface Props {
 // keyboard has no Tab key and a swipe was already spoken for.
 export function NoteList({
   notes, places, onAdd, onUpdate, onRemove, onSetDepths, onReorder, onRestore,
-  isCollapsed, onToggleCollapse, onExpand,
+  isCollapsed, onToggleCollapse, onExpand, startDraft, onDraftStarted,
   onSelectPlace, placeholder = 'Add a note…',
 }: Props) {
   const folded = useCallback((id: string) => isCollapsed?.(id) ?? false, [isCollapsed]);
@@ -73,15 +80,13 @@ export function NoteList({
   // see an uncommitted draft and post it twice.
   const busy = useRef(false);
 
-  // An empty list shows one waiting bullet, which is both the empty state and
-  // the way in. A list with content shows none — you add by pressing Enter at
-  // the end of a bullet, or by tapping the space beneath the last one.
-  // Memoised, not just computed: the fallback is a fresh object each render,
-  // and it feeds the dependency list of nearly every callback below.
-  const draft: Draft | null = useMemo(
-    () => draftState ?? (items.length === 0 ? { afterId: null, depth: 0 } : null),
-    [draftState, items.length],
-  );
+  // No standing empty bullet, in any state. An empty list used to show one as
+  // its own way in, which put a grey "Add a note…" under every place on the
+  // page — mostly under places that had nothing to say. The way in is now the
+  // section heading itself (see startDraft), so an empty place shows nothing
+  // at all and the page reads as a list of places rather than a column of
+  // prompts.
+  const draft: Draft | null = draftState;
 
   const { order, dragId, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx } =
     useDragReorder({
@@ -131,6 +136,23 @@ export function NoteList({
     next.splice(draftIndex, 0, stub);
     return next;
   }, [items, draft, draftIndex]);
+
+  // Opening a bullet because the heading asked for one. Keyed on the flag
+  // going true rather than on its value, so the parent can leave it set for a
+  // render without reopening the draft on every re-render in between.
+  useEffect(() => {
+    if (!startDraft) return;
+    const last = items[items.length - 1];
+    // Always at the outer level, whatever the last bullet's depth happens to
+    // be. The request came from the section's own heading, so it means "a new
+    // note in this section" — inheriting the depth of whatever was written
+    // last would tuck it under an unrelated bullet purely because that bullet
+    // was nested.
+    setDraftState({ afterId: last?.id ?? null, depth: 0 });
+    setFocusId(DRAFT);
+    setBody('');
+    onDraftStarted?.();
+  }, [startDraft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** What's actually on screen: everything not tucked under a folded bullet. */
   const visible = useMemo(() => visibleItems(items, folded), [items, folded]);
@@ -451,23 +473,6 @@ export function NoteList({
   return (
     <div className="note-list">
       <ul className="note-bullets">{rows}</ul>
-
-      {/* Tap the space under the last bullet to start a new one — the outliner
-          equivalent of the add row this replaced, without a row of chrome
-          sitting under every list. Hidden when a draft is already open. */}
-      {items.length > 0 && !draft && (
-        <button
-          type="button"
-          className="note-tap-to-add"
-          aria-label="Add a note"
-          onClick={() => {
-            const last = order[order.length - 1];
-            setDraftState({ afterId: last?.id ?? null, depth: last?.depth ?? 0 });
-            setFocusId(DRAFT);
-            setBody('');
-          }}
-        />
-      )}
 
       {focusId && (
         <NoteEditToolbar

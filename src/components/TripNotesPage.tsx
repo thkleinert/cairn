@@ -1,4 +1,5 @@
 import { ArrowLeft, NotebookPen, ChevronRight, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
 import { groupPlaces } from '../lib/outline';
@@ -42,22 +43,25 @@ interface Props {
 // and on a long trip that left the outline scrolling inside a window half the
 // height of the screen it had available.
 //
-// A place's name IS its heading, and tapping it opens the place — the detail
-// sheet layers over this page rather than replacing it, so dismissing it comes
-// back to the same scroll position.
+// A place's name IS its heading, and the heading carries all three things you
+// can do with a section: fold it, write in it, or go to the place. Splitting
+// them is what keeps the page quiet — see renderPlace.
 //
 // Every place gets a heading, including ones with nothing written under them
 // yet. They cost a line each on a long trip, but omitting them made the page a
 // reading surface you could only write to for places you had already written
 // about — to add the first note to a place you had to find it on the map
-// instead. An empty place shows the same waiting bullet an empty list does, so
-// the way in is identical wherever you are.
+// instead. An empty place is just its heading: no bullet, no prompt.
 export function TripNotesPage({
   places, allTags, tripNotes, notesByPlace, loading,
   onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace,
   isCollapsed, toggleCollapse, onExpandNote, onClose,
 }: Props) {
   useEscapeClose(onClose);
+
+  // Which section's heading was tapped to start a note. Cleared as soon as the
+  // list has opened one, so tapping the same heading again opens another.
+  const [addingFor, setAddingFor] = useState<string | null>(null);
 
   const tagsOf = (place: Place) =>
     allTags.filter(t => (place.tags ?? []).some(pt => pt.id === t.id));
@@ -66,11 +70,13 @@ export function TripNotesPage({
 
   // One place's section: its heading, then its bullets.
   //
-  // The heading carries two separate targets, which is the whole answer to
-  // "tapping a place heading opens the place, so where does collapse go?".
-  // The leading caret folds; everything after it still navigates, with the
-  // trailing chevron continuing to say so. Neither gesture is overloaded and
-  // neither changed meaning.
+  // The heading is three targets, which is what resolves "tapping a heading
+  // opens the place, so where do collapse and add-a-note go?" without
+  // overloading anything: the leading caret folds, the line writes, the
+  // trailing chevron travels. The chevron keeps the meaning it always had —
+  // it was already the "go here" affordance — and taking navigation off the
+  // rest of the row is what freed the line to be the way in for writing, which
+  // in turn let every place drop its standing "Add a note…" bullet.
   const renderPlace = (place: Place, anchored: boolean) => {
     const notes = notesByPlace.get(place.id) ?? [];
     const collapsed = isCollapsed(place.id);
@@ -94,10 +100,16 @@ export function TripNotesPage({
               className={`notes-fold-caret ${collapsed ? 'notes-fold-caret--closed' : ''}`}
             />
           </button>
+          {/* Tapping the line writes; the chevron travels. Three targets on
+              one row — fold, write, go — and each is the obvious size and
+              place for what it does. This is also what let every place stop
+              carrying a standing "Add a note…" row: the heading IS the way in,
+              so an empty place needs nothing under it at all. */}
           <button
             type="button"
             className="notes-heading-link"
-            onClick={() => onSelectPlace(place.id)}
+            aria-label={`Add a note to ${place.name}`}
+            onClick={() => { if (collapsed) toggleCollapse(place.id); setAddingFor(place.id); }}
           >
             <span className="notes-heading-name">{place.name}</span>
             {tagsOf(place).length > 0 && (
@@ -109,7 +121,14 @@ export function TripNotesPage({
                 ))}
               </span>
             )}
-            <ChevronRight size={15} className="notes-heading-chevron" />
+          </button>
+          <button
+            type="button"
+            className="notes-heading-go"
+            aria-label={`Open ${place.name}`}
+            onClick={() => onSelectPlace(place.id)}
+          >
+            <ChevronRight size={17} />
           </button>
         </h2>
 
@@ -136,8 +155,9 @@ export function TripNotesPage({
             isCollapsed={isCollapsed}
             onToggleCollapse={toggleCollapse}
             onExpand={onExpandNote}
+            startDraft={addingFor === place.id}
+            onDraftStarted={() => setAddingFor(null)}
             onSelectPlace={onSelectPlace}
-            placeholder="Add a note to this place…"
           />
         )}
       </section>
@@ -168,8 +188,19 @@ export function TripNotesPage({
                 className={`notes-fold-caret ${isCollapsed(TRIP_WIDE) ? 'notes-fold-caret--closed' : ''}`}
               />
             </button>
-            {/* Not a link: there is no page for "the whole trip" to open. */}
-            <span className="notes-heading-name">For the whole trip</span>
+            {/* No chevron: there is no page for "the whole trip" to open, so
+                the line only ever means "write here". */}
+            <button
+              type="button"
+              className="notes-heading-link"
+              aria-label="Add a general note"
+              onClick={() => {
+                if (isCollapsed(TRIP_WIDE)) toggleCollapse(TRIP_WIDE);
+                setAddingFor(TRIP_WIDE);
+              }}
+            >
+              <span className="notes-heading-name">For the whole trip</span>
+            </button>
           </h2>
 
           {isCollapsed(TRIP_WIDE) && tripNotes.length > 0 && (
@@ -191,8 +222,9 @@ export function TripNotesPage({
             isCollapsed={isCollapsed}
             onToggleCollapse={toggleCollapse}
             onExpand={onExpandNote}
+            startDraft={addingFor === TRIP_WIDE}
+            onDraftStarted={() => setAddingFor(null)}
             onSelectPlace={onSelectPlace}
-            placeholder="Add a general note…"
           />
           )}
         </section>

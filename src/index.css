@@ -2066,16 +2066,6 @@ textarea.mention-input {
   width: 9px; height: 9px;
 }
 
-/* The empty strip under the last bullet: tapping it opens a new one. Replaces
-   the old "+ Add a note" row — same job, no chrome under every list. Sized to
-   a comfortable thumb target rather than being invisible-but-tiny. */
-.note-tap-to-add {
-  height: 40px;
-  margin-top: -4px;
-  border-radius: var(--radius-sm);
-  cursor: text;
-}
-
 /* Sits on top of the keyboard while a bullet is focused. --keyboard-inset is
    0 when no keyboard is up (and on Android, which resizes the viewport
    itself), so the bar simply rests on the bottom edge there. */
@@ -2203,7 +2193,9 @@ textarea.mention-input {
    all; without min-width a flex item refuses to go below its content width. */
 .notes-heading-link {
   display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
-  width: 100%; min-width: 0;
+  /* flex:1 rather than width:100% — the chevron beside it is a sibling button
+     now, not a child, and a full-width line would push it off the row. */
+  flex: 1; min-width: 0;
   text-align: left;
   padding: 4px 0;
   border-radius: 4px;
@@ -2272,9 +2264,18 @@ textarea.mention-input {
   display: flex; gap: 4px;
 }
 
-/* Pushed to the far edge so it reads as "go here" rather than punctuation
-   after the name. */
-.notes-heading-chevron { margin-left: auto; color: var(--color-muted); flex-shrink: 0; }
+/* Its own target now, not decoration on the end of the name: the chevron is
+   the only part of the heading that travels to the place, and the line beside
+   it starts a note. Sized for a thumb rather than for the icon inside it. */
+.notes-heading-go {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 34px;
+  margin-right: -6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-muted);
+}
+.notes-heading-go:active { background: var(--color-bg); color: var(--color-text); }
 
 .place-note-tag {
   /* Shrinks by ellipsising its own text, so a squeezed pill still looks like a
