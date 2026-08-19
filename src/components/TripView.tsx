@@ -5,6 +5,7 @@ import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTripNotes } from '../hooks/useTripNotes';
 import { useTags } from '../hooks/useTags';
+import { useCollapsed } from '../hooks/useCollapsed';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 // Lazy: mapbox-gl is ~90% of the bundle; splitting it means the auth screen,
@@ -36,8 +37,11 @@ type Sheet = 'none' | 'tag-filter' | 'settings';
 type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, initialOpenComments, openNonce }: Props) {
-  const { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
+  const { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, setPlaceParent, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
+  // Owned here rather than inside the notes page so folding survives the page
+  // being closed and reopened, which is most of what folding is for.
+  const { isCollapsed, toggle: toggleCollapse, expand: expandCollapsed } = useCollapsed(trip.id);
   const {
     tripNotes, notesByPlace, loading: notesLoading,
     addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,
@@ -240,6 +244,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onRestore={restoreNote}
           onSetDepths={setNoteDepths}
           onReorder={reorderNotes}
+          isCollapsed={isCollapsed}
+          toggleCollapse={toggleCollapse}
+          onExpandNote={expandCollapsed}
           onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
           onClose={() => setShowNotes(false)}
         />
@@ -255,6 +262,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onToggleVisited={() => toggleVisited(selectedPlace.id, selectedPlace.status)}
           onDelete={handleDeletePlace}
           onSetTags={(tagIds) => setPlaceTags(selectedPlace.id, tagIds)}
+          onSetParent={(parentId) => setPlaceParent(selectedPlace.id, parentId)}
           onAddImage={(url, caption) => addPlaceImage(selectedPlace.id, url, caption)}
           onUploadImage={(file) => uploadPlaceImage(selectedPlace.id, file)}
           onRemoveImage={(imageId) => removePlaceImage(selectedPlace.id, imageId)}

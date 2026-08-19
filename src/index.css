@@ -2042,6 +2042,30 @@ textarea.mention-input {
 .note-bullet-body:active { background: var(--color-bg); }
 .note-bullet-body--placeholder { color: var(--color-muted); }
 
+/* Fold control on the right edge of a bullet that has children. The left of
+   the row is spoken for — the dot drags, the text edits — so the right edge is
+   the only part of a bullet not already a target. Quiet until touched: it is
+   navigation furniture, not something to read past on every line. */
+.note-fold {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  margin-top: 2px;
+  border-radius: 50%;
+  color: var(--color-muted);
+  opacity: 0.6;
+  transition: opacity 0.12s, background 0.12s;
+}
+.note-fold:active { opacity: 1; background: var(--color-bg); }
+
+/* A folded bullet's dot gains a ring, so a section with something hidden under
+   it reads as closed at a glance rather than as an ordinary bullet. */
+.note-bullet-dot--folded::before {
+  background: transparent;
+  border: 2px solid var(--color-muted);
+  width: 9px; height: 9px;
+}
+
 /* The empty strip under the last bullet: tapping it opens a new one. Replaces
    the old "+ Add a note" row — same job, no chrome under every list. Sized to
    a comfortable thumb target rather than being invisible-but-tiny. */
@@ -2187,6 +2211,48 @@ textarea.mention-input {
   font: inherit;
 }
 .notes-heading-link:active { opacity: 0.55; }
+
+/* A foldable heading is two targets, not one: the caret folds, everything
+   after it still opens the place. That split is what lets collapse coexist
+   with a heading whose whole job was already to navigate. */
+.notes-heading--foldable { display: flex; align-items: center; gap: 2px; }
+
+.notes-fold {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  /* Wider than it looks: the caret is small, but a heading control on a phone
+     needs a thumb-sized target or folding becomes a game of precision. */
+  width: 30px; height: 34px;
+  margin-left: -6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-muted);
+}
+.notes-fold:active { background: var(--color-bg); }
+
+.notes-fold-caret { transition: transform 0.18s var(--spring); }
+.notes-fold-caret--closed { transform: rotate(-90deg); }
+
+/* Anchored places sit inside their parent's section — a café under the city
+   it's in. Indented and hung off a guide line, the same vocabulary a nested
+   bullet uses, so one visual rule covers nesting everywhere on the page. */
+.notes-block--anchored {
+  margin-left: 18px;
+  padding-left: 12px;
+  border-left: 1.5px solid var(--color-border);
+}
+
+/* What a folded section is hiding. A collapsed heading with nothing under it
+   is indistinguishable from an empty one, and "3 notes · 1 place" is the
+   difference between folded and forgotten. */
+.notes-folded-hint {
+  display: block;
+  width: 100%;
+  padding: 2px 0 6px calc(var(--note-gutter) + 8px);
+  text-align: left;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.notes-folded-hint:active { color: var(--color-text); }
 
 .notes-heading-name {
   flex: 1 1 auto;

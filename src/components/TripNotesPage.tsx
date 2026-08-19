@@ -1,7 +1,13 @@
-import { ArrowLeft, NotebookPen, ChevronRight } from 'lucide-react';
+import { ArrowLeft, NotebookPen, ChevronRight, ChevronDown } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
+import { groupPlaces } from '../lib/outline';
 import type { Place, Tag, TripNote } from '../types';
+
+// The trip-wide section folds like any other, but has no place id to key that
+// on. A constant is safe: the stored set is already scoped to one trip, and
+// this can't collide with a uuid.
+const TRIP_WIDE = 'trip-wide';
 
 interface Props {
   places: Place[];
@@ -20,6 +26,10 @@ interface Props {
   onSetDepths: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorder: (orderedIds: string[]) => void;
   onSelectPlace: (placeId: string) => void;
+  /** Fold state, owned by the trip so it survives the page closing and reopening. */
+  isCollapsed: (id: string) => boolean;
+  toggleCollapse: (id: string) => void;
+  onExpandNote: (id: string) => void;
   onClose: () => void;
 }
 
@@ -44,12 +54,95 @@ interface Props {
 // the way in is identical wherever you are.
 export function TripNotesPage({
   places, allTags, tripNotes, notesByPlace, loading,
-  onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace, onClose,
+  onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace,
+  isCollapsed, toggleCollapse, onExpandNote, onClose,
 }: Props) {
   useEscapeClose(onClose);
 
   const tagsOf = (place: Place) =>
     allTags.filter(t => (place.tags ?? []).some(pt => pt.id === t.id));
+
+  const { top, childrenOf } = groupPlaces(places);
+
+  // One place's section: its heading, then its bullets.
+  //
+  // The heading carries two separate targets, which is the whole answer to
+  // "tapping a place heading opens the place, so where does collapse go?".
+  // The leading caret folds; everything after it still navigates, with the
+  // trailing chevron continuing to say so. Neither gesture is overloaded and
+  // neither changed meaning.
+  const renderPlace = (place: Place, anchored: boolean) => {
+    const notes = notesByPlace.get(place.id) ?? [];
+    const collapsed = isCollapsed(place.id);
+    const childCount = (childrenOf.get(place.id) ?? []).length;
+
+    return (
+      <section
+        className={`notes-block ${anchored ? 'notes-block--anchored' : ''}`}
+        key={place.id}
+      >
+        <h2 className="notes-heading notes-heading--foldable">
+          <button
+            type="button"
+            className="notes-fold"
+            aria-label={collapsed ? `Expand ${place.name}` : `Collapse ${place.name}`}
+            aria-expanded={!collapsed}
+            onClick={() => toggleCollapse(place.id)}
+          >
+            <ChevronDown
+              size={16}
+              className={`notes-fold-caret ${collapsed ? 'notes-fold-caret--closed' : ''}`}
+            />
+          </button>
+          <button
+            type="button"
+            className="notes-heading-link"
+            onClick={() => onSelectPlace(place.id)}
+          >
+            <span className="notes-heading-name">{place.name}</span>
+            {tagsOf(place).length > 0 && (
+              <span className="notes-heading-tags">
+                {tagsOf(place).map(t => (
+                  <span key={t.id} className="place-note-tag" style={{ background: t.color }}>
+                    {t.icon ? `${t.icon} ` : ''}{t.name}
+                  </span>
+                ))}
+              </span>
+            )}
+            <ChevronRight size={15} className="notes-heading-chevron" />
+          </button>
+        </h2>
+
+        {/* What a folded section is hiding, so it isn't just gone. */}
+        {collapsed && (notes.length > 0 || childCount > 0) && (
+          <button type="button" className="notes-folded-hint" onClick={() => toggleCollapse(place.id)}>
+            {[
+              notes.length > 0 ? `${notes.length} note${notes.length === 1 ? '' : 's'}` : null,
+              childCount > 0 ? `${childCount} place${childCount === 1 ? '' : 's'}` : null,
+            ].filter(Boolean).join(' · ')}
+          </button>
+        )}
+
+        {!collapsed && (
+          <NoteList
+            notes={notes}
+            places={places}
+            onAdd={(body, opts) => onAdd(body, place.id, opts)}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+            onRestore={onRestore}
+            onSetDepths={onSetDepths}
+            onReorder={onReorder}
+            isCollapsed={isCollapsed}
+            onToggleCollapse={toggleCollapse}
+            onExpand={onExpandNote}
+            onSelectPlace={onSelectPlace}
+            placeholder="Add a note to this place…"
+          />
+        )}
+      </section>
+    );
+  };
 
   return (
     <div className="notes-page" role="dialog" aria-modal="true" aria-label="Trip notes">
@@ -62,7 +155,30 @@ export function TripNotesPage({
 
       <div className="notes-page-body">
         <section className="notes-block">
-          <h2 className="notes-heading">For the whole trip</h2>
+          <h2 className="notes-heading notes-heading--foldable">
+            <button
+              type="button"
+              className="notes-fold"
+              aria-label={isCollapsed(TRIP_WIDE) ? 'Expand trip notes' : 'Collapse trip notes'}
+              aria-expanded={!isCollapsed(TRIP_WIDE)}
+              onClick={() => toggleCollapse(TRIP_WIDE)}
+            >
+              <ChevronDown
+                size={16}
+                className={`notes-fold-caret ${isCollapsed(TRIP_WIDE) ? 'notes-fold-caret--closed' : ''}`}
+              />
+            </button>
+            {/* Not a link: there is no page for "the whole trip" to open. */}
+            <span className="notes-heading-name">For the whole trip</span>
+          </h2>
+
+          {isCollapsed(TRIP_WIDE) && tripNotes.length > 0 && (
+            <button type="button" className="notes-folded-hint" onClick={() => toggleCollapse(TRIP_WIDE)}>
+              {tripNotes.length} note{tripNotes.length === 1 ? '' : 's'}
+            </button>
+          )}
+
+          {!isCollapsed(TRIP_WIDE) && (
           <NoteList
             notes={tripNotes}
             places={places}
@@ -72,45 +188,23 @@ export function TripNotesPage({
             onRestore={onRestore}
             onSetDepths={onSetDepths}
             onReorder={onReorder}
+            isCollapsed={isCollapsed}
+            onToggleCollapse={toggleCollapse}
+            onExpand={onExpandNote}
             onSelectPlace={onSelectPlace}
             placeholder="Add a general note…"
           />
+          )}
         </section>
 
-        {places.map(place => (
-          <section className="notes-block" key={place.id}>
-            <h2 className="notes-heading">
-              <button
-                type="button"
-                className="notes-heading-link"
-                onClick={() => onSelectPlace(place.id)}
-              >
-                <span className="notes-heading-name">{place.name}</span>
-                {tagsOf(place).length > 0 && (
-                  <span className="notes-heading-tags">
-                    {tagsOf(place).map(t => (
-                      <span key={t.id} className="place-note-tag" style={{ background: t.color }}>
-                        {t.icon ? `${t.icon} ` : ''}{t.name}
-                      </span>
-                    ))}
-                  </span>
-                )}
-                <ChevronRight size={15} className="notes-heading-chevron" />
-              </button>
-            </h2>
-            <NoteList
-              notes={notesByPlace.get(place.id) ?? []}
-              places={places}
-              onAdd={(body, opts) => onAdd(body, place.id, opts)}
-              onUpdate={onUpdate}
-              onRemove={onRemove}
-              onRestore={onRestore}
-              onSetDepths={onSetDepths}
-              onReorder={onReorder}
-              onSelectPlace={onSelectPlace}
-              placeholder="Add a note to this place…"
-            />
-          </section>
+        {top.map(place => (
+          <div key={place.id}>
+            {renderPlace(place, false)}
+            {/* Places anchored to this one, nested under it rather than each
+                claiming a top-level section. Folded away with their parent. */}
+            {!isCollapsed(place.id) &&
+              (childrenOf.get(place.id) ?? []).map(child => renderPlace(child, true))}
+          </div>
         ))}
 
         {/* Only when the trip has no places either — with places listed, every

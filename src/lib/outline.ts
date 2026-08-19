@@ -158,6 +158,63 @@ export function moveSubtree<T extends { id: string; depth: number }>(
   return rest.map(i => i.id);
 }
 
+/** True when this bullet has anything nested under it — so it can be folded. */
+export function hasChildren(items: { depth: number }[], index: number): boolean {
+  return subtreeEnd(items, index) > index + 1;
+}
+
+/**
+ * Drop every bullet that sits under a folded one.
+ *
+ * Walks once, carrying the depth of the shallowest fold currently in force:
+ * everything deeper than that is hidden, and the first bullet back at or above
+ * it ends the fold. That handles a folded section inside another folded
+ * section without needing to know the tree.
+ */
+export function visibleItems<T extends { id: string; depth: number }>(
+  items: T[], isCollapsed: (id: string) => boolean,
+): T[] {
+  const out: T[] = [];
+  let hiddenBelow = -1;
+  for (const item of items) {
+    if (hiddenBelow >= 0 && item.depth > hiddenBelow) continue;
+    hiddenBelow = -1;
+    out.push(item);
+    if (isCollapsed(item.id)) hiddenBelow = item.depth;
+  }
+  return out;
+}
+
+/**
+ * Split places into the ones that stand alone and the children anchored to
+ * each of them — a café under the city it is in.
+ *
+ * One level, deliberately. A place whose parent is itself anchored is treated
+ * as top-level, which keeps the page readable on a phone and, more usefully,
+ * means a cycle (a inside b, b inside a) renders as two ordinary headings
+ * rather than as two places that appear nowhere. A parent that isn't in this
+ * trip's places at all is treated the same way.
+ */
+export function groupPlaces<T extends { id: string; parent_place_id?: string | null }>(
+  places: T[],
+): { top: T[]; childrenOf: Map<string, T[]> } {
+  const byId = new Map(places.map(p => [p.id, p]));
+  const isAnchored = (p: T) => {
+    const parent = p.parent_place_id ? byId.get(p.parent_place_id) : undefined;
+    return !!parent && parent.id !== p.id && !parent.parent_place_id;
+  };
+
+  const top: T[] = [];
+  const childrenOf = new Map<string, T[]>();
+  for (const place of places) {
+    if (!isAnchored(place)) { top.push(place); continue; }
+    const key = place.parent_place_id!;
+    const list = childrenOf.get(key);
+    if (list) list.push(place); else childrenOf.set(key, [place]);
+  }
+  return { top, childrenOf };
+}
+
 /**
  * Deleting a bullet promotes its children rather than taking them with it.
  *

@@ -71,6 +71,13 @@ export interface Place {
   latitude: number;
   longitude: number;
   google_place_id?: string;
+  /**
+   * The place this one sits inside — a café anchored to its city. Only the
+   * notes page reads it, to nest this place under its parent's heading.
+   * One level only: a place whose parent itself has a parent is treated as
+   * top-level, which is also what stops a cycle hiding places entirely.
+   */
+  parent_place_id?: string | null;
   status: PlaceStatus;
   visited_at?: string | null;
   image_url?: string;

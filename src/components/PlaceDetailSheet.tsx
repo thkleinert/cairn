@@ -33,6 +33,8 @@ interface Props {
   onToggleVisited: () => void;
   onDelete: () => void;
   onSetTags: (tagIds: string[]) => void;
+  /** Anchor this place inside another, or release it with null. */
+  onSetParent?: (parentId: string | null) => void;
   onAddImage: (url: string, caption?: string) => Promise<PlaceImage | null>;
   onUploadImage?: (file: File) => Promise<PlaceImage | null>;
   onRemoveImage: (imageId: string) => void;
@@ -54,7 +56,7 @@ interface Props {
 }
 
 export function PlaceDetailSheet({
-  place, allTags, onClose, onToggleVisited, onDelete,
+  place, allTags, onClose, onToggleVisited, onDelete, onSetParent,
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
   scrollToComments = false, onCommentsShown,
   notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onRestoreNote,
@@ -234,6 +236,33 @@ export function PlaceDetailSheet({
                 </button>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Part of — anchors this place inside another, so the notes page nests
+            it under that one instead of giving a café its own top-level
+            section next to the city it's in.
+
+            Candidates exclude this place, and anything already anchored
+            elsewhere: allowing those would build a chain the notes page
+            renders only one level of, so the place would silently drop back to
+            top-level rather than appear where it was put. */}
+        {!readOnly && onSetParent && allPlaces.length > 1 && (
+          <div className="detail-section">
+            <label className="detail-label" htmlFor="place-parent">Part of</label>
+            <select
+              id="place-parent"
+              className="input"
+              value={place.parent_place_id ?? ''}
+              onChange={e => onSetParent(e.target.value || null)}
+            >
+              <option value="">Nowhere in particular</option>
+              {allPlaces
+                .filter(p => p.id !== place.id && !p.parent_place_id)
+                .map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+            </select>
           </div>
         )}
 

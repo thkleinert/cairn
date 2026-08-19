@@ -310,9 +310,28 @@ export function usePlaces(tripId: string | undefined) {
     if (image) removeStorageUrls([image.url]);
   };
 
+  /**
+   * Anchor a place inside another, or release it with null.
+   *
+   * Its own function rather than a general updatePlace call for the reason the
+   * others are: the caller says what it means, and the set of columns anything
+   * outside this hook can write stays enumerable. Cycles are refused here as
+   * well as one level down — the database can only stop a place being its own
+   * parent, so a→b→a is caught by the one check that can see both ends.
+   */
+  const setPlaceParent = async (id: string, parentId: string | null) => {
+    if (parentId === id) return null;
+    const parent = parentId ? places.find(p => p.id === parentId) : null;
+    if (parent?.parent_place_id === id) {
+      toast('Those two places would be inside each other');
+      return null;
+    }
+    return updatePlace(id, { parent_place_id: parentId });
+  };
+
   // updatePlace is deliberately not exported: since sources folded into notes
   // nothing outside this hook writes an arbitrary column on a place, and every
   // edit that remains has its own narrower function above. It stays as the
   // shared implementation those are built on.
-  return { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
+  return { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, setPlaceParent, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
 }

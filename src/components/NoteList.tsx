@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Plus, Minus } from 'lucide-react';
 import { useDragReorder } from '../hooks/useDragReorder';
 import { useSwipeToDelete } from '../hooks/useSwipeToDelete';
 import { toast } from '../lib/toast';
@@ -8,7 +8,7 @@ import { NoteBody } from './NoteBody';
 import { NoteEditToolbar } from './NoteEditToolbar';
 import {
   normaliseDepths, canIndent, canOutdent, canMoveUp, canMoveDown, moveSubtree,
-  shiftSubtree, promotionsAfterDelete, MAX_DEPTH,
+  shiftSubtree, promotionsAfterDelete, hasChildren, visibleItems, MAX_DEPTH,
 } from '../lib/outline';
 import type { Place, TripNote } from '../types';
 
@@ -31,6 +31,10 @@ interface Props {
   onReorder: (orderedIds: string[]) => void;
   /** Undo target for a swipe-delete. Without it a deletion is final. */
   onRestore?: (note: TripNote) => Promise<unknown> | void;
+  /** Fold state, shared with the page so it survives a re-render and a reload. */
+  isCollapsed?: (id: string) => boolean;
+  onToggleCollapse?: (id: string) => void;
+  onExpand?: (id: string) => void;
   /** Tapping an @mention jumps to that place. Omit to render mentions inert. */
   onSelectPlace?: (placeId: string) => void;
   placeholder?: string;
@@ -48,8 +52,10 @@ interface Props {
 // keyboard has no Tab key and a swipe was already spoken for.
 export function NoteList({
   notes, places, onAdd, onUpdate, onRemove, onSetDepths, onReorder, onRestore,
+  isCollapsed, onToggleCollapse, onExpand,
   onSelectPlace, placeholder = 'Add a note…',
 }: Props) {
+  const folded = useCallback((id: string) => isCollapsed?.(id) ?? false, [isCollapsed]);
   // Every read of depth goes through this: the stored value can describe a
   // shape no outline has, and clamping once here means nothing downstream has
   // to think about it.
@@ -126,6 +132,17 @@ export function NoteList({
     return next;
   }, [items, draft, draftIndex]);
 
+  /** What's actually on screen: everything not tucked under a folded bullet. */
+  const visible = useMemo(() => visibleItems(items, folded), [items, folded]);
+
+  /** Where the draft row goes among the visible ones. */
+  const draftVisibleIndex = useMemo(() => {
+    if (!draft) return -1;
+    if (draft.afterId === null) return visible.length;
+    const at = visible.findIndex(n => n.id === draft.afterId);
+    return at === -1 ? visible.length : at + 1;
+  }, [draft, visible]);
+
   /** Depth the row above the draft allows it to reach. */
   const draftMaxDepth = useMemo(() => {
     if (draftIndex <= 0) return 0;
@@ -194,14 +211,29 @@ export function NoteList({
 
     busy.current = true;
     movingFocus.current = true;
-    const note = items.find(n => n.id === id);
+    const at = items.findIndex(n => n.id === id);
+    const note = items[at];
+    // The new bullet is inserted directly after this one, which is inside its
+    // folded subtree — so unfold first, or you would be typing into a row that
+    // isn't on screen.
+    if (folded(id)) onExpand?.(id);
     await commit();
-    setDraftState({ afterId: id, depth: note?.depth ?? 0 });
+    // A bullet with children takes the new one as its FIRST CHILD, not as a
+    // sibling. A sibling is inserted directly after this row and therefore
+    // *above* the children, and since the tree is implied by depth those
+    // children would silently re-parent themselves under the empty bullet that
+    // just appeared — pressing Enter on a heading would steal everything under
+    // it. Every outliner does it this way for the same reason.
+    const nests = at !== -1 && hasChildren(items, at);
+    setDraftState({
+      afterId: id,
+      depth: Math.min((note?.depth ?? 0) + (nests ? 1 : 0), MAX_DEPTH),
+    });
     setFocusId(DRAFT);
     setBody('');
     movingFocus.current = false;
     busy.current = false;
-  }, [focusId, draft, body, commit, blur, items]);
+  }, [focusId, draft, body, commit, blur, items, folded, onExpand]);
 
   /**
    * Backspace at the very start of an empty bullet removes it and puts the
@@ -377,28 +409,44 @@ export function NoteList({
     </li>
   );
 
-  const rows = order.map((note, i) => (
-    <NoteRow
-      key={note.id}
-      note={note}
-      index={i}
-      places={places}
-      editing={focusId === note.id}
-      dragging={dragId === note.id}
-      offsetPx={getRowOffsetPx(i, note.id)}
-      suppressTransition={suppressTransition}
-      canDrag={!focusId && items.length > 1 && items.every(n => n.depth === 0)}
-      onStartEdit={() => void startEdit(note)}
-      onDelete={() => void deleteNote(note, i)}
-      onSelectPlace={onSelectPlace}
-      onGripDown={handlePointerDown}
-      onPointerMove={dragId === note.id ? handlePointerMove : undefined}
-      onPointerUp={dragId === note.id ? handlePointerUp : undefined}
-      renderEditor={renderEditor}
-    />
-  ));
+  // Three index spaces, and they are not interchangeable once anything is
+  // folded: `visible` is what's on screen, `items` is the outline every
+  // structural decision is made against, and `order` is the drag animation's
+  // own copy. They coincide exactly whenever dragging is possible — a flat
+  // list has nothing to fold — but a nested one they do not.
+  const itemIndexOf = useMemo(() => new Map(items.map((n, i) => [n.id, i])), [items]);
+  const orderIndexOf = useMemo(() => new Map(order.map((n, i) => [n.id, i])), [order]);
+  const canDrag = !focusId && items.length > 1 && items.every(n => n.depth === 0);
 
-  if (draftRow) rows.splice(draftIndex, 0, draftRow);
+  const rows = visible.map(note => {
+    const structural = itemIndexOf.get(note.id) ?? -1;
+    const dragIndex = orderIndexOf.get(note.id) ?? 0;
+    return (
+      <NoteRow
+        key={note.id}
+        note={note}
+        index={dragIndex}
+        places={places}
+        editing={focusId === note.id}
+        dragging={dragId === note.id}
+        offsetPx={getRowOffsetPx(dragIndex, note.id)}
+        suppressTransition={suppressTransition}
+        canDrag={canDrag}
+        collapsible={structural !== -1 && hasChildren(items, structural)}
+        collapsed={folded(note.id)}
+        onToggleCollapse={onToggleCollapse ? () => onToggleCollapse(note.id) : undefined}
+        onStartEdit={() => void startEdit(note)}
+        onDelete={() => { if (structural !== -1) void deleteNote(note, structural); }}
+        onSelectPlace={onSelectPlace}
+        onGripDown={handlePointerDown}
+        onPointerMove={dragId === note.id ? handlePointerMove : undefined}
+        onPointerUp={dragId === note.id ? handlePointerUp : undefined}
+        renderEditor={renderEditor}
+      />
+    );
+  });
+
+  if (draftRow) rows.splice(draftVisibleIndex, 0, draftRow);
 
   return (
     <div className="note-list">
@@ -465,6 +513,9 @@ interface RowProps {
   offsetPx: number;
   suppressTransition: boolean;
   canDrag: boolean;
+  collapsible: boolean;
+  collapsed: boolean;
+  onToggleCollapse?: () => void;
   onStartEdit: () => void;
   onDelete: () => void;
   onSelectPlace?: (placeId: string) => void;
@@ -478,6 +529,7 @@ interface RowProps {
 // loop, and a single shared swipe state would move every row at once.
 function NoteRow({
   note, index, places, editing, dragging, offsetPx, suppressTransition, canDrag,
+  collapsible, collapsed, onToggleCollapse,
   onStartEdit, onDelete, onSelectPlace, onGripDown, onPointerMove, onPointerUp, renderEditor,
 }: RowProps) {
   const swipe = useSwipeToDelete({ onDelete, enabled: !editing && !dragging });
@@ -501,9 +553,11 @@ function NoteRow({
 
       <div className="note-bullet-slide" style={swipe.style} {...(editing ? {} : swipe.handlers)}>
         {/* The dot is the drag handle, as in any outliner — no separate grip
-            column, which is what let the row shed its buttons entirely. */}
+            column, which is what let the row shed its buttons entirely. A
+            folded bullet's dot gains a ring, so a section with something
+            hidden under it reads as closed even out of the corner of an eye. */}
         <span
-          className={`note-bullet-dot ${canDrag ? 'note-bullet-dot--draggable' : ''}`}
+          className={`note-bullet-dot ${canDrag ? 'note-bullet-dot--draggable' : ''} ${collapsed ? 'note-bullet-dot--folded' : ''}`}
           aria-hidden="true"
           onPointerDown={canDrag
             ? e => onGripDown(note.id, index, e.currentTarget.parentElement?.parentElement as HTMLElement, e)
@@ -522,6 +576,23 @@ function NoteRow({
           >
             <NoteBody body={note.body} places={places} onSelectPlace={onSelectPlace} />
           </span>
+        )}
+
+        {/* Fold control on the right edge, as in Dynalist. The left of the row
+            is spoken for — the dot drags, the text edits — and the right is
+            the only part of a bullet that isn't already a target. Hidden while
+            editing so it can't be hit by a thumb reaching for the keyboard. */}
+        {collapsible && !editing && onToggleCollapse && (
+          <button
+            type="button"
+            className="note-fold"
+            aria-label={collapsed ? 'Expand' : 'Collapse'}
+            aria-expanded={!collapsed}
+            onClick={e => { e.stopPropagation(); onToggleCollapse(); }}
+            onPointerDown={e => e.stopPropagation()}
+          >
+            {collapsed ? <Plus size={15} /> : <Minus size={15} />}
+          </button>
         )}
       </div>
     </li>
