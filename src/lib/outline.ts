@@ -27,7 +27,18 @@ export const MAX_DEPTH = 5;
 export function normaliseDepths<T extends { depth: number }>(items: T[]): T[] {
   let previous = -1;
   return items.map(item => {
-    const depth = Math.max(0, Math.min(item.depth, previous + 1, MAX_DEPTH));
+    // Coerce before comparing. A row from a database that has not had the
+    // depth migration applied arrives with depth undefined, and undefined
+    // through Math.min is NaN — which is not merely wrong, it is silently
+    // catastrophic: every comparison against NaN is false, so canIndent,
+    // canOutdent, canMoveUp and canMoveDown all say no, and the toolbar
+    // presents a bullet that cannot be indented, outdented or moved while
+    // delete (which never reads depth) stays live. Anything non-finite is
+    // treated as the outer level, so an unmigrated or corrupt row renders as
+    // a flat list that still works rather than one that is quietly inert.
+    const raw = Number(item.depth);
+    const safe = Number.isFinite(raw) ? raw : 0;
+    const depth = Math.max(0, Math.min(safe, previous + 1, MAX_DEPTH));
     previous = depth;
     return depth === item.depth ? item : { ...item, depth };
   });
