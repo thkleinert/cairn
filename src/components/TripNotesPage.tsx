@@ -34,15 +34,20 @@ interface Props {
 //
 // A place's name IS its heading, and tapping it opens the place — the detail
 // sheet layers over this page rather than replacing it, so dismissing it comes
-// back to the same scroll position. Places without notes are omitted; on a
-// long trip they'd be most of the page, and this is a reading surface.
+// back to the same scroll position.
+//
+// Every place gets a heading, including ones with nothing written under them
+// yet. They cost a line each on a long trip, but omitting them made the page a
+// reading surface you could only write to for places you had already written
+// about — to add the first note to a place you had to find it on the map
+// instead. An empty place shows the same waiting bullet an empty list does, so
+// the way in is identical wherever you are.
 export function TripNotesPage({
   places, allTags, tripNotes, notesByPlace, loading,
   onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace, onClose,
 }: Props) {
   useEscapeClose(onClose);
 
-  const withNotes = places.filter(p => (notesByPlace.get(p.id)?.length ?? 0) > 0);
   const tagsOf = (place: Place) =>
     allTags.filter(t => (place.tags ?? []).some(pt => pt.id === t.id));
 
@@ -72,7 +77,7 @@ export function TripNotesPage({
           />
         </section>
 
-        {withNotes.map(place => (
+        {places.map(place => (
           <section className="notes-block" key={place.id}>
             <h2 className="notes-heading">
               <button
@@ -108,10 +113,13 @@ export function TripNotesPage({
           </section>
         ))}
 
-        {/* `loading` matters here: without it the page asserts the trip has
+        {/* Only when the trip has no places either — with places listed, every
+            one of them is already an invitation to write, and this line under
+            them would be claiming the page is empty when it isn't.
+            `loading` matters here: without it the page asserts the trip has
             nothing written down for the moment before the first fetch lands,
             so opening it always flashed this line. */}
-        {!loading && withNotes.length === 0 && tripNotes.length === 0 && (
+        {!loading && places.length === 0 && tripNotes.length === 0 && (
           <p className="notes-empty">
             <NotebookPen size={16} />
             Everything you write down for this trip collects here.
