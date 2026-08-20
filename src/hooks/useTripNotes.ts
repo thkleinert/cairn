@@ -169,6 +169,7 @@ export function useTripNotes(tripId: string | undefined) {
     }
   }, []);
 
+  /** Returns whether the row actually went, so callers can act on failure. */
   const removeNote = useCallback(async (id: string) => {
     // Snapshot for rollback: a delete is the one operation where refetching on
     // failure isn't enough — the row is still there, so the user needs to see
@@ -179,8 +180,9 @@ export function useTripNotes(tripId: string | undefined) {
     if (error) {
       toast('Could not delete note');
       setNotes(previous);
+      return false;
     }
-    return null;
+    return true;
   }, [notes]);
 
   /**
@@ -213,7 +215,7 @@ export function useTripNotes(tripId: string | undefined) {
     const trimmed = body.trim();
     // An emptied bullet is a delete — the check constraint would reject a blank
     // body anyway, and leaving an empty row on screen is worse than removing it.
-    if (!trimmed) return removeNote(id);
+    if (!trimmed) { await removeNote(id); return null; }
 
     // Optimistic; on failure refetch rather than revert, so a collaborator's
     // concurrent edit isn't clobbered by a stale call-time snapshot.

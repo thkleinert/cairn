@@ -94,7 +94,13 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // Filtered here rather than inside the map so the route line and the initial
   // fit follow the same rule as the pins — a route drawn through places you
   // cannot see would be the odd one out.
-  const mapPlaces = showLocations ? places : places.filter(p => p.kind !== 'location');
+  // Only places actually inside a stop are hidden. A location with no parent
+  // — one whose stop was deleted before deletePlace learned to release its
+  // children, or one a collaborator orphaned — behaves as a stop everywhere
+  // else, and hiding it here made it unreachable rather than tidy.
+  const mapPlaces = showLocations
+    ? places
+    : places.filter(p => p.kind !== 'location' || !p.parent_place_id);
   const hiddenLocationCount = places.length - mapPlaces.length;
   const isOwner = trip.owner_id === userId;
 
@@ -105,6 +111,16 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     setSelectedPlaceId(initialPlaceId);
     setJumpToComments(!!initialOpenComments);
   }, [openNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Opening a place the map is currently hiding turns locations back on,
+  // rather than flying to a coordinate with no marker on it and leaving the
+  // map parked on empty ground when the sheet closes.
+  useEffect(() => {
+    if (!selectedPlace) return;
+    if (selectedPlace.kind === 'location' && selectedPlace.parent_place_id && !showLocations) {
+      setShowLocations(true);
+    }
+  }, [selectedPlace, showLocations]);
 
   useEscapeClose(() => setShowSearch(false));
 
@@ -122,6 +138,12 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     // insert failed (offline, RLS, any Supabase error), leaving the user a
     // toast and no way to retry short of finding the same coordinate again.
     if (!newPlace) return false;
+    // A new place filed inside a stop lands inside a row the list keeps folded
+    // by default, so without this the place just added is nowhere on the list
+    // at all. Open its stop.
+    if (newPlace.parent_place_id && isListRowFolded(newPlace.parent_place_id)) {
+      toggleListRow(newPlace.parent_place_id);
+    }
     setPickedPoint(null);
     setSelectedPlaceId(newPlace.id);
     return true;

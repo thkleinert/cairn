@@ -32,8 +32,19 @@ export const ANCHOR_MAX_KM = 15;
  */
 export function looksSpecific(address: string | null | undefined): boolean {
   if (!address) return false;
-  if (/\d/.test(address)) return true;
-  return (address.match(/,/g)?.length ?? 0) >= 2;
+  // A leading postcode is how a town writes itself in much of Europe —
+  // "6060 Hall in Tirol, Österreich" — and it is the whole address, not a
+  // number within one. Dropping it first is what separates that from
+  // "Salvatorstraße 37-33, 6912 Hörbranz, Österreich", where the digits sit
+  // after a street name.
+  //
+  // Without this the digit test alone called Hall in Tirol, Val-d'Isère and
+  // Mayrhofen venues, and a town added 8km from a marked city was silently
+  // filed inside it — the same misreading 20260820_places_kind.sql refuses to
+  // trust for its backfill.
+  const withoutLeadingPostcode = address.replace(/^\s*\d{4,6}\s+/, '');
+  if (/\d/.test(withoutLeadingPostcode)) return true;
+  return (withoutLeadingPostcode.match(/,/g)?.length ?? 0) >= 2;
 }
 
 /**

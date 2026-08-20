@@ -207,6 +207,30 @@ export function usePlaces(tripId: string | undefined) {
 
   const deletePlace = async (id: string) => {
     const place = places.find(p => p.id === id);
+
+    // Release anything inside it FIRST. The composite FK is `on delete set
+    // null (parent_place_id)`, so the database nulls the children's parent but
+    // cannot touch their `kind` — they would be left as locations belonging to
+    // nothing, which the map's Locations filter hides and the place sheet
+    // cannot repair (its "Part of" select already reads empty, so choosing
+    // "Nowhere in particular" fires no change, and with no other stop left the
+    // select is not even rendered). Deleting a city would quietly take its
+    // cafés off the map with no way to bring them back.
+    const children = places.filter(p => p.parent_place_id === id);
+    if (children.length > 0) {
+      const ids = children.map(c => c.id);
+      setPlaces(prev => prev.map(p => ids.includes(p.id)
+        ? { ...p, parent_place_id: null, kind: 'stop' as const } : p));
+      const { error: releaseError } = await supabase
+        .from('places')
+        .update({ parent_place_id: null, kind: 'stop' })
+        .in('id', ids);
+      if (releaseError) {
+        toast('Could not delete place');
+        fetchPlaces();
+        return;
+      }
+    }
     const { error } = await supabase.from('places').delete().eq('id', id);
     if (error) {
       toast('Could not delete place');

@@ -44,7 +44,7 @@ interface Props {
   allPlaces?: Place[];
   onAddNote?: (body: string, opts: { depth: number; afterId: string | null }) => Promise<TripNote | null> | void;
   onUpdateNote?: (id: string, body: string) => Promise<unknown> | void;
-  onRemoveNote?: (id: string) => Promise<unknown> | void;
+  onRemoveNote?: (id: string) => Promise<boolean | void> | boolean | void;
   onRestoreNote?: (note: TripNote) => Promise<unknown> | void;
   onSetNoteDepths?: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorderNotes?: (orderedIds: string[]) => void;

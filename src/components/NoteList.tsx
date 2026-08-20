@@ -26,7 +26,8 @@ interface Props {
   places: Place[];
   onAdd: (body: string, opts: { depth: number; afterId: string | null }) => Promise<TripNote | null> | void;
   onUpdate: (id: string, body: string) => Promise<unknown> | void;
-  onRemove: (id: string) => Promise<unknown> | void;
+  /** Resolves false when the row did not go, so nothing is done on its behalf. */
+  onRemove: (id: string) => Promise<boolean | void> | boolean | void;
   onSetDepths: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorder: (orderedIds: string[]) => void;
   /** Undo target for a swipe-delete. Without it a deletion is final. */
@@ -309,8 +310,8 @@ export function NoteList({
     const note = items.find(n => n.id === id);
     if (note) {
       const promotions = promotionsAfterDelete(items, focusedIndex);
-      await onRemove(id);
-      if (promotions.length > 0) await onSetDepths(promotions);
+      const removed = await onRemove(id);
+      if (removed !== false && promotions.length > 0) await onSetDepths(promotions);
     }
     if (previous) { setFocusId(previous.id); setBody(previous.body); }
     else { setFocusId(null); setBody(''); }
@@ -321,7 +322,12 @@ export function NoteList({
   const deleteNote = useCallback(async (note: TripNote, index: number) => {
     const promotions = promotionsAfterDelete(items, index);
     if (focusId === note.id) { movingFocus.current = true; setFocusId(null); setBody(''); movingFocus.current = false; }
-    await onRemove(note.id);
+    // Everything below is on behalf of a bullet that is gone. If it isn't —
+    // offline, RLS — promoting its children reshapes the outline under a
+    // bullet still sitting there, and offering Undo leads to an insert whose
+    // id already exists, which fails and says so.
+    const removed = await onRemove(note.id);
+    if (removed === false) return false;
     // Children are promoted rather than deleted with their parent, so a swipe
     // can never silently take a whole subtree with it.
     if (promotions.length > 0) await onSetDepths(promotions);
@@ -336,6 +342,7 @@ export function NoteList({
         },
       });
     }
+    return true;
   }, [items, focusId, onRemove, onSetDepths, onRestore]);
 
   // ---- toolbar ----------------------------------------------------------
@@ -486,7 +493,7 @@ export function NoteList({
         collapsed={folded(note.id)}
         onToggleCollapse={onToggleCollapse ? () => onToggleCollapse(note.id) : undefined}
         onStartEdit={() => void startEdit(note)}
-        onDelete={() => { if (structural !== -1) void deleteNote(note, structural); }}
+        onDelete={() => structural === -1 ? false : deleteNote(note, structural)}
         onSelectPlace={onSelectPlace}
         onGripDown={handlePointerDown}
         onPointerMove={dragId === note.id ? handlePointerMove : undefined}
@@ -550,7 +557,8 @@ interface RowProps {
   collapsed: boolean;
   onToggleCollapse?: () => void;
   onStartEdit: () => void;
-  onDelete: () => void;
+  /** False when the row survived, so the swipe can put it back. */
+  onDelete: () => void | boolean | Promise<void | boolean>;
   onSelectPlace?: (placeId: string) => void;
   onGripDown: (id: string, index: number, row: HTMLElement, e: React.PointerEvent) => void;
   onPointerMove?: (e: React.PointerEvent) => void;

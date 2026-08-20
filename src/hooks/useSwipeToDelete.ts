@@ -19,7 +19,14 @@ const COMMIT_FRACTION = 0.35;
 const COMMIT_MAX_PX = 140;
 
 interface Options {
-  onDelete: () => void;
+  /**
+   * Resolve false when the row did not actually go, and the swipe is undone.
+   * Without that answer the gesture has to assume it worked: it latches so a
+   * second swipe can't double-delete, and leaves the row translated off the
+   * edge on its way out — which on a failed delete is a row that is invisible
+   * and can never be swiped again.
+   */
+  onDelete: () => void | boolean | Promise<void | boolean>;
   enabled?: boolean;
 }
 
@@ -91,7 +98,16 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
       // deletion reads as the swipe completing rather than as a row blinking
       // out from under the finger.
       setOffset(-(el.getBoundingClientRect().width || 400));
-      window.setTimeout(onDelete, 160);
+      window.setTimeout(async () => {
+        const removed = await onDelete();
+        if (removed === false) {
+          // It is still here. Unlatch and slide it back, rather than leaving a
+          // row parked off-screen that no further swipe can reach.
+          committed.current = false;
+          setSettling(true);
+          setOffset(0);
+        }
+      }, 160);
     } else {
       setOffset(0);
     }
