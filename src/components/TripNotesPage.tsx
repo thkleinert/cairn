@@ -238,15 +238,20 @@ export function TripNotesPage({
   };
 
   return (
-    <div className="notes-page" role="dialog" aria-modal="true" aria-label="Trip notes">
+    <div className="notes-page" role="dialog" aria-modal="true" aria-label="Trip outliner">
       <div className="trip-topbar">
         <button className="btn-icon" onClick={onClose} aria-label="Back">
           <ArrowLeft size={22} />
         </button>
-        <h1 className="trip-topbar-title">Notes</h1>
+        <h1 className="trip-topbar-title">Trip Outliner</h1>
       </div>
 
       <div className="notes-page-body">
+        {/* Wrapped, not doubly-classed: .notes-group and .notes-block both
+            set margin-bottom at equal specificity, so putting both on one
+            element let the later rule win and swallowed the gap after this
+            section. The place groups below have the same shape. */}
+        <div className="notes-group">
         <section className="notes-block">
           <h2 className="notes-heading notes-heading--foldable">
             <span className="note-bullet-dot notes-heading-dot" aria-hidden="true" />
@@ -314,9 +319,10 @@ export function TripNotesPage({
           />
           )}
         </section>
+        </div>
 
         {top.map(place => (
-          <div key={place.id}>
+          <div className="notes-group" key={place.id}>
             {renderPlace(place, false)}
             {/* Places anchored to this one, nested under it rather than each
                 claiming a top-level section. Folded away with their parent. */}

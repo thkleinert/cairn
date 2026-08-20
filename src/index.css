@@ -1888,11 +1888,18 @@ select.input {
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 16px 20px calc(32px + env(safe-area-inset-bottom));
+  padding: 16px 20px calc(32px + env(safe-area-inset-bottom)) 12px;
 }
 
-.notes-block { margin-bottom: 20px; }
-.notes-block:last-of-type { margin-bottom: 0; }
+/* A top-level place and everything inside it is one group. The breathing room
+   goes between groups; inside one, a parent, its notes and its locations are a
+   single list and sit at bullet spacing.
+   Previously each block carried its own margin, which meant the gap after a
+   nested place was the nested place's margin — zero — so the next top-level
+   place sat flush against it. */
+.notes-group { margin-bottom: 28px; }
+.notes-group:last-child { margin-bottom: 0; }
+.notes-block { margin-bottom: 0; }
 
 /* Anchors the @-suggestion popup, which is positioned against this box
    rather than the sheet — the sheet scrolls, and a popup pinned to it
@@ -2257,15 +2264,10 @@ textarea.mention-input {
 .notes-block > .notes-folded-hint,
 .notes-block > .anchor-hint { margin-left: calc(var(--block-indent) + var(--note-step)); }
 
-/* Bullets sit closer together than sections do. A place and the places inside
-   it are one list, so the gap between them is a bullet's, not a section's —
-   two section margins were stacking here and opening roughly twice the space
-   that separates two notes.
-   Zero, not "small": a note bullet's rhythm comes from padding inside its own
-   box, so two consecutive bullets have no gap between their boxes at all. Any
-   margin here, however slight, is spacing that ordinary notes do not have. */
-.notes-block--anchored { margin-bottom: 0; }
-.notes-block--has-children { margin-bottom: 0; }
+/* Nothing extra between blocks inside a group: a note bullet's rhythm comes
+   from padding inside its own box, so consecutive bullets have no gap between
+   their boxes, and a nested place is one of those bullets. .notes-block above
+   already carries no margin — these are kept as the place to say why. */
 
 /* A location sits indented under its stop. Indent only, for the same reason
    an anchored place on the notes page has no line: it is the stop's own

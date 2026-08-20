@@ -43,15 +43,14 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // Owned here rather than inside the notes page so folding survives the page
   // being closed and reopened, which is most of what folding is for.
   const { isFolded: isCollapsed, toggle: toggleCollapse, expand: expandCollapsed } =
-    useFoldState(trip.id, 'notes', { defaultFolded: false });
+    useFoldState(trip.id, 'notes', { defaultFolded: true });
   // "Leave it where it is" for an anchor suggestion, remembered so the page
   // doesn't ask again every time it's opened.
   const { has: isAnchorDismissed, add: dismissAnchor } =
     usePersistentSet(`cairn:anchor-dismissed:${trip.id}`);
-  // The list starts collapsed: it is the overview of a trip, and one with a
-  // dozen places inside its cities reads as a wall of rows otherwise. The
-  // notes page takes the opposite default above — it is where you read what is
-  // written, so hiding that by default would hide the point of the page.
+  // Both views start collapsed. An outline's value is being able to see the
+  // shape of a trip at a glance and open only the part you want; opening
+  // everything by default is the state you would immediately undo.
   const { isFolded: isListRowFolded, toggle: toggleListRow } =
     useFoldState(trip.id, 'list', { defaultFolded: true });
   const {
