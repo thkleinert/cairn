@@ -1,11 +1,12 @@
 import { useState, useEffect, lazy } from 'react';
 import { MapBoundary } from './MapBoundary';
-import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen } from 'lucide-react';
+import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen, Eye, EyeOff } from 'lucide-react';
 import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTripNotes } from '../hooks/useTripNotes';
 import { useTags } from '../hooks/useTags';
 import { useFoldState } from '../hooks/useFoldState';
+import { usePersistentSet } from '../hooks/usePersistentSet';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 // Lazy: mapbox-gl is ~90% of the bundle; splitting it means the auth screen,
@@ -37,13 +38,10 @@ type Sheet = 'none' | 'tag-filter' | 'settings';
 type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, initialOpenComments, openNonce }: Props) {
-  const { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
+  const { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, setPlaceParent, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   // Owned here rather than inside the notes page so folding survives the page
   // being closed and reopened, which is most of what folding is for.
-  // Sections start collapsed. An outline's value is seeing the shape of a trip
-  // at a glance and opening only the part you want; opening everything by
-  // default is the state you would immediately undo.
   const { isFolded: isCollapsed, toggle: toggleCollapse } =
     useFoldState(trip.id, 'notes', { defaultFolded: true });
   // Bullets fold separately from the sections that hold them, and open by
@@ -52,6 +50,15 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // "there is more here" dot on all of them and hid every nested note.
   const { isFolded: isNoteFolded, toggle: toggleNoteFold, expand: expandNote } =
     useFoldState(trip.id, 'bullets', { defaultFolded: false });
+  // "Leave it where it is" for an anchor suggestion, remembered so the page
+  // doesn't ask again every time it's opened.
+  const { has: isAnchorDismissed, add: dismissAnchor } =
+    usePersistentSet(`cairn:anchor-dismissed:${trip.id}`);
+  // Both views start collapsed. An outline's value is being able to see the
+  // shape of a trip at a glance and open only the part you want; opening
+  // everything by default is the state you would immediately undo.
+  const { isFolded: isListRowFolded, toggle: toggleListRow } =
+    useFoldState(trip.id, 'list', { defaultFolded: true });
   const {
     tripNotes, notesByPlace, loading: notesLoading,
     addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,
@@ -67,6 +74,11 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // that the place detail sheet opens *over*, so the two are shown at once.
   const [showNotes, setShowNotes] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('map');
+  // Whether the map shows the places *inside* stops. A trip with a city and a
+  // dozen cafés in it is a cluster of pins on top of each other at any zoom
+  // that shows the whole route; hiding locations gives back the shape of the
+  // trip. On by default — nothing disappears until asked.
+  const [showLocations, setShowLocations] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
   // The map point being turned into a place (long-press), if any.
   const [pickedPoint, setPickedPoint] = useState<PickedPoint | null>(null);
@@ -79,6 +91,17 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   }, [viewMode]);
 
   const selectedPlace = places.find(p => p.id === selectedPlaceId) ?? null;
+  // Filtered here rather than inside the map so the route line and the initial
+  // fit follow the same rule as the pins — a route drawn through places you
+  // cannot see would be the odd one out.
+  // Only places actually inside a stop are hidden. A location with no parent
+  // — one whose stop was deleted before deletePlace learned to release its
+  // children, or one a collaborator orphaned — behaves as a stop everywhere
+  // else, and hiding it here made it unreachable rather than tidy.
+  const mapPlaces = showLocations
+    ? places
+    : places.filter(p => p.kind !== 'location' || !p.parent_place_id);
+  const hiddenLocationCount = places.length - mapPlaces.length;
   const isOwner = trip.owner_id === userId;
 
   // Re-open the deep-linked place whenever a new jump target arrives (nonce
@@ -88,6 +111,16 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     setSelectedPlaceId(initialPlaceId);
     setJumpToComments(!!initialOpenComments);
   }, [openNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Opening a place the map is currently hiding turns locations back on,
+  // rather than flying to a coordinate with no marker on it and leaving the
+  // map parked on empty ground when the sheet closes.
+  useEffect(() => {
+    if (!selectedPlace) return;
+    if (selectedPlace.kind === 'location' && selectedPlace.parent_place_id && !showLocations) {
+      setShowLocations(true);
+    }
+  }, [selectedPlace, showLocations]);
 
   useEscapeClose(() => setShowSearch(false));
 
@@ -105,6 +138,12 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     // insert failed (offline, RLS, any Supabase error), leaving the user a
     // toast and no way to retry short of finding the same coordinate again.
     if (!newPlace) return false;
+    // A new place filed inside a stop lands inside a row the list keeps folded
+    // by default, so without this the place just added is nowhere on the list
+    // at all. Open its stop.
+    if (newPlace.parent_place_id && isListRowFolded(newPlace.parent_place_id)) {
+      toggleListRow(newPlace.parent_place_id);
+    }
     setPickedPoint(null);
     setSelectedPlaceId(newPlace.id);
     return true;
@@ -166,7 +205,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           <div style={{ display: viewMode === 'map' ? 'contents' : 'none' }}>
             <MapBoundary>
               <MapView
-                places={places}
+                places={mapPlaces}
                 selectedPlace={selectedPlace}
                 activeTags={activeTags}
                 allTags={tags}
@@ -177,6 +216,21 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             </MapBoundary>
           </div>
         )}
+        {/* Only worth offering once the trip actually has something inside a
+            stop — on a flat trip it would be a control that does nothing. */}
+        {viewMode === 'map' && places.some(p => p.kind === 'location') && (
+          <button
+            className={`map-locations-toggle ${showLocations ? '' : 'map-locations-toggle--off'}`}
+            onClick={() => setShowLocations(v => !v)}
+            aria-pressed={showLocations}
+          >
+            {showLocations ? <Eye size={15} /> : <EyeOff size={15} />}
+            <span>
+              {showLocations ? 'Locations' : `${hiddenLocationCount} hidden`}
+            </span>
+          </button>
+        )}
+
         {viewMode === 'map' && !loading && places.length === 0 && !showSearch && !pickedPoint && (
           <div className="map-empty-hint">
             <Plus size={16} />
@@ -190,6 +244,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             allTags={tags}
             onSelectPlace={(place) => setSelectedPlaceId(place.id)}
             onReorder={reorderPlaces}
+            onSetParent={setPlaceParent}
+            isFolded={isListRowFolded}
+            onToggleFold={toggleListRow}
           />
         )}
       </div>
@@ -259,6 +316,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           isNoteFolded={isNoteFolded}
           toggleNoteFold={toggleNoteFold}
           onExpandNote={expandNote}
+          onAnchorPlace={(childId, parentId) => { void setPlaceParent(childId, parentId); }}
+          isAnchorDismissed={isAnchorDismissed}
+          onDismissAnchor={dismissAnchor}
           onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
           onClose={() => setShowNotes(false)}
         />
@@ -274,6 +334,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onToggleVisited={() => toggleVisited(selectedPlace.id, selectedPlace.status)}
           onDelete={handleDeletePlace}
           onSetTags={(tagIds) => setPlaceTags(selectedPlace.id, tagIds)}
+          onSetParent={(parentId) => setPlaceParent(selectedPlace.id, parentId)}
           onAddImage={(url, caption) => addPlaceImage(selectedPlace.id, url, caption)}
           onUploadImage={(file) => uploadPlaceImage(selectedPlace.id, file)}
           onRemoveImage={(imageId) => removePlaceImage(selectedPlace.id, imageId)}

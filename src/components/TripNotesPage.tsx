@@ -1,7 +1,9 @@
-import { ArrowLeft, NotebookPen, Plus, Minus } from 'lucide-react';
+import { ArrowLeft, NotebookPen, Plus, Minus, X } from 'lucide-react';
 import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
+import { groupPlaces } from '../lib/placeTree';
+import { nearestParent } from '../lib/anchor';
 import type { Place, Tag, TripNote } from '../types';
 
 // The trip-wide section folds like any other, but has no place id to key that
@@ -33,6 +35,10 @@ interface Props {
   isNoteFolded: (id: string) => boolean;
   toggleNoteFold: (id: string) => void;
   onExpandNote: (id: string) => void;
+  /** Accepting a "looks like it's in X" suggestion. */
+  onAnchorPlace: (childId: string, parentId: string) => void;
+  isAnchorDismissed: (placeId: string) => boolean;
+  onDismissAnchor: (placeId: string) => void;
   onClose: () => void;
 }
 
@@ -58,7 +64,7 @@ export function TripNotesPage({
   places, allTags, tripNotes, notesByPlace, loading,
   onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace,
   isCollapsed, toggleCollapse, isNoteFolded, toggleNoteFold, onExpandNote,
-  onClose,
+  onAnchorPlace, isAnchorDismissed, onDismissAnchor, onClose,
 }: Props) {
   useEscapeClose(onClose);
 
@@ -69,10 +75,15 @@ export function TripNotesPage({
   const tagsOf = (place: Place) =>
     allTags.filter(t => (place.tags ?? []).some(pt => pt.id === t.id));
 
-  // Alphabetical. This page is looked things up in, and a name is what you
-  // look up by. localeCompare rather than a raw comparison so accented names
-  // land where a reader expects.
-  const top = [...places].sort((a, b) => a.name.localeCompare(b.name));
+  const { top: unsortedTop, childrenOf } = groupPlaces(places);
+
+  // Alphabetical, and only here. The list view is the itinerary — its order is
+  // dragged by hand and means something — whereas this page is looked things
+  // up in, and a name is what you look up by. localeCompare rather than a raw
+  // comparison so "Österreich" and "Zurich" land where a reader expects.
+  const byName = (a: Place, b: Place) => a.name.localeCompare(b.name);
+  const top = [...unsortedTop].sort(byName);
+  const sortedChildren = (id: string) => [...(childrenOf.get(id) ?? [])].sort(byName);
   // Same rule as a place section: with nothing written there is nothing to
   // fold, and nothing that can be left folded.
   const tripWideCollapsed = tripNotes.length > 0 && isCollapsed(TRIP_WIDE);
@@ -86,20 +97,29 @@ export function TripNotesPage({
   // every other fold in the app is. Nothing is overloaded and nothing needs a
   // chevron to explain it — which is also what let every place drop its
   // standing "Add a note…" bullet.
-  const renderPlace = (place: Place) => {
+  const renderPlace = (place: Place, anchored: boolean) => {
     const notes = notesByPlace.get(place.id) ?? [];
+    const childCount = (childrenOf.get(place.id) ?? []).length;
     // Nothing under it, nothing to fold — a control that can only toggle
     // emptiness is furniture. Bullets and list rows already worked this way;
     // headings were the odd one out.
-    const foldable = notes.length > 0;
+    const foldable = notes.length > 0 || childCount > 0;
     // And a section that cannot be folded cannot be left folded. Without this,
     // collapsing a place and then deleting its last note would strand it: the
     // stored flag still says shut, and the control that would open it is gone.
     const collapsed = foldable && isCollapsed(place.id);
+    // Only for places still at the top level, and only until waved away.
+    const suggestion = anchored || isAnchorDismissed(place.id)
+      ? null
+      : nearestParent(place, places);
 
     return (
       <section
-        className="notes-block"
+        className={[
+          'notes-block',
+          anchored ? 'notes-block--anchored' : '',
+          childCount > 0 ? 'notes-block--has-children' : '',
+        ].filter(Boolean).join(' ')}
         key={place.id}
       >
         <h2 className="notes-heading notes-heading--foldable">
@@ -163,10 +183,41 @@ export function TripNotesPage({
           )}
         </h2>
 
+        {/* "Looks like it's in Bangkok." Offered, never applied — a place
+            already sitting at the top level was put there by someone, and a
+            heuristic good enough to guess is not good enough to overrule that.
+            New places are anchored outright instead, where there is nothing to
+            overrule. */}
+        {!anchored && suggestion && (
+          <div className="anchor-hint">
+            <span className="anchor-hint-text">
+              Looks like it&rsquo;s in <strong>{suggestion.name}</strong>
+            </span>
+            <button
+              type="button"
+              className="anchor-hint-accept"
+              onClick={() => onAnchorPlace(place.id, suggestion.id)}
+            >
+              Move it
+            </button>
+            <button
+              type="button"
+              className="anchor-hint-dismiss"
+              aria-label={`Leave ${place.name} where it is`}
+              onClick={() => onDismissAnchor(place.id)}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
         {/* What a folded section is hiding, so it isn't just gone. */}
-        {collapsed && notes.length > 0 && (
+        {collapsed && (notes.length > 0 || childCount > 0) && (
           <button type="button" className="notes-folded-hint" onClick={() => toggleCollapse(place.id)}>
-            {notes.length} note{notes.length === 1 ? '' : 's'}
+            {[
+              notes.length > 0 ? `${notes.length} note${notes.length === 1 ? '' : 's'}` : null,
+              childCount > 0 ? `${childCount} place${childCount === 1 ? '' : 's'}` : null,
+            ].filter(Boolean).join(' · ')}
           </button>
         )}
 
@@ -281,7 +332,11 @@ export function TripNotesPage({
 
         {top.map(place => (
           <div className="notes-group" key={place.id}>
-            {renderPlace(place)}
+            {renderPlace(place, false)}
+            {/* Places anchored to this one, nested under it rather than each
+                claiming a top-level section. Folded away with their parent. */}
+            {!isCollapsed(place.id) &&
+              sortedChildren(place.id).map(child => renderPlace(child, true))}
           </div>
         ))}
 
