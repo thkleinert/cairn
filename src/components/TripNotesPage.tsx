@@ -73,6 +73,9 @@ export function TripNotesPage({
     allTags.filter(t => (place.tags ?? []).some(pt => pt.id === t.id));
 
   const { top, childrenOf } = groupPlaces(places);
+  // Same rule as a place section: with nothing written there is nothing to
+  // fold, and nothing that can be left folded.
+  const tripWideCollapsed = tripNotes.length > 0 && isCollapsed(TRIP_WIDE);
 
   // One place's section: its heading, then its bullets.
   //
@@ -85,8 +88,15 @@ export function TripNotesPage({
   // standing "Add a note…" bullet.
   const renderPlace = (place: Place, anchored: boolean) => {
     const notes = notesByPlace.get(place.id) ?? [];
-    const collapsed = isCollapsed(place.id);
     const childCount = (childrenOf.get(place.id) ?? []).length;
+    // Nothing under it, nothing to fold — a control that can only toggle
+    // emptiness is furniture. Bullets and list rows already worked this way;
+    // headings were the odd one out.
+    const foldable = notes.length > 0 || childCount > 0;
+    // And a section that cannot be folded cannot be left folded. Without this,
+    // collapsing a place and then deleting its last note would strand it: the
+    // stored flag still says shut, and the control that would open it is gone.
+    const collapsed = foldable && isCollapsed(place.id);
     // Only for places still at the top level, and only until waved away.
     const suggestion = anchored || isAnchorDismissed(place.id)
       ? null
@@ -136,20 +146,27 @@ export function TripNotesPage({
             type="button"
             className="notes-heading-space"
             aria-label={`Add a note to ${place.name}`}
-            onClick={() => { if (collapsed) toggleCollapse(place.id); setAddingFor(place.id); }}
+            // Reads the stored flag, not the derived `collapsed`. A place
+            // folded while it had notes, then emptied, keeps the flag set
+            // while showing no control to clear it — writing here would
+            // otherwise fold the section shut the instant the note landed and
+            // made it foldable again.
+            onClick={() => { if (isCollapsed(place.id)) toggleCollapse(place.id); setAddingFor(place.id); }}
           />
 
           {/* Fold sits on the right, as a plus or a minus, the same control a
               note bullet and a list row use. */}
-          <button
-            type="button"
-            className="notes-fold"
-            aria-label={collapsed ? `Expand ${place.name}` : `Collapse ${place.name}`}
-            aria-expanded={!collapsed}
-            onClick={() => toggleCollapse(place.id)}
-          >
-            {collapsed ? <Plus size={16} /> : <Minus size={16} />}
-          </button>
+          {foldable && (
+            <button
+              type="button"
+              className="notes-fold"
+              aria-label={collapsed ? `Expand ${place.name}` : `Collapse ${place.name}`}
+              aria-expanded={!collapsed}
+              onClick={() => toggleCollapse(place.id)}
+            >
+              {collapsed ? <Plus size={16} /> : <Minus size={16} />}
+            </button>
+          )}
         </h2>
 
         {/* "Looks like it's in Bangkok." Offered, never applied — a place
@@ -250,24 +267,26 @@ export function TripNotesPage({
                 setAddingFor(TRIP_WIDE);
               }}
             />
-            <button
-              type="button"
-              className="notes-fold"
-              aria-label={isCollapsed(TRIP_WIDE) ? 'Expand trip notes' : 'Collapse trip notes'}
-              aria-expanded={!isCollapsed(TRIP_WIDE)}
-              onClick={() => toggleCollapse(TRIP_WIDE)}
-            >
-              {isCollapsed(TRIP_WIDE) ? <Plus size={16} /> : <Minus size={16} />}
-            </button>
+            {tripNotes.length > 0 && (
+              <button
+                type="button"
+                className="notes-fold"
+                aria-label={tripWideCollapsed ? 'Expand trip notes' : 'Collapse trip notes'}
+                aria-expanded={!tripWideCollapsed}
+                onClick={() => toggleCollapse(TRIP_WIDE)}
+              >
+                {tripWideCollapsed ? <Plus size={16} /> : <Minus size={16} />}
+              </button>
+            )}
           </h2>
 
-          {isCollapsed(TRIP_WIDE) && tripNotes.length > 0 && (
+          {tripWideCollapsed && (
             <button type="button" className="notes-folded-hint" onClick={() => toggleCollapse(TRIP_WIDE)}>
               {tripNotes.length} note{tripNotes.length === 1 ? '' : 's'}
             </button>
           )}
 
-          {!isCollapsed(TRIP_WIDE) && (
+          {!tripWideCollapsed && (
           <NoteList
             notes={tripNotes}
             places={places}
