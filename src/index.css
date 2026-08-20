@@ -2236,17 +2236,27 @@ textarea.mention-input {
 .notes-fold:active { background: var(--color-bg); color: var(--color-text); }
 
 /* Anchored places sit inside their parent's section — a café under the city
-   it's in. Indent only, no guide line, and that is the rule the whole page
-   follows:
+   it's in — and are drawn as bullets of it, because that is what they are.
+   The indent comes from the bullet gutter the dot occupies, exactly as a
+   note's does, rather than from a margin of its own: a margin would be a
+   second, separate measure of "one level in" that has to be kept in step with
+   the first by hand.
+
+   The rule the whole page follows:
      indentation  = this belongs to the thing above it
      guide line   = this is nested inside a BULLET
-   A note directly under a heading is the section's own content and gets no
-   line; a bullet under another bullet does. An anchored place is a parent
-   place's own content in exactly the same way, so it was drawing a line one
-   level earlier than everything else on the page. */
-.notes-block--anchored {
-  margin-left: 18px;
-}
+   so an anchored place, like a note under a heading, gets no line. */
+.notes-heading-dot { flex-shrink: 0; margin-right: 6px; }
+
+/* Bullets sit closer together than sections do. A place and the places inside
+   it are one list, so the gap between them is a bullet's, not a section's —
+   two section margins were stacking here and opening roughly twice the space
+   that separates two notes.
+   Zero, not "small": a note bullet's rhythm comes from padding inside its own
+   box, so two consecutive bullets have no gap between their boxes at all. Any
+   margin here, however slight, is spacing that ordinary notes do not have. */
+.notes-block--anchored { margin-bottom: 0; }
+.notes-block--has-children { margin-bottom: 0; }
 
 /* A location sits indented under its stop. Indent only, for the same reason
    an anchored place on the notes page has no line: it is the stop's own
