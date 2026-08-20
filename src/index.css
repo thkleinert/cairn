@@ -2236,25 +2236,23 @@ textarea.mention-input {
 .notes-fold:active { background: var(--color-bg); color: var(--color-text); }
 
 /* Anchored places sit inside their parent's section — a café under the city
-   it's in. Indented and hung off a guide line, the same vocabulary a nested
-   bullet uses, so one visual rule covers nesting everywhere on the page. */
+   it's in. Indent only, no guide line, and that is the rule the whole page
+   follows:
+     indentation  = this belongs to the thing above it
+     guide line   = this is nested inside a BULLET
+   A note directly under a heading is the section's own content and gets no
+   line; a bullet under another bullet does. An anchored place is a parent
+   place's own content in exactly the same way, so it was drawing a line one
+   level earlier than everything else on the page. */
 .notes-block--anchored {
   margin-left: 18px;
-  padding-left: 12px;
-  border-left: 1.5px solid var(--color-border);
 }
 
-/* A location sits indented under its stop, hung off a guide line — the same
-   vocabulary a nested note bullet uses, so nesting reads the same wherever it
-   appears in the app. */
+/* A location sits indented under its stop. Indent only, for the same reason
+   an anchored place on the notes page has no line: it is the stop's own
+   content, not something nested inside a bullet. Drawing it here and not
+   there would just move the inconsistency to a different screen. */
 .place-list-item { margin-left: calc(var(--place-depth, 0) * 26px); position: relative; }
-.place-list-item--nested::before {
-  content: '';
-  position: absolute;
-  left: -14px; top: 0; bottom: 0;
-  width: 1.5px;
-  background: var(--color-border);
-}
 
 /* While a row is being dragged past the indent threshold, it picks up the
    accent so the level it would land at is visible before the finger lifts —

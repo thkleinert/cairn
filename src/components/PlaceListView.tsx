@@ -92,7 +92,6 @@ export function PlaceListView({
             className={[
               'place-list-item',
               dragging ? 'place-list-item--dragging' : '',
-              previewDepth > 0 ? 'place-list-item--nested' : '',
               dragging && previewDepth !== depth ? 'place-list-item--renesting' : '',
             ].filter(Boolean).join(' ')}
             style={{
