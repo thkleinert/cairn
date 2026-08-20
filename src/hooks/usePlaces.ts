@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { insertOnce, applyOrder } from '../lib/rows';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
+import { kindFor } from '../lib/anchor';
 import { removeStorageUrls } from '../lib/storage';
 import type { Place, PlaceImage } from '../types';
 
@@ -130,12 +131,24 @@ export function usePlaces(tripId: string | undefined) {
     // length would collide with an existing position.
     const nextPosition = places.reduce((max, p) => Math.max(max, p.position), -1) + 1;
 
+    // Decide what this place is, and what it sits inside, from the trip it is
+    // joining. Done here, in the insert, rather than as a follow-up write: it
+    // costs nothing extra and the place is never briefly misfiled.
+    //
+    // Only on creation. There is nothing to disturb at this moment and both
+    // can be changed on the place sheet, whereas silently re-filing a place
+    // someone already put somewhere is not ours to do — existing places get an
+    // offer on the notes page instead.
+    const { kind, parentId } = kindFor(place, places);
+
     const { data, error } = await supabase
       .from('places')
       .insert({
         ...place,
         trip_id: tripId,
         position: nextPosition,
+        kind,
+        parent_place_id: parentId,
       })
       .select()
       .single();
@@ -195,6 +208,10 @@ export function usePlaces(tripId: string | undefined) {
   const deletePlace = async (id: string) => {
     const place = places.find(p => p.id === id);
 
+    // Noted before the delete, because the foreign key nulls their parent as
+    // part of it and they become unfindable this way afterwards.
+    const childIds = places.filter(p => p.parent_place_id === id).map(p => p.id);
+
     const { error } = await supabase.from('places').delete().eq('id', id);
     if (error) {
       toast('Could not delete place');
@@ -203,6 +220,25 @@ export function usePlaces(tripId: string | undefined) {
     placeIdsRef.current.delete(id);
     setPlaces(prev => prev.filter(p => p.id !== id));
 
+    // Only now, and only because the delete succeeded. The composite FK is
+    // `on delete set null (parent_place_id)`, so the database has already
+    // released these — but it cannot touch their `kind`, and a location
+    // belonging to nothing is hidden by the map's Locations filter with no way
+    // back through the place sheet. Doing this BEFORE the delete, as this
+    // first did, meant a delete that then failed had silently moved a city's
+    // cafés out and turned them into stops, with the city still sitting there.
+    if (childIds.length > 0) {
+      setPlaces(prev => prev.map(p => childIds.includes(p.id)
+        ? { ...p, parent_place_id: null, kind: 'stop' as const } : p));
+      const { error: releaseError } = await supabase
+        .from('places')
+        .update({ parent_place_id: null, kind: 'stop' })
+        .in('id', childIds);
+      // Not fatal: the places are already top-level and visible in the list.
+      // Only the map filter would still hide them, and a refetch will show
+      // whatever the database really holds.
+      if (releaseError) fetchPlaces();
+    }
     // The bucket is public — remove the actual files, not just the rows.
     if (place) {
       removeStorageUrls([place.image_url, ...(place.images ?? []).map(i => i.url)]);
@@ -312,9 +348,49 @@ export function usePlaces(tripId: string | undefined) {
     if (image) removeStorageUrls([image.url]);
   };
 
+  /**
+   * Anchor a place inside another, or release it with null.
+   *
+   * Its own function rather than a general updatePlace call for the reason the
+   * others are: the caller says what it means, and the set of columns anything
+   * outside this hook can write stays enumerable. Cycles are refused here as
+   * well as one level down — the database can only stop a place being its own
+   * parent, so a→b→a is caught by the one check that can see both ends.
+   */
+  const setPlaceParent = async (id: string, parentId: string | null) => {
+    if (parentId === id) return null;
+    const parent = parentId ? places.find(p => p.id === parentId) : null;
+    if (parent?.parent_place_id === id) {
+      toast('Those two places would be inside each other');
+      return null;
+    }
+    // Refused rather than cascaded. Only a stop can hold locations, so filing a
+    // place inside another makes it a location and everything anchored to it
+    // instantly has a parent that cannot be one — groupPlaces stops nesting
+    // them and they pop to the top level, still marked as locations, so the
+    // map's Locations toggle hides rows that now look like ordinary stops.
+    // The database cannot catch it: places_anchored_is_location only inspects
+    // the row being written.
+    //
+    // Moving the children too would be a second, invisible decision about
+    // somebody else's data, so this asks instead.
+    if (parentId && places.some(p => p.parent_place_id === id)) {
+      toast('Move the places inside it out first');
+      return null;
+    }
+    // Kind moves with the parent, because the two are one decision: being
+    // inside a stop is what makes something a location, and the database
+    // refuses anything anchored that is not one. Setting them separately would
+    // mean a moment where the row cannot be written at all.
+    return updatePlace(id, {
+      parent_place_id: parentId,
+      kind: parentId ? 'location' : 'stop',
+    });
+  };
+
   // updatePlace is deliberately not exported: since sources folded into notes
   // nothing outside this hook writes an arbitrary column on a place, and every
   // edit that remains has its own narrower function above. It stays as the
   // shared implementation those are built on.
-  return { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
+  return { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, setPlaceParent, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
 }
