@@ -20,6 +20,10 @@ export function useTripNotes(tripId: string | undefined) {
   // below it. A ref breaks that cycle without reshuffling the file into
   // dependency order.
   const reorderRef = useRef<((ids: string[]) => Promise<void>) | null>(null);
+  // The current notes, for reading AFTER an await. A closure captures them as
+  // they were when the callback was made, which is a different list once a
+  // round trip has happened.
+  const notesRef = useRef<TripNote[]>([]);
 
   const fetchNotes = useCallback(async () => {
     if (!tripId) { setLoading(false); return; }
@@ -54,6 +58,8 @@ export function useTripNotes(tripId: string | undefined) {
       .subscribe();
     return () => { channelRef.current?.unsubscribe(); };
   }, [tripId, fetchNotes]);
+
+  notesRef.current = notes;
 
   const tripNotes = useMemo(
     () => notes.filter(n => !n.place_id),
@@ -113,7 +119,17 @@ export function useTripNotes(tripId: string | undefined) {
     // bullet, which is the common case, needs no reorder at all.
     const afterId = opts?.afterId;
     if (afterId && scope.length > 0 && scope[scope.length - 1].id !== afterId) {
-      const ordered = scope.map(n => n.id);
+      // Rebuilt from current state, not from the `scope` captured before the
+      // insert. reorder_trip_notes renumbers only the ids it is handed, so a
+      // bullet that arrived during the round trip — a collaborator's, or one
+      // the insert's own realtime refetch delivered — would be left out and
+      // keep a position every other row in the scope had just been renumbered
+      // past, colliding with one of them.
+      const current = notesRef.current
+        .filter(n => (n.place_id ?? null) === (placeId ?? null))
+        .sort((a, b) => a.position - b.position ||
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const ordered = current.map(n => n.id).filter(id => id !== created.id);
       const at = ordered.indexOf(afterId);
       if (at !== -1) {
         ordered.splice(at + 1, 0, created.id);
@@ -203,7 +219,8 @@ export function useTripNotes(tripId: string | undefined) {
       // Losing the byline is a smaller loss than losing the note.
       created_by: note.created_by === auth.user?.id ? note.created_by : null,
     });
-    if (error) { toast('Could not restore the note'); fetchNotes(); }
+    if (error) { toast('Could not restore the note'); fetchNotes(); return false; }
+    return true;
   }, [fetchNotes]);
 
   const updateNote = useCallback(async (id: string, body: string) => {

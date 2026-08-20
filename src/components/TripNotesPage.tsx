@@ -22,7 +22,7 @@ interface Props {
   ) => Promise<TripNote | null> | void;
   onUpdate: (id: string, body: string) => Promise<unknown> | void;
   onRemove: (id: string) => Promise<boolean | void> | boolean | void;
-  onRestore: (note: TripNote) => Promise<unknown> | void;
+  onRestore: (note: TripNote) => Promise<boolean | void> | boolean | void;
   onSetDepths: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorder: (orderedIds: string[]) => void;
   onSelectPlace: (placeId: string) => void;

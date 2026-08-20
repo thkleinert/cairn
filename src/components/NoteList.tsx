@@ -30,8 +30,12 @@ interface Props {
   onRemove: (id: string) => Promise<boolean | void> | boolean | void;
   onSetDepths: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorder: (orderedIds: string[]) => void;
-  /** Undo target for a swipe-delete. Without it a deletion is final. */
-  onRestore?: (note: TripNote) => Promise<unknown> | void;
+  /**
+   * Undo target for a swipe-delete. Without it a deletion is final.
+   * Resolve false when the row did not come back, so the children promoted by
+   * the delete are not pushed down under a parent that no longer exists.
+   */
+  onRestore?: (note: TripNote) => Promise<boolean | void> | boolean | void;
   /** Fold state, shared with the page so it survives a re-render and a reload. */
   isCollapsed?: (id: string) => boolean;
   onToggleCollapse?: (id: string) => void;
@@ -209,12 +213,18 @@ export function NoteList({
     if (opts.offerUndo && onRestore) {
       toast('Note deleted', 'info', {
         label: 'Undo',
-        run: () => {
-          void onRestore(note);
+        // Sequenced, and the second write conditional on the first. Fired
+        // together, a failed restore still pushed the children back down a
+        // level — leaving them stored deeper than any surviving ancestor,
+        // which normaliseDepths hides on screen and the next move then writes
+        // back as though it were intended.
+        run: () => { void (async () => {
+          const back = await onRestore(note);
+          if (back === false) return;
           if (promotions.length > 0) {
-            void onSetDepths(promotions.map(p => ({ id: p.id, depth: p.depth + 1 })));
+            await onSetDepths(promotions.map(p => ({ id: p.id, depth: p.depth + 1 })));
           }
-        },
+        })(); },
       });
     }
     return true;
@@ -456,7 +466,22 @@ export function NoteList({
     // Emptied: this is a deletion, not a new bullet. Committing first would
     // delete the row and then anchor the new draft to its dead id, which sent
     // the bullet to the bottom of the list.
-    if (!body.trim()) { await handleBackspaceAtStart(); return; }
+    //
+    // Removed here rather than delegated to handleBackspaceAtStart, whose own
+    // guard is `body.length > 0` — a body of spaces is empty by one test and
+    // not by the other, so Enter on it did nothing whatsoever and the key had
+    // already been swallowed.
+    if (!body.trim()) {
+      const at = items.findIndex(n => n.id === id);
+      const note = at === -1 ? undefined : items[at];
+      const above = at > 0 ? visible[visible.findIndex(n => n.id === id) - 1] : undefined;
+      await withFocusMove(async () => {
+        if (note) await removeBullet(note, at, { offerUndo: false });
+        if (above) { setFocusId(above.id); setBody(above.body); }
+        else { setFocusId(null); setBody(''); }
+      });
+      return;
+    }
 
     busy.current = true;
     movingFocus.current = true;
@@ -480,16 +505,25 @@ export function NoteList({
       movingFocus.current = false;
       busy.current = false;
     }
-  }, [focusId, draft, body, commit, blur, items, folded, onExpand, openDraft, handleBackspaceAtStart]);
+  }, [focusId, draft, body, commit, blur, items, visible, folded, onExpand, openDraft, removeBullet, withFocusMove]);
 
   const deleteNote = useCallback(async (note: TripNote, index: number) => {
-    const removed = await removeBullet(note, index, { offerUndo: true });
-    // Torn down only once the row has actually gone. Clearing first meant an
-    // offline delete took the keyboard, the toolbar and the caret away and
-    // then left the bullet sitting there with a toast saying it had failed.
-    if (removed && focusIdRef.current === note.id) {
-      await withFocusMove(() => { setFocusId(null); setBody(''); });
-    }
+    let removed = false;
+    // The guard goes up around the REMOVAL, not after it. removeNote drops the
+    // row from state synchronously before its own await, so the <li> unmounts
+    // inside this same click and fires blur while the guard is still down —
+    // and blur then commits against a note that no longer exists. Deleting a
+    // bullet whose text had been edited produced a spurious "Could not save
+    // note"; deleting one whose text had been cleared ran the whole deletion a
+    // second time, for a second Undo toast on an already-gone row and a second
+    // promotion pass over its children.
+    await withFocusMove(async () => {
+      removed = await removeBullet(note, index, { offerUndo: true });
+      // Torn down only once the row has actually gone. Clearing first meant an
+      // offline delete took the keyboard, the toolbar and the caret away and
+      // then left the bullet sitting there with a toast saying it had failed.
+      if (removed && focusIdRef.current === note.id) { setFocusId(null); setBody(''); }
+    });
     return removed;
   }, [removeBullet, withFocusMove]);
 

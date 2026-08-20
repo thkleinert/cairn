@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 // A set of ids remembered per trip in localStorage.
 //
@@ -33,9 +33,25 @@ function save(key: string, value: Set<string>) {
 
 export function usePersistentSet(storageKey: string | null) {
   const [ids, setIds] = useState<Set<string>>(() => storageKey ? load(storageKey) : new Set());
+  // Suppresses the write that would otherwise follow loading, so switching
+  // trips doesn't immediately persist what was just read back.
+  const loadedKey = useRef<string | null>(null);
 
   // Re-read when the key changes: these hooks outlive a trip switch.
-  useEffect(() => { setIds(storageKey ? load(storageKey) : new Set()); }, [storageKey]);
+  useEffect(() => {
+    loadedKey.current = storageKey;
+    setIds(storageKey ? load(storageKey) : new Set());
+  }, [storageKey]);
+
+  // Persisted from an effect, not from inside the updaters below. React may
+  // invoke an updater more than once — StrictMode does, and so does concurrent
+  // rebasing — and a write in there can persist an intermediate value computed
+  // against a base that was then thrown away. useTripNotes.setNoteDepths
+  // carries a comment warning about exactly this; this hook was doing it.
+  useEffect(() => {
+    if (!storageKey || loadedKey.current !== storageKey) return;
+    save(storageKey, ids);
+  }, [ids, storageKey]);
 
   const has = useCallback((id: string) => ids.has(id), [ids]);
 
@@ -43,30 +59,27 @@ export function usePersistentSet(storageKey: string | null) {
     setIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
-      if (storageKey) save(storageKey, next);
       return next;
     });
-  }, [storageKey]);
+  }, []);
 
   const add = useCallback((id: string) => {
     setIds(prev => {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
       next.add(id);
-      if (storageKey) save(storageKey, next);
       return next;
     });
-  }, [storageKey]);
+  }, []);
 
   const remove = useCallback((id: string) => {
     setIds(prev => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
       next.delete(id);
-      if (storageKey) save(storageKey, next);
       return next;
     });
-  }, [storageKey]);
+  }, []);
 
   return { has, toggle, add, remove };
 }

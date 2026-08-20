@@ -40,6 +40,13 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
   // real distance.
   const [threshold, setThreshold] = useState(COMMIT_MAX_PX);
   const engaged = useRef(false);
+  // Raised when a gesture actually became a swipe, so the click the browser
+  // synthesises afterwards can be swallowed. Without it, dragging a row left
+  // and releasing short of the threshold sprang the row back AND opened its
+  // editor — the two things the user was choosing between. Touch usually
+  // cancels that click via tap-slop; a mouse drag, which this hook explicitly
+  // supports, does not.
+  const swallowNextClick = useRef(false);
   // Set once the row is on its way out, so a second swipe during the collapse
   // animation can't fire onDelete twice for the same row.
   const committed = useRef(false);
@@ -77,6 +84,7 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
       if (Math.abs(dy) > Math.abs(dx)) { reset(); return; }
       if (-dx < ENGAGE_PX) return;
       engaged.current = true;
+      swallowNextClick.current = true;
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     }
 
@@ -131,7 +139,16 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
      */
     armed: -offset >= threshold,
     swiping: offset !== 0,
-    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
+    handlers: {
+      onPointerDown, onPointerMove, onPointerUp, onPointerCancel,
+      // Capture phase, so it runs before the row's own click handler.
+      onClickCapture: (e: React.MouseEvent) => {
+        if (!swallowNextClick.current) return;
+        swallowNextClick.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+      },
+    },
     /** Transitions are off during the drag so the row tracks the finger 1:1. */
     style: {
       transform: offset ? `translateX(${offset}px)` : undefined,
