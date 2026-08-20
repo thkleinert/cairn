@@ -1,4 +1,4 @@
-import { ArrowLeft, NotebookPen, ChevronRight, Plus, Minus, X } from 'lucide-react';
+import { ArrowLeft, NotebookPen, Plus, Minus, X } from 'lucide-react';
 import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
@@ -49,8 +49,8 @@ interface Props {
 // height of the screen it had available.
 //
 // A place's name IS its heading, and the heading carries all three things you
-// can do with a section: fold it, write in it, or go to the place. Splitting
-// them is what keeps the page quiet — see renderPlace.
+// can do with a section: go to the place, write in it, or fold it. They are
+// split by what each part of the row already means — see renderPlace.
 //
 // Every place gets a heading, including ones with nothing written under them
 // yet. They cost a line each on a long trip, but omitting them made the page a
@@ -76,13 +76,13 @@ export function TripNotesPage({
 
   // One place's section: its heading, then its bullets.
   //
-  // The heading is three targets, which is what resolves "tapping a heading
-  // opens the place, so where do collapse and add-a-note go?" without
-  // overloading anything: the leading caret folds, the line writes, the
-  // trailing chevron travels. The chevron keeps the meaning it always had —
-  // it was already the "go here" affordance — and taking navigation off the
-  // rest of the row is what freed the line to be the way in for writing, which
-  // in turn let every place drop its standing "Add a note…" bullet.
+  // The heading is three targets, split by what each part of it already means
+  // rather than by adding icons to say so: the NAME is the place, so tapping
+  // the words goes there; the BLANK SPACE after the name is an empty line, so
+  // tapping it starts writing on one; and the fold sits on the right where
+  // every other fold in the app is. Nothing is overloaded and nothing needs a
+  // chevron to explain it — which is also what let every place drop its
+  // standing "Add a note…" bullet.
   const renderPlace = (place: Place, anchored: boolean) => {
     const notes = notesByPlace.get(place.id) ?? [];
     const collapsed = isCollapsed(place.id);
@@ -98,16 +98,14 @@ export function TripNotesPage({
         key={place.id}
       >
         <h2 className="notes-heading notes-heading--foldable">
-          {/* Tapping the line writes; the chevron travels. Three targets on
-              one row — fold, write, go — and each is the obvious size and
-              place for what it does. This is also what let every place stop
-              carrying a standing "Add a note…" row: the heading IS the way in,
-              so an empty place needs nothing under it at all. */}
+          {/* The name is the place: tapping the words themselves goes there.
+              A chevron saying so was redundant once the text does it, and it
+              cost a target's width on every heading. */}
           <button
             type="button"
             className="notes-heading-link"
-            aria-label={`Add a note to ${place.name}`}
-            onClick={() => { if (collapsed) toggleCollapse(place.id); setAddingFor(place.id); }}
+            aria-label={`Open ${place.name}`}
+            onClick={() => onSelectPlace(place.id)}
           >
             <span className="notes-heading-name">{place.name}</span>
             {tagsOf(place).length > 0 && (
@@ -120,10 +118,19 @@ export function TripNotesPage({
               </span>
             )}
           </button>
+
+          {/* Everything after the name is blank line waiting to be written on,
+              which is exactly what tapping it does. It keeps a minimum width so
+              a long place name can never squeeze the way-in down to nothing. */}
+          <button
+            type="button"
+            className="notes-heading-space"
+            aria-label={`Add a note to ${place.name}`}
+            onClick={() => { if (collapsed) toggleCollapse(place.id); setAddingFor(place.id); }}
+          />
+
           {/* Fold sits on the right, as a plus or a minus, the same control a
-              note bullet uses — one gesture for "there is more under this"
-              wherever it appears. It comes before the chevron because it acts
-              on this row, while the chevron leaves for somewhere else. */}
+              note bullet and a list row use. */}
           <button
             type="button"
             className="notes-fold"
@@ -132,14 +139,6 @@ export function TripNotesPage({
             onClick={() => toggleCollapse(place.id)}
           >
             {collapsed ? <Plus size={16} /> : <Minus size={16} />}
-          </button>
-          <button
-            type="button"
-            className="notes-heading-go"
-            aria-label={`Open ${place.name}`}
-            onClick={() => onSelectPlace(place.id)}
-          >
-            <ChevronRight size={17} />
           </button>
         </h2>
 
@@ -228,6 +227,19 @@ export function TripNotesPage({
             >
               <span className="notes-heading-name">For the whole trip</span>
             </button>
+            {/* Same blank remainder as a place heading, so the fold lands on
+                the same axis and the row is written on the same way. There is
+                nowhere for the words themselves to lead here, so both halves
+                start a note rather than one of them navigating. */}
+            <button
+              type="button"
+              className="notes-heading-space"
+              aria-label="Add a general note"
+              onClick={() => {
+                if (isCollapsed(TRIP_WIDE)) toggleCollapse(TRIP_WIDE);
+                setAddingFor(TRIP_WIDE);
+              }}
+            />
             <button
               type="button"
               className="notes-fold"

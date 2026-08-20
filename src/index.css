@@ -2193,15 +2193,30 @@ textarea.mention-input {
    all; without min-width a flex item refuses to go below its content width. */
 .notes-heading-link {
   display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
-  /* flex:1 rather than width:100% — the chevron beside it is a sibling button
-     now, not a child, and a full-width line would push it off the row. */
-  flex: 1; min-width: 0;
+  /* Shrinks to its text rather than filling the row: what is left over is a
+     separate target that starts a note, so the name must not claim it. Still
+     allowed to shrink (and ellipsise) when the name is long. */
+  flex: 0 1 auto; min-width: 0;
   text-align: left;
   padding: 4px 0;
   border-radius: 4px;
   color: var(--color-text);
   font: inherit;
 }
+.notes-heading-link:active .notes-heading-name { opacity: 0.55; }
+
+/* The blank remainder of the heading line. Invisible until touched — it is a
+   place to start writing, not a button, and drawing it as one would put a
+   second piece of furniture on every heading. Grows to fill, but never below
+   a thumb's width, so a long name cannot squeeze it out of existence. */
+.notes-heading-space {
+  flex: 1 0 56px;
+  align-self: stretch;
+  min-width: 56px;
+  border-radius: var(--radius-sm);
+  cursor: text;
+}
+.notes-heading-space:active { background: var(--color-bg); }
 .notes-heading-link:active { opacity: 0.55; }
 
 /* A foldable heading is two targets, not one: the caret folds, everything
@@ -2356,18 +2371,6 @@ textarea.mention-input {
   display: flex; gap: 4px;
 }
 
-/* Its own target now, not decoration on the end of the name: the chevron is
-   the only part of the heading that travels to the place, and the line beside
-   it starts a note. Sized for a thumb rather than for the icon inside it. */
-.notes-heading-go {
-  flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  width: 36px; height: 34px;
-  margin-right: -6px;
-  border-radius: var(--radius-sm);
-  color: var(--color-muted);
-}
-.notes-heading-go:active { background: var(--color-bg); color: var(--color-text); }
 
 .place-note-tag {
   /* Shrinks by ellipsising its own text, so a squeezed pill still looks like a
