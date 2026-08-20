@@ -31,6 +31,9 @@ interface Props {
   /** Fold state, owned by the trip so it survives the page closing and reopening. */
   isCollapsed: (id: string) => boolean;
   toggleCollapse: (id: string) => void;
+  /** Bullets keep their own fold state — a bullet is not a section. */
+  isNoteFolded: (id: string) => boolean;
+  toggleNoteFold: (id: string) => void;
   onExpandNote: (id: string) => void;
   /** Accepting a "looks like it's in X" suggestion. */
   onAnchorPlace: (childId: string, parentId: string) => void;
@@ -60,7 +63,7 @@ interface Props {
 export function TripNotesPage({
   places, allTags, tripNotes, notesByPlace, loading,
   onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace,
-  isCollapsed, toggleCollapse, onExpandNote,
+  isCollapsed, toggleCollapse, isNoteFolded, toggleNoteFold, onExpandNote,
   onAnchorPlace, isAnchorDismissed, onDismissAnchor, onClose,
 }: Props) {
   useEscapeClose(onClose);
@@ -125,7 +128,10 @@ export function TripNotesPage({
               children happen to be notes and other places. Reusing the
               bullet's own class rather than copying its measurements is what
               keeps the two from drifting apart the next time either moves. */}
-          <span className="note-bullet-dot notes-heading-dot" aria-hidden="true" />
+          <span
+            className={`note-bullet-dot notes-heading-dot ${collapsed ? 'note-bullet-dot--folded' : ''}`}
+            aria-hidden="true"
+          />
           {/* The name is the place: tapping the words themselves goes there.
               A chevron saying so was redundant once the text does it, and it
               cost a target's width on every heading. */}
@@ -225,8 +231,8 @@ export function TripNotesPage({
             onRestore={onRestore}
             onSetDepths={onSetDepths}
             onReorder={onReorder}
-            isCollapsed={isCollapsed}
-            onToggleCollapse={toggleCollapse}
+            isCollapsed={isNoteFolded}
+            onToggleCollapse={toggleNoteFold}
             onExpand={onExpandNote}
             startDraft={addingFor === place.id}
             onDraftStarted={() => setAddingFor(null)}
@@ -254,7 +260,10 @@ export function TripNotesPage({
         <div className="notes-group">
         <section className="notes-block">
           <h2 className="notes-heading notes-heading--foldable">
-            <span className="note-bullet-dot notes-heading-dot" aria-hidden="true" />
+            <span
+              className={`note-bullet-dot notes-heading-dot ${tripWideCollapsed ? 'note-bullet-dot--folded' : ''}`}
+              aria-hidden="true"
+            />
             {/* Nowhere for these words to lead — there is no page for the
                 general section — so the whole line means "write here". */}
             <button
@@ -310,8 +319,8 @@ export function TripNotesPage({
             onRestore={onRestore}
             onSetDepths={onSetDepths}
             onReorder={onReorder}
-            isCollapsed={isCollapsed}
-            onToggleCollapse={toggleCollapse}
+            isCollapsed={isNoteFolded}
+            onToggleCollapse={toggleNoteFold}
             onExpand={onExpandNote}
             startDraft={addingFor === TRIP_WIDE}
             onDraftStarted={() => setAddingFor(null)}

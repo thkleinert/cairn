@@ -42,8 +42,14 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   // Owned here rather than inside the notes page so folding survives the page
   // being closed and reopened, which is most of what folding is for.
-  const { isFolded: isCollapsed, toggle: toggleCollapse, expand: expandCollapsed } =
+  const { isFolded: isCollapsed, toggle: toggleCollapse } =
     useFoldState(trip.id, 'notes', { defaultFolded: true });
+  // Bullets fold separately from the sections that hold them, and open by
+  // default. Sharing one state was a real bug: with sections defaulting to
+  // folded, every note bullet counted as folded too — which drew the ringed
+  // "there is more here" dot on all of them and hid every nested note.
+  const { isFolded: isNoteFolded, toggle: toggleNoteFold, expand: expandNote } =
+    useFoldState(trip.id, 'bullets', { defaultFolded: false });
   // "Leave it where it is" for an anchor suggestion, remembered so the page
   // doesn't ask again every time it's opened.
   const { has: isAnchorDismissed, add: dismissAnchor } =
@@ -285,7 +291,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onReorder={reorderNotes}
           isCollapsed={isCollapsed}
           toggleCollapse={toggleCollapse}
-          onExpandNote={expandCollapsed}
+          isNoteFolded={isNoteFolded}
+          toggleNoteFold={toggleNoteFold}
+          onExpandNote={expandNote}
           onAnchorPlace={(childId, parentId) => { void setPlaceParent(childId, parentId); }}
           isAnchorDismissed={isAnchorDismissed}
           onDismissAnchor={dismissAnchor}

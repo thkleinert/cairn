@@ -22,7 +22,14 @@ import { usePersistentSet } from './usePersistentSet';
 // at a trip right now. Stored server-side it would fold a collaborator's
 // sections shut while they were reading them.
 
-export type FoldScope = 'notes' | 'list';
+export type FoldScope =
+  /** Sections on the outliner: General, and one per place. Folded by default. */
+  | 'notes'
+  /** Bullets within those sections. Open by default — you opened the section
+   *  to read them, and a bullet is not a section. */
+  | 'bullets'
+  /** Rows on the places list. Folded by default. */
+  | 'list';
 
 interface Options {
   /** What a section with nothing recorded about it does. */

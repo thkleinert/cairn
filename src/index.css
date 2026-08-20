@@ -2065,8 +2065,11 @@ textarea.mention-input {
 }
 .note-fold:active { opacity: 1; background: var(--color-bg); }
 
-/* A folded bullet's dot gains a ring, so a section with something hidden under
-   it reads as closed at a glance rather than as an ordinary bullet. */
+/* A folded dot gains a ring — on a bullet and on a place heading alike, since
+   they are the same dot meaning the same thing. Something is hidden under
+   this, and it reads that way at a glance rather than as an ordinary bullet.
+   It is only ever drawn on something that IS folded: when every dot carries it
+   the ring stops meaning anything. */
 .note-bullet-dot--folded::before {
   background: transparent;
   border: 2px solid var(--color-muted);
