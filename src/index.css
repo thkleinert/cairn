@@ -987,41 +987,6 @@ select.input {
 }
 .section-caret--open { transform: rotate(90deg); }
 
-.source-pills {
-  display: flex; flex-wrap: wrap; gap: 8px;
-  margin-bottom: 10px;
-}
-.source-pill {
-  display: inline-flex; align-items: center; gap: 2px;
-  padding-left: 4px;
-  border-radius: 99px;
-  border: 1.5px solid var(--color-border);
-  min-height: 36px;
-}
-.source-pill-link {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 0 6px 0 10px;
-  font-size: 13px; font-weight: 500;
-  color: var(--color-primary);
-}
-.source-pill-remove {
-  display: flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px;
-  margin-right: 4px;
-  border-radius: 50%;
-  color: var(--color-muted);
-  transition: background 0.12s, color 0.12s;
-}
-.source-pill-remove:active { background: var(--color-bg); color: var(--color-text); }
-
-.source-pill--add {
-  padding: 0 12px;
-  border-style: dashed;
-  color: var(--color-muted);
-  transition: border-color 0.12s, color 0.12s;
-}
-.source-pill--add:active { border-color: var(--color-primary); color: var(--color-primary); }
-
 /* Multi-image gallery */
 .image-gallery {
   display: flex; gap: 8px;
@@ -1876,9 +1841,39 @@ select.input {
 .pick-custom-btn { width: 100%; margin-top: 4px; }
 
 /* ============================================================
-   TRIP NOTES — the whole trip's writing in one sheet
+   TRIP NOTES — the whole trip's writing on one page
    ============================================================ */
-.trip-notes-sheet { min-height: 60dvh; }
+
+/* Full-screen layer over the trip, below .bottom-sheet-overlay's z-index 50 so
+   tapping a place heading opens its detail sheet on top of this rather than
+   underneath it.
+   Sized exactly like .bottom-sheet-overlay, and for the same reason: on iOS
+   neither innerHeight nor dvh shrinks for the keyboard, so a page sized from
+   them alone leaves the map showing through the gap the keyboard opens up.
+   --keyboard-inset is a padding, not a height, so an under-report can't
+   uncover the page behind. */
+.notes-page {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  min-height: var(--app-height, 100dvh);
+  padding-bottom: var(--keyboard-inset, 0px);
+  box-sizing: border-box;
+  z-index: 40;
+  display: flex; flex-direction: column;
+  background: var(--color-surface);
+  animation: fadeIn 0.18s ease;
+}
+
+/* The page's scroller, so the topbar stays put while the outline moves.
+   20px sides matches .bottom-sheet, which is what these blocks were laid out
+   against. */
+.notes-page-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 20px calc(32px + env(safe-area-inset-bottom));
+}
 
 .notes-block { margin-bottom: 20px; }
 .notes-block:last-of-type { margin-bottom: 0; }
@@ -2030,6 +2025,24 @@ textarea.mention-input {
 /* No onSelectPlace wired (the read-only shared view) — still tinted so the
    link is legible as a place, but not pretending to be tappable. */
 .mention-chip--inert { cursor: default; }
+
+/* A URL inside a note, labelled with its host. inline-flex rather than inline
+   so the icon sits on the text baseline's centre; the whole pill is one
+   unbreakable unit, which is the point — a host name is short, and wrapping
+   "exam / ple.com" across two lines reads as two links.
+   The raw href is deliberately not shown: a Maps or booking URL is mostly
+   opaque path, and a bullet full of them stops being readable prose. */
+.note-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  vertical-align: baseline;
+  white-space: nowrap;
+  padding: 1px 7px 1px 5px;
+  border-radius: 99px;
+  border: 1.5px solid var(--color-border);
+  color: var(--color-primary);
+  font-size: 13px; font-weight: 500;
+}
+.note-link:active { background: var(--color-bg); }
 
 .mention-suggestions {
   position: absolute;

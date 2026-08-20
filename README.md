@@ -25,7 +25,7 @@ traveling with.
 
 <img src="docs/screenshots/trip-map.png" width="260" alt="Map view with emoji markers and the visited route" />&nbsp;
 <img src="docs/screenshots/trip-places-list.png" width="260" alt="Reorderable list of places" />&nbsp;
-<img src="docs/screenshots/place-detail.png" width="260" alt="Place detail with notes, sources and photos" />
+<img src="docs/screenshots/place-detail.png" width="260" alt="Place detail with notes and photos" />
 
 </div>
 
@@ -110,9 +110,9 @@ at the bottom flips between them.
 Tapping a place opens its detail sheet:
 
 - **Notes** — the practical stuff: parking, opening hours, "bring a rain
-  jacket".
-- **Sources** — the article, reel, or maps link that convinced you this place
-  was worth adding. Six months later you'll want it.
+  jacket". Paste in the article, reel, or maps link that convinced you this
+  place was worth adding — links render as their site name, so six months
+  later you still have it without a wall of URL.
 - **Photos** — a gallery per place: the Google Places photo it was created
   with (persisted into your own storage so it never expires), plus anything
   you upload yourself.

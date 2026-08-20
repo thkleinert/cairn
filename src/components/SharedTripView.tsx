@@ -73,7 +73,6 @@ export function SharedTripView({ shareToken }: Props) {
           allTags={tags}
           onClose={() => setSelectedPlace(null)}
           onToggleVisited={() => {}}
-          onUpdate={() => {}}
           onDelete={() => {}}
           onSetTags={() => {}}
           onAddImage={async () => null}

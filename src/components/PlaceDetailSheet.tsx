@@ -7,7 +7,7 @@ import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
 import { NoteList } from './NoteList';
 import {
-  X, ExternalLink,
+  X,
   Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage, TripNote } from '../types';
@@ -24,20 +24,11 @@ function CheckRing() {
   );
 }
 
-function displayHost(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
-}
-
 interface Props {
   place: Place;
   allTags: Tag[];
   onClose: () => void;
   onToggleVisited: () => void;
-  onUpdate: (updates: Partial<Place>) => void;
   onDelete: () => void;
   onSetTags: (tagIds: string[]) => void;
   onAddImage: (url: string, caption?: string) => Promise<PlaceImage | null>;
@@ -59,7 +50,7 @@ interface Props {
 }
 
 export function PlaceDetailSheet({
-  place, allTags, onClose, onToggleVisited, onUpdate, onDelete,
+  place, allTags, onClose, onToggleVisited, onDelete,
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
   scrollToComments = false, onCommentsShown,
   notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onReorderNotes,
@@ -69,7 +60,6 @@ export function PlaceDetailSheet({
   const [showDelete, setShowDelete] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAddPhotos, setShowAddPhotos] = useState(false);
-  const [showAddSource, setShowAddSource] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(true);
@@ -112,7 +102,6 @@ export function PlaceDetailSheet({
   // get_shared_trip flattens a place's bullets onto the place itself, since the
   // anonymous view has no trip-notes subscription of its own.
   const sharedNotes = readOnly ? (place.note_items ?? []) : notes;
-  const sourceUrls = place.source_urls ?? [];
   const assignedTags = allTags.filter(t => selectedTags.includes(t.id));
 
   // Notes are no longer part of this draft — each bullet saves itself the
@@ -153,16 +142,6 @@ export function PlaceDetailSheet({
       await onUploadImage(file);
     }
     scrollGalleryToEnd();
-  };
-
-  // Sources are immediate — persisted on every add/remove, not tied to the
-  // notes/tags draft-and-save flow
-  const handleAddSource = (url: string) => {
-    onUpdate({ source_urls: [...sourceUrls, url] });
-  };
-
-  const handleRemoveSource = (index: number) => {
-    onUpdate({ source_urls: sourceUrls.filter((_, i) => i !== index) });
   };
 
   const isVisited = place.status === 'visited';
@@ -277,36 +256,6 @@ export function PlaceDetailSheet({
                 addPlaceholder="Add a note…"
               />
             )}
-          </div>
-        )}
-
-        {/* Sources — multiple URLs, each a removable pill once added */}
-        {(!readOnly || sourceUrls.length > 0) && (
-          <div className="detail-section">
-            <label className="detail-label">Sources</label>
-            <div className="source-pills">
-              {sourceUrls.map((url, i) => (
-                <span key={i} className="source-pill">
-                  <a href={url} target="_blank" rel="noopener noreferrer" className="source-pill-link">
-                    <ExternalLink size={11} /> {displayHost(url)}
-                  </a>
-                  {!readOnly && (
-                    <button
-                      className="source-pill-remove"
-                      onClick={() => handleRemoveSource(i)}
-                      aria-label={`Remove source ${displayHost(url)}`}
-                    >
-                      <X size={11} />
-                    </button>
-                  )}
-                </span>
-              ))}
-              {!readOnly && (
-                <button className="source-pill source-pill--add" onClick={() => setShowAddSource(true)} aria-label="Add source">
-                  <Plus size={13} />
-                </button>
-              )}
-            </div>
           </div>
         )}
 
@@ -454,14 +403,6 @@ export function PlaceDetailSheet({
           onUpload={onUploadImage ? handleUploadImages : undefined}
           uploadMultiple
           onClose={() => setShowAddPhotos(false)}
-        />
-      )}
-
-      {showAddSource && (
-        <QuickAddSheet
-          title="Add source"
-          onAddUrl={handleAddSource}
-          onClose={() => setShowAddSource(false)}
         />
       )}
 

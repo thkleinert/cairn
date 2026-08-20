@@ -310,5 +310,9 @@ export function usePlaces(tripId: string | undefined) {
     if (image) removeStorageUrls([image.url]);
   };
 
-  return { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
+  // updatePlace is deliberately not exported: since sources folded into notes
+  // nothing outside this hook writes an arbitrary column on a place, and every
+  // edit that remains has its own narrower function above. It stays as the
+  // shared implementation those are built on.
+  return { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
 }

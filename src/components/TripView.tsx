@@ -13,7 +13,7 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 const MapView = lazy(() => import('./MapView').then(m => ({ default: m.MapView })));
 import { PlaceSearch } from './PlaceSearch';
 import { MapPickSheet } from './MapPickSheet';
-import { TripNotesSheet } from './TripNotesSheet';
+import { TripNotesPage } from './TripNotesPage';
 import { PlaceDetailSheet } from './PlaceDetailSheet';
 import { TagFilterSheet } from './TagFilterSheet';
 import { TripSettingsSheet } from './TripSettingsSheet';
@@ -32,11 +32,11 @@ interface Props {
   openNonce?: number;
 }
 
-type Sheet = 'none' | 'tag-filter' | 'settings' | 'notes';
+type Sheet = 'none' | 'tag-filter' | 'settings';
 type ViewMode = 'map' | 'list';
 
 export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, initialOpenComments, openNonce }: Props) {
-  const { places, loading, addPlace, updatePlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
+  const { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   const {
     tripNotes, notesByPlace, loading: notesLoading,
@@ -49,6 +49,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   const [jumpToComments, setJumpToComments] = useState(!!initialOpenComments);
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [openSheet, setOpenSheet] = useState<Sheet>('none');
+  // Its own state, not a Sheet variant: the notes page is a full-screen layer
+  // that the place detail sheet opens *over*, so the two are shown at once.
+  const [showNotes, setShowNotes] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [showSearch, setShowSearch] = useState(false);
   // The map point being turned into a place (long-press), if any.
@@ -124,7 +127,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
         <div className="topbar-actions">
           <button
             className="btn-icon"
-            onClick={() => setOpenSheet('notes')}
+            onClick={() => setShowNotes(true)}
             aria-label="Trip notes"
           >
             <NotebookPen size={20} />
@@ -224,8 +227,8 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
         />
       )}
 
-      {openSheet === 'notes' && (
-        <TripNotesSheet
+      {showNotes && (
+        <TripNotesPage
           places={places}
           allTags={tags}
           tripNotes={tripNotes}
@@ -236,7 +239,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onRemove={removeNote}
           onReorder={reorderNotes}
           onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
-          onClose={() => setOpenSheet('none')}
+          onClose={() => setShowNotes(false)}
         />
       )}
 
@@ -248,7 +251,6 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onCommentsShown={() => setJumpToComments(false)}
           onClose={() => { setSelectedPlaceId(null); setJumpToComments(false); }}
           onToggleVisited={() => toggleVisited(selectedPlace.id, selectedPlace.status)}
-          onUpdate={(updates) => updatePlace(selectedPlace.id, updates)}
           onDelete={handleDeletePlace}
           onSetTags={(tagIds) => setPlaceTags(selectedPlace.id, tagIds)}
           onAddImage={(url, caption) => addPlaceImage(selectedPlace.id, url, caption)}

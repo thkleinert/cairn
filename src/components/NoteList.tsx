@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react';
-import { Plus, Trash2, GripVertical } from 'lucide-react';
+import { Plus, Trash2, GripVertical, ExternalLink } from 'lucide-react';
 import { useDragReorder } from '../hooks/useDragReorder';
 import { MentionTextarea } from './MentionTextarea';
-import { parseMentions } from '../lib/mentions';
+import { parseNoteBody, displayHost } from '../lib/mentions';
 import type { Place, TripNote } from '../types';
 
 interface Props {
@@ -64,8 +64,21 @@ export function NoteList({
   };
 
   const renderBody = (body: string) =>
-    parseMentions(body, places).map((seg, i) =>
-      seg.type === 'mention' && seg.place ? (
+    parseNoteBody(body, places).map((seg, i) =>
+      seg.type === 'url' ? (
+        <a
+          key={i}
+          className="note-link"
+          href={seg.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          // Without this the tap falls through to .note-bullet-body and opens
+          // the editor behind the newly-opened tab.
+          onClick={e => e.stopPropagation()}
+        >
+          <ExternalLink size={11} /> {displayHost(seg.href!)}
+        </a>
+      ) : seg.type === 'mention' && seg.place ? (
         <span
           key={i}
           className={`mention-chip ${onSelectPlace ? '' : 'mention-chip--inert'}`}
