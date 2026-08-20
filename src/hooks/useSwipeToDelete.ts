@@ -27,6 +27,11 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
   const [offset, setOffset] = useState(0);
   const [settling, setSettling] = useState(false);
   const start = useRef<{ x: number; y: number } | null>(null);
+  // The row's width, captured when the gesture starts, so "far enough to
+  // delete" can be answered while the finger is still down. Without it the
+  // indicator had to guess with a fixed number, and guessed less than half the
+  // real distance.
+  const [threshold, setThreshold] = useState(COMMIT_MAX_PX);
   const engaged = useRef(false);
   // Set once the row is on its way out, so a second swipe during the collapse
   // animation can't fire onDelete twice for the same row.
@@ -37,6 +42,11 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
     engaged.current = false;
   }, []);
 
+  const commitThreshold = useCallback((el: HTMLElement | null) => {
+    const width = el?.getBoundingClientRect().width ?? 0;
+    return Math.min(width * COMMIT_FRACTION, COMMIT_MAX_PX);
+  }, []);
+
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (!enabled || committed.current) return;
     // Only primary input: a right-click or a second finger mid-scroll would
@@ -45,7 +55,8 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
     start.current = { x: e.clientX, y: e.clientY };
     engaged.current = false;
     setSettling(false);
-  }, [enabled]);
+    setThreshold(commitThreshold(e.currentTarget as HTMLElement));
+  }, [enabled, commitThreshold]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const from = start.current;
@@ -66,11 +77,6 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
     // the row off the other edge, where there is no action to reveal.
     setOffset(Math.min(0, dx + ENGAGE_PX));
   }, [reset]);
-
-  const commitThreshold = useCallback((el: HTMLElement | null) => {
-    const width = el?.getBoundingClientRect().width ?? 0;
-    return Math.min(width * COMMIT_FRACTION, COMMIT_MAX_PX);
-  }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     if (!engaged.current || committed.current) { reset(); return; }
@@ -100,8 +106,14 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
 
   return {
     offset,
-    /** True once the swipe is far enough that releasing would delete. */
-    armed: -offset >= 60,
+    /**
+     * True once the swipe is far enough that releasing really would delete.
+     * Derived from the same threshold the release uses — it was a flat 60px
+     * against a commit distance of min(width * 0.35, 140), so on a phone the
+     * trail turned red at roughly half the distance that actually deletes and
+     * the row sprang back anyway.
+     */
+    armed: -offset >= threshold,
     swiping: offset !== 0,
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
     /** Transitions are off during the drag so the row tracks the finger 1:1. */

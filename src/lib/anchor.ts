@@ -78,14 +78,21 @@ export function distanceKm(
  * right answer, and inventing one is worse than leaving it at the top level.
  */
 export function nearestParent(
-  candidate: { latitude: number; longitude: number; address?: string | null; id?: string; kind?: PlaceKind },
+  candidate: { latitude: number; longitude: number; address?: string | null; id?: string },
   places: Place[],
   maxKm = ANCHOR_MAX_KM,
 ): Place | null {
-  // A stop is somewhere you go; it stays where it is. Only something that
-  // already is — or, at creation, looks like — a location goes inside one.
-  const isVenue = candidate.kind ? candidate.kind === 'location' : looksSpecific(candidate.address);
-  if (!isVenue) return null;
+  // Whether this LOOKS like a venue, from its address — never from its stored
+  // kind. Preferring the stored kind killed the feature outright: the only
+  // caller that passes a stored place is the "looks like it's in X" suggestion,
+  // and places_anchored_is_location guarantees every un-anchored place is a
+  // 'stop', so the kind branch answered "not a venue" every single time and the
+  // suggestion could not render at all.
+  //
+  // The address is the right signal here precisely because it disagrees with
+  // the stored kind. A café filed as a stop is exactly the case worth offering
+  // to fix; asking the row what it already is can only ever agree with itself.
+  if (!looksSpecific(candidate.address)) return null;
 
   let best: Place | null = null;
   let bestKm = Infinity;

@@ -36,13 +36,14 @@ export function PlaceListView({
   const rowPlaces = useMemo(() => rows.map(r => r.place), [rows]);
 
   const {
-    order, dragId, dragDx, suppressTransition,
+    order, dragId, dragLevel, suppressTransition,
     handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx,
   } = useDragReorder({
     items: rowPlaces,
     getId: p => p.id,
     enabled: canReorder,
     trackSideways: true,
+    sidewaysStep: INDENT_PX,
     onReorder: async (orderedIds, sidewaysPx = 0) => {
       const drop = resolveDrop(orderedIds, dragId ?? '', sidewaysPx, places);
 
@@ -95,8 +96,8 @@ export function PlaceListView({
         // While a row is being dragged sideways, show the level it would land
         // at rather than the one it came from — the point of following the
         // finger is that you can see what letting go will do.
-        const previewDepth = dragging && dragDx >= INDENT_PX ? 1
-          : dragging && dragDx <= -INDENT_PX ? 0
+        const previewDepth = dragging && dragLevel === 1 ? 1
+          : dragging && dragLevel === -1 ? 0
           : depth;
         const folded = isFolded(place.id);
 

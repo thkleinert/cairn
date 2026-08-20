@@ -289,7 +289,11 @@ export function NoteList({
     const id = focusId;
     if (!id || body.length > 0) return false;
 
-    const previous = id === DRAFT ? order[draftIndex - 1] : order[focusedIndex - 1];
+    // `items`, not `order`. Both indices are computed against items, while
+    // order lags a render behind it — so right after Enter created a bullet,
+    // order[draftIndex - 1] was undefined and Backspace closed the editor
+    // instead of stepping up to the bullet above.
+    const previous = id === DRAFT ? items[draftIndex - 1] : items[focusedIndex - 1];
 
     if (id === DRAFT) {
       if (draft && draft.depth > 0) { setDraftState({ ...draft, depth: draft.depth - 1 }); return true; }
@@ -312,7 +316,7 @@ export function NoteList({
     else { setFocusId(null); setBody(''); }
     movingFocus.current = false;
     return true;
-  }, [focusId, body, order, draftIndex, focusedIndex, draft, items, onRemove, onSetDepths]);
+  }, [focusId, body, draftIndex, focusedIndex, draft, items, onRemove, onSetDepths]);
 
   const deleteNote = useCallback(async (note: TripNote, index: number) => {
     const promotions = promotionsAfterDelete(items, index);
@@ -589,7 +593,16 @@ function NoteRow({
           className={`note-bullet-dot ${canDrag ? 'note-bullet-dot--draggable' : ''} ${collapsed ? 'note-bullet-dot--folded' : ''}`}
           aria-hidden="true"
           onPointerDown={canDrag
-            ? e => onGripDown(note.id, index, e.currentTarget.parentElement?.parentElement as HTMLElement, e)
+            ? e => {
+                // Kept from the swipe handlers on .note-bullet-slide, which
+                // this dot sits inside. useSwipeToDelete reads `enabled` only
+                // at pointerdown, and `dragging` is still false at that
+                // instant, so the press that starts a drag also armed the
+                // swipe — dragging the dot left far enough then both reordered
+                // the row and deleted it on release.
+                e.stopPropagation();
+                onGripDown(note.id, index, e.currentTarget.parentElement?.parentElement as HTMLElement, e);
+              }
             : undefined}
         />
 

@@ -135,9 +135,20 @@ export function useTripNotes(tripId: string | undefined) {
    */
   const setNoteDepths = useCallback(async (updates: { id: string; depth: number }[]) => {
     if (updates.length === 0) return;
-    const previous = notes;
     const next = new Map(updates.map(u => [u.id, u.depth]));
-    setNotes(prev => prev.map(n => next.has(n.id) ? { ...n, depth: next.get(n.id)! } : n));
+    // The depths as they were, read from the rows themselves rather than kept
+    // as a snapshot of the whole list. A whole-list snapshot is taken before
+    // the call and restored after it, so anything that happened in between
+    // comes back with it — and deleting a bullet promotes its children, which
+    // calls this immediately afterwards, so a failed promotion put the just
+    // deleted bullet back on screen while it was already gone from the
+    // database.
+    const restore: { id: string; depth: number }[] = [];
+    setNotes(prev => prev.map(n => {
+      if (!next.has(n.id)) return n;
+      restore.push({ id: n.id, depth: n.depth });
+      return { ...n, depth: next.get(n.id)! };
+    }));
 
     // Group by target depth so a subtree of any size costs one statement per
     // distinct level rather than one per bullet.
@@ -150,11 +161,13 @@ export function useTripNotes(tripId: string | undefined) {
       const { error } = await supabase.from('trip_notes').update({ depth }).in('id', ids);
       if (error) {
         toast('Could not change the indent');
-        setNotes(previous);
+        // Only the depths this call changed, on whatever rows still exist.
+        const back = new Map(restore.map(r => [r.id, r.depth]));
+        setNotes(prev => prev.map(n => back.has(n.id) ? { ...n, depth: back.get(n.id)! } : n));
         return;
       }
     }
-  }, [notes]);
+  }, []);
 
   const removeNote = useCallback(async (id: string) => {
     // Snapshot for rollback: a delete is the one operation where refetching on

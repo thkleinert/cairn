@@ -18,6 +18,15 @@ interface Options<T> {
    * thumb, and so those lists keep ignoring horizontal movement completely.
    */
   trackSideways?: boolean;
+  /**
+   * How far sideways counts as one level, so the hook can report the LEVEL a
+   * drop would land at rather than a pixel count.
+   *
+   * The distinction is the whole point: a pixel count changes on every
+   * pointermove and re-renders every row in the list — thumbnails and tag
+   * pills included — for a preview that only ever has three states.
+   */
+  sidewaysStep?: number;
 }
 
 interface DragInfo {
@@ -37,14 +46,18 @@ interface DragInfo {
 // the open gap, then — once settled — the array reorders and every
 // transform clears in the same frame with transitions suppressed, so the
 // DOM reflow and the transform reset exactly cancel out with no jump.
-export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSideways = false }: Options<T>) {
+export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSideways = false, sidewaysStep = 36 }: Options<T>) {
   const [order, setOrder] = useState(items);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [suppressTransition, setSuppressTransition] = useState(false);
-  // Live horizontal offset of the dragged row, so the caller can show what a
-  // drop would do before the finger lifts.
-  const [dragDx, setDragDx] = useState(0);
+  // Which way a drop would move the row: -1 out, 0 nowhere, 1 in. State,
+  // because the preview has to render — but only three values, so it settles
+  // instead of changing every frame.
+  const [dragLevel, setDragLevel] = useState<-1 | 0 | 1>(0);
+  // The raw offset, which the drop itself needs. A ref: nothing renders from
+  // it, so writing it per move costs nothing.
+  const dragDxRef = useRef(0);
   const dragInfo = useRef<DragInfo | null>(null);
   const draggedElRef = useRef<HTMLElement | null>(null);
   const pendingCommitRef = useRef<{ timer: number; run: () => void } | null>(null);
@@ -97,7 +110,8 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
     row.style.transition = 'none';
     setDragId(id);
     setOverIndex(index);
-    setDragDx(0);
+    setDragLevel(0);
+    dragDxRef.current = 0;
   }, [enabled]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
@@ -107,7 +121,11 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
     // Horizontal travel is carried on the transform only when the caller asked
     // for it; otherwise the row tracks vertically exactly as it always has.
     const deltaX = trackSideways ? e.clientX - info.startX : 0;
-    if (trackSideways) setDragDx(deltaX);
+    if (trackSideways) {
+      dragDxRef.current = deltaX;
+      const level = deltaX >= sidewaysStep ? 1 : deltaX <= -sidewaysStep ? -1 : 0;
+      setDragLevel(prev => (prev === level ? prev : level));
+    }
     draggedElRef.current.style.transform =
       `translate(${deltaX}px, ${deltaY}px) scale(1.02)`;
     // Walk row by row using each passed row's own height: crossing more than
@@ -127,20 +145,21 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
       }
     }
     setOverIndex(prev => (prev === newIndex ? prev : newIndex));
-  }, [order.length, trackSideways]);
+  }, [order.length, trackSideways, sidewaysStep]);
 
   const handlePointerUp = useCallback(() => {
     const info = dragInfo.current;
     const el = draggedElRef.current;
     if (!info || dragId === null || !el) return;
     const finalIndex = overIndex ?? info.startIndex;
-    const droppedDx = trackSideways ? dragDx : 0;
+    const droppedDx = trackSideways ? dragDxRef.current : 0;
     const settledOffset = travelPx(info.startIndex, finalIndex, info.heights);
 
     const commit = () => {
       el.style.transition = 'none';
       el.style.transform = '';
-      setDragDx(0);
+      setDragLevel(0);
+      dragDxRef.current = 0;
       // Restore the stylesheet transition next frame — leaving 'none' behind
       // permanently made every later drag of this row snap instead of slide.
       requestAnimationFrame(() => { el.style.transition = ''; });
@@ -175,7 +194,7 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
       }, 250);
       pendingCommitRef.current = { timer, run: commit };
     }
-  }, [dragId, order, overIndex, getId, onReorder, travelPx, trackSideways, dragDx]);
+  }, [dragId, order, overIndex, getId, onReorder, travelPx, trackSideways]);
 
   // Pixel offset applied to a non-dragged row so it slides out of the
   // dragged row's way — 0 for everything outside the affected range.
@@ -191,5 +210,5 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
     return 0;
   }, [dragId, overIndex, order, getId]);
 
-  return { order, dragId, dragDx, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
+  return { order, dragId, dragLevel, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
 }

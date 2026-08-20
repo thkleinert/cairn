@@ -339,6 +339,20 @@ export function usePlaces(tripId: string | undefined) {
       toast('Those two places would be inside each other');
       return null;
     }
+    // Refused rather than cascaded. Only a stop can hold locations, so filing a
+    // place inside another makes it a location and everything anchored to it
+    // instantly has a parent that cannot be one — groupPlaces stops nesting
+    // them and they pop to the top level, still marked as locations, so the
+    // map's Locations toggle hides rows that now look like ordinary stops.
+    // The database cannot catch it: places_anchored_is_location only inspects
+    // the row being written.
+    //
+    // Moving the children too would be a second, invisible decision about
+    // somebody else's data, so this asks instead.
+    if (parentId && places.some(p => p.parent_place_id === id)) {
+      toast('Move the places inside it out first');
+      return null;
+    }
     // Kind moves with the parent, because the two are one decision: being
     // inside a stop is what makes something a location, and the database
     // refuses anything anchored that is not one. Setting them separately would

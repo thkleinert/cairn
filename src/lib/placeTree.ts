@@ -144,6 +144,13 @@ export function resolveDrop(
   }
 
   if (sidewaysPx >= INDENT_PX) {
+    // A row with locations under it cannot go inside anything: it would become
+    // a location itself and orphan them, since only a stop can be a parent.
+    // The row above being a valid parent is not the only question — the row
+    // being dragged has to be able to become a child.
+    if (places.some(p => p.parent_place_id === draggedId)) {
+      return { parentId: currentParent, changed: false };
+    }
     const at = orderedIds.indexOf(draggedId);
     // Walk back for something that can hold this row. A stop that is itself
     // nested cannot, and neither can another location — one level only, which
