@@ -63,6 +63,8 @@ export interface TripNote {
   updated_at: string;
 }
 
+export type PlaceKind = 'stop' | 'location';
+
 export interface Place {
   id: string;
   trip_id: string;
@@ -78,6 +80,13 @@ export interface Place {
    * top-level, which is also what stops a cycle hiding places entirely.
    */
   parent_place_id?: string | null;
+  /**
+   * What this place is: somewhere you go ('stop' — a city, an island, a park)
+   * or somewhere inside one ('location' — a café, a hotel, a viewpoint).
+   * Only stops can be parents, and only locations can have one. The list view
+   * nests by it and the map can hide locations entirely.
+   */
+  kind: PlaceKind;
   status: PlaceStatus;
   visited_at?: string | null;
   image_url?: string;

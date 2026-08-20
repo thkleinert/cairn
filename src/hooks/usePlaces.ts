@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
-import { nearestParent } from '../lib/anchor';
+import { kindFor } from '../lib/anchor';
 import { removeStorageUrls } from '../lib/storage';
 import type { Place, PlaceImage } from '../types';
 
@@ -130,15 +130,15 @@ export function usePlaces(tripId: string | undefined) {
     // length would collide with an existing position.
     const nextPosition = places.reduce((max, p) => Math.max(max, p.position), -1) + 1;
 
-    // Anchor a new venue to the settlement it is in, if the trip already has
-    // one nearby. Done here, in the insert, rather than as a follow-up write:
-    // it costs nothing extra and the place is never briefly top-level.
+    // Decide what this place is, and what it sits inside, from the trip it is
+    // joining. Done here, in the insert, rather than as a follow-up write: it
+    // costs nothing extra and the place is never briefly misfiled.
     //
-    // Only on creation. There is no arrangement to disturb at this moment and
-    // the "Part of" field undoes it in one tap, whereas silently re-filing a
-    // place someone already put somewhere is not ours to do — existing places
-    // get a suggestion on the notes page instead.
-    const parent = nearestParent(place, places);
+    // Only on creation. There is nothing to disturb at this moment and both
+    // can be changed on the place sheet, whereas silently re-filing a place
+    // someone already put somewhere is not ours to do — existing places get an
+    // offer on the notes page instead.
+    const { kind, parentId } = kindFor(place, places);
 
     const { data, error } = await supabase
       .from('places')
@@ -146,7 +146,8 @@ export function usePlaces(tripId: string | undefined) {
         ...place,
         trip_id: tripId,
         position: nextPosition,
-        parent_place_id: parent?.id ?? null,
+        kind,
+        parent_place_id: parentId,
       })
       .select()
       .single();
@@ -343,7 +344,14 @@ export function usePlaces(tripId: string | undefined) {
       toast('Those two places would be inside each other');
       return null;
     }
-    return updatePlace(id, { parent_place_id: parentId });
+    // Kind moves with the parent, because the two are one decision: being
+    // inside a stop is what makes something a location, and the database
+    // refuses anything anchored that is not one. Setting them separately would
+    // mean a moment where the row cannot be written at all.
+    return updatePlace(id, {
+      parent_place_id: parentId,
+      kind: parentId ? 'location' : 'stop',
+    });
   };
 
   // updatePlace is deliberately not exported: since sources folded into notes

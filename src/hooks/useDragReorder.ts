@@ -3,11 +3,25 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 interface Options<T> {
   items: T[];
   getId: (item: T) => string;
-  onReorder: (orderedIds: string[]) => void;
+  /**
+   * `sidewaysPx` is how far the row was dragged horizontally when it was let
+   * go — only ever non-zero when `trackSideways` is on. Callers that nest use
+   * it to decide whether the drop also changed what the row belongs to; the
+   * flat lists ignore it entirely.
+   */
+  onReorder: (orderedIds: string[], sidewaysPx?: number) => void;
   enabled: boolean;
+  /**
+   * Follow horizontal movement as well as vertical, Notion-style: drag a row
+   * right to tuck it under the one above, left to pull it back out. Off by
+   * default so a list with no hierarchy can't be nudged into one by a shaky
+   * thumb, and so those lists keep ignoring horizontal movement completely.
+   */
+  trackSideways?: boolean;
 }
 
 interface DragInfo {
+  startX: number;
   startY: number;
   startIndex: number;
   height: number;     // dragged row's height == the gap siblings open
@@ -23,11 +37,14 @@ interface DragInfo {
 // the open gap, then — once settled — the array reorders and every
 // transform clears in the same frame with transitions suppressed, so the
 // DOM reflow and the transform reset exactly cancel out with no jump.
-export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<T>) {
+export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSideways = false }: Options<T>) {
   const [order, setOrder] = useState(items);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [suppressTransition, setSuppressTransition] = useState(false);
+  // Live horizontal offset of the dragged row, so the caller can show what a
+  // drop would do before the finger lifts.
+  const [dragDx, setDragDx] = useState(0);
   const dragInfo = useRef<DragInfo | null>(null);
   const draggedElRef = useRef<HTMLElement | null>(null);
   const pendingCommitRef = useRef<{ timer: number; run: () => void } | null>(null);
@@ -71,6 +88,7 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
       (el): el is HTMLElement => el instanceof HTMLElement && el.tagName === row.tagName
     );
     dragInfo.current = {
+      startX: e.clientX,
       startY: e.clientY,
       startIndex: index,
       height: row.getBoundingClientRect().height,
@@ -79,13 +97,19 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
     row.style.transition = 'none';
     setDragId(id);
     setOverIndex(index);
+    setDragDx(0);
   }, [enabled]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const info = dragInfo.current;
     if (!info || !draggedElRef.current) return;
     const deltaY = e.clientY - info.startY;
-    draggedElRef.current.style.transform = `translateY(${deltaY}px) scale(1.02)`;
+    // Horizontal travel is carried on the transform only when the caller asked
+    // for it; otherwise the row tracks vertically exactly as it always has.
+    const deltaX = trackSideways ? e.clientX - info.startX : 0;
+    if (trackSideways) setDragDx(deltaX);
+    draggedElRef.current.style.transform =
+      `translate(${deltaX}px, ${deltaY}px) scale(1.02)`;
     // Walk row by row using each passed row's own height: crossing more than
     // half of a neighbour claims its slot.
     let newIndex = info.startIndex;
@@ -103,28 +127,33 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
       }
     }
     setOverIndex(prev => (prev === newIndex ? prev : newIndex));
-  }, [order.length]);
+  }, [order.length, trackSideways]);
 
   const handlePointerUp = useCallback(() => {
     const info = dragInfo.current;
     const el = draggedElRef.current;
     if (!info || dragId === null || !el) return;
     const finalIndex = overIndex ?? info.startIndex;
+    const droppedDx = trackSideways ? dragDx : 0;
     const settledOffset = travelPx(info.startIndex, finalIndex, info.heights);
 
     const commit = () => {
       el.style.transition = 'none';
       el.style.transform = '';
+      setDragDx(0);
       // Restore the stylesheet transition next frame — leaving 'none' behind
       // permanently made every later drag of this row snap instead of slide.
       requestAnimationFrame(() => { el.style.transition = ''; });
       setSuppressTransition(true);
-      if (finalIndex !== info.startIndex) {
+      // A sideways drag is a real change even when the row did not move up or
+      // down, so the commit can't be skipped on index alone any more.
+      const movedSideways = trackSideways && Math.abs(droppedDx) > 0;
+      if (finalIndex !== info.startIndex || movedSideways) {
         const next = [...order];
         const [moved] = next.splice(info.startIndex, 1);
         next.splice(finalIndex, 0, moved);
         setOrder(next);
-        onReorder(next.map(getId));
+        onReorder(next.map(getId), droppedDx);
       }
       dragInfo.current = null;
       draggedElRef.current = null;
@@ -146,7 +175,7 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
       }, 250);
       pendingCommitRef.current = { timer, run: commit };
     }
-  }, [dragId, order, overIndex, getId, onReorder, travelPx]);
+  }, [dragId, order, overIndex, getId, onReorder, travelPx, trackSideways, dragDx]);
 
   // Pixel offset applied to a non-dragged row so it slides out of the
   // dragged row's way — 0 for everything outside the affected range.
@@ -162,5 +191,5 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
     return 0;
   }, [dragId, overIndex, order, getId]);
 
-  return { order, dragId, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
+  return { order, dragId, dragDx, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
 }

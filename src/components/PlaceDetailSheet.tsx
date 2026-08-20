@@ -243,11 +243,16 @@ export function PlaceDetailSheet({
             it under that one instead of giving a café its own top-level
             section next to the city it's in.
 
-            Candidates exclude this place, and anything already anchored
-            elsewhere: allowing those would build a chain the notes page
-            renders only one level of, so the place would silently drop back to
-            top-level rather than appear where it was put. */}
-        {!readOnly && onSetParent && allPlaces.length > 1 && (
+            Only stops are offered. That a parent is a stop is the half of the
+            model a check constraint cannot see — a check cannot read the
+            parent row — so this select is where it is enforced, and
+            groupPlaces declines to nest under anything else if it ever isn't.
+
+            Choosing a stop also makes this place a location: the two are one
+            decision, and the database refuses anything anchored that is not
+            one. Choosing "Nowhere in particular" turns it back into a stop. */}
+        {!readOnly && onSetParent &&
+          allPlaces.some(p => p.id !== place.id && p.kind === 'stop' && !p.parent_place_id) && (
           <div className="detail-section">
             <label className="detail-label" htmlFor="place-parent">Part of</label>
             <select
@@ -258,7 +263,7 @@ export function PlaceDetailSheet({
             >
               <option value="">Nowhere in particular</option>
               {allPlaces
-                .filter(p => p.id !== place.id && !p.parent_place_id)
+                .filter(p => p.id !== place.id && p.kind === 'stop' && !p.parent_place_id)
                 .map(p => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}

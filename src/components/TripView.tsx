@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy } from 'react';
 import { MapBoundary } from './MapBoundary';
-import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen } from 'lucide-react';
+import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen, Eye, EyeOff } from 'lucide-react';
 import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTripNotes } from '../hooks/useTripNotes';
@@ -62,6 +62,11 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // that the place detail sheet opens *over*, so the two are shown at once.
   const [showNotes, setShowNotes] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('map');
+  // Whether the map shows the places *inside* stops. A trip with a city and a
+  // dozen cafés in it is a cluster of pins on top of each other at any zoom
+  // that shows the whole route; hiding locations gives back the shape of the
+  // trip. On by default — nothing disappears until asked.
+  const [showLocations, setShowLocations] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
   // The map point being turned into a place (long-press), if any.
   const [pickedPoint, setPickedPoint] = useState<PickedPoint | null>(null);
@@ -74,6 +79,11 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   }, [viewMode]);
 
   const selectedPlace = places.find(p => p.id === selectedPlaceId) ?? null;
+  // Filtered here rather than inside the map so the route line and the initial
+  // fit follow the same rule as the pins — a route drawn through places you
+  // cannot see would be the odd one out.
+  const mapPlaces = showLocations ? places : places.filter(p => p.kind !== 'location');
+  const hiddenLocationCount = places.length - mapPlaces.length;
   const isOwner = trip.owner_id === userId;
 
   // Re-open the deep-linked place whenever a new jump target arrives (nonce
@@ -161,7 +171,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           <div style={{ display: viewMode === 'map' ? 'contents' : 'none' }}>
             <MapBoundary>
               <MapView
-                places={places}
+                places={mapPlaces}
                 selectedPlace={selectedPlace}
                 activeTags={activeTags}
                 allTags={tags}
@@ -172,6 +182,21 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             </MapBoundary>
           </div>
         )}
+        {/* Only worth offering once the trip actually has something inside a
+            stop — on a flat trip it would be a control that does nothing. */}
+        {viewMode === 'map' && places.some(p => p.kind === 'location') && (
+          <button
+            className={`map-locations-toggle ${showLocations ? '' : 'map-locations-toggle--off'}`}
+            onClick={() => setShowLocations(v => !v)}
+            aria-pressed={showLocations}
+          >
+            {showLocations ? <Eye size={15} /> : <EyeOff size={15} />}
+            <span>
+              {showLocations ? 'Locations' : `${hiddenLocationCount} hidden`}
+            </span>
+          </button>
+        )}
+
         {viewMode === 'map' && !loading && places.length === 0 && !showSearch && !pickedPoint && (
           <div className="map-empty-hint">
             <Plus size={16} />
@@ -185,6 +210,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             allTags={tags}
             onSelectPlace={(place) => setSelectedPlaceId(place.id)}
             onReorder={reorderPlaces}
+            onSetParent={(placeId, parentId) => { void setPlaceParent(placeId, parentId); }}
+            isFolded={isCollapsed}
+            onToggleFold={toggleCollapse}
           />
         )}
       </div>

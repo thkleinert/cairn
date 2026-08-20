@@ -68,6 +68,12 @@ create table public.places (
   -- child in the same trip; `on delete set null` so deleting a city releases
   -- its cafés rather than deleting them.
   parent_place_id uuid,
+  -- What this place IS: somewhere you go, or somewhere inside one of those.
+  -- A stop is a city, an island, a park; a location is a café, a hotel, a
+  -- viewpoint. The list view nests locations under their stop, and the map can
+  -- hide them. Recorded rather than guessed from the address, which misreads a
+  -- town carrying a postcode and cannot read a long-press pin at all.
+  kind            text not null default 'stop' check (kind in ('stop','location')),
   status          text not null default 'planned' check (status in ('planned','visited')),
   visited_at      timestamptz,
   notes           text,
@@ -109,6 +115,17 @@ alter table public.places
 alter table public.places
   add constraint places_parent_not_self
   check (parent_place_id is null or parent_place_id <> id);
+
+-- Only a location sits inside something — the half of the stop/location model
+-- a check constraint can see, and the important half: it guarantees stops are
+-- always top level. That a parent is itself a stop is enforced by the client
+-- (only stops are offered) and degraded gracefully by groupPlaces, which
+-- ignores a parent that is not one.
+alter table public.places
+  add constraint places_anchored_is_location
+  check (parent_place_id is null or kind = 'location');
+
+create index places_kind_idx on public.places(trip_id, kind);
 
 create index places_parent_idx
   on public.places(parent_place_id) where parent_place_id is not null;

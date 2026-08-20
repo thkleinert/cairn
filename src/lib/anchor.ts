@@ -1,4 +1,4 @@
-import type { Place } from '../types';
+import type { Place, PlaceKind } from '../types';
 
 // Working out which place sits inside which, from what we already store.
 //
@@ -36,9 +36,15 @@ export function looksSpecific(address: string | null | undefined): boolean {
   return (address.match(/,/g)?.length ?? 0) >= 2;
 }
 
-/** A place broad enough to contain others: settlement-shaped, and not itself anchored. */
+/**
+ * A place broad enough to contain others.
+ *
+ * This asks the row what it is rather than guessing from its address. The
+ * guess is still made — once, when a place is created (see kindFor) — but it
+ * is a default the user can correct, not a fact re-derived on every render.
+ */
 function couldContain(place: Place): boolean {
-  return !place.parent_place_id && !looksSpecific(place.address);
+  return place.kind === 'stop' && !place.parent_place_id;
 }
 
 /** Great-circle distance in kilometres. */
@@ -72,12 +78,14 @@ export function distanceKm(
  * right answer, and inventing one is worse than leaving it at the top level.
  */
 export function nearestParent(
-  candidate: { latitude: number; longitude: number; address?: string | null; id?: string },
+  candidate: { latitude: number; longitude: number; address?: string | null; id?: string; kind?: PlaceKind },
   places: Place[],
   maxKm = ANCHOR_MAX_KM,
 ): Place | null {
-  // Only a venue can be inside something. A settlement stays where it is.
-  if (!looksSpecific(candidate.address)) return null;
+  // A stop is somewhere you go; it stays where it is. Only something that
+  // already is — or, at creation, looks like — a location goes inside one.
+  const isVenue = candidate.kind ? candidate.kind === 'location' : looksSpecific(candidate.address);
+  if (!isVenue) return null;
 
   let best: Place | null = null;
   let bestKm = Infinity;
@@ -88,4 +96,28 @@ export function nearestParent(
     if (km < bestKm) { bestKm = km; best = place; }
   }
   return bestKm <= maxKm ? best : null;
+}
+
+/**
+ * What a place being created should be, and what it should sit inside.
+ *
+ * A place only becomes a location when there is somewhere concrete to put it.
+ * The address classifier alone is not trusted for this: it reads a town
+ * carrying a postcode ("73150 Val-d'Isère, Frankreich") as a venue, and a
+ * place created that way would be filed as a location with no parent —
+ * top-level in the list but hidden whenever the map is showing stops only,
+ * which is a confusing thing to happen to a town you just added.
+ *
+ * Requiring a nearby stop ties the weaker signal to the stronger one. Nothing
+ * is ever created as an orphan location, so "stop" keeps meaning "visible and
+ * top level", exactly as every place behaves today.
+ */
+export function kindFor(
+  candidate: { latitude: number; longitude: number; address?: string | null },
+  places: Place[],
+): { kind: PlaceKind; parentId: string | null } {
+  const parent = nearestParent(candidate, places);
+  return parent
+    ? { kind: 'location', parentId: parent.id }
+    : { kind: 'stop', parentId: null };
 }
