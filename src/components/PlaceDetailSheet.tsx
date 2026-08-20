@@ -68,6 +68,7 @@ export function PlaceDetailSheet({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(true);
   const galleryRef = useRef<HTMLDivElement>(null);
@@ -274,7 +275,24 @@ export function PlaceDetailSheet({
         {/* Notes — one row per bullet, each independently editable */}
         {(!readOnly || sharedNotes.length > 0) && (
           <div className="detail-section">
-            <label className="detail-label">Notes</label>
+            <div className="detail-label-row">
+              <label className="detail-label">Notes</label>
+              {!readOnly && (
+                // The outliner opens a bullet by tapping the blank part of a
+                // section heading; this sheet has no such heading, and when
+                // NoteList lost its own add row it lost its only way in — a
+                // place with no notes rendered an empty list and nothing to
+                // tap. This is that way in.
+                <button
+                  type="button"
+                  className="detail-label-add"
+                  aria-label="Add a note"
+                  onClick={() => setAddingNote(true)}
+                >
+                  <Plus size={16} />
+                </button>
+              )}
+            </div>
             {readOnly ? (
               <ul className="note-bullets">
                 {normaliseDepths(sharedNotes).map(n => (
@@ -305,6 +323,8 @@ export function PlaceDetailSheet({
                 onRestore={onRestoreNote}
                 onSetDepths={(updates) => onSetNoteDepths?.(updates)}
                 onReorder={(ids) => onReorderNotes?.(ids)}
+                startDraft={addingNote}
+                onDraftStarted={() => setAddingNote(false)}
                 placeholder="Add a note…"
               />
             )}

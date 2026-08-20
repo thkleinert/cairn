@@ -35,13 +35,31 @@ export function PlaceListView({
   );
   const rowPlaces = useMemo(() => rows.map(r => r.place), [rows]);
 
+  // Dragging moves one row, never a subtree. A FOLDED stop is fine —
+  // withHiddenChildren re-attaches its locations to wherever it landed — but
+  // an expanded one is not: the drop writes an order with the stop moved and
+  // its children left behind, and groupPlaces re-derives them straight back
+  // underneath it, so the drag silently does nothing. NoteList refuses to drag
+  // at all once anything is nested, for the same reason.
+  //
+  // The handle is hidden along with the behaviour: a grip that can be held and
+  // dragged and then changes nothing is worse than no grip.
+  const canDrag = canReorder &&
+    !rows.some(r => r.depth === 0 && r.childCount > 0 && !isFolded(r.place.id));
+
   const {
     order, dragId, dragLevel, suppressTransition,
     handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx,
   } = useDragReorder({
     items: rowPlaces,
     getId: p => p.id,
-    enabled: canReorder,
+    // Dragging moves one row, never a subtree. A FOLDED stop is fine —
+    // withHiddenChildren re-attaches its locations to wherever it landed — but
+    // an expanded one is not: the drop writes an order with the stop moved and
+    // its children left behind, and groupPlaces then re-derives them straight
+    // back underneath it, so the drag silently does nothing. NoteList refuses
+    // to drag at all once anything is nested, for this same reason.
+    enabled: canDrag,
     trackSideways: true,
     sidewaysStep: INDENT_PX,
     onReorder: async (orderedIds, sidewaysPx = 0) => {
@@ -86,10 +104,16 @@ export function PlaceListView({
   }
 
   return (
-    <ul className={`place-list ${suppressTransition ? 'place-list--reordering' : ''}`}>
+    <ul
+      className={`place-list ${suppressTransition ? 'place-list--reordering' : ''}`}
+      // One number for both: how far sideways re-nests a row, and how far in a
+      // nested row sits. They were 36px and 26px, so a row dragged far enough
+      // to nest landed somewhere it had never been shown.
+      style={{ '--place-indent': `${INDENT_PX}px` } as React.CSSProperties}
+    >
       {filtered.map((place, index) => {
         const isVisited = place.status === 'visited';
-        const offsetPx = canReorder ? getRowOffsetPx(index, place.id) : 0;
+        const offsetPx = canDrag ? getRowOffsetPx(index, place.id) : 0;
         const depth = canReorder ? depthOf(place.id) : 0;
         const children = canReorder ? childCountOf(place.id) : 0;
         const dragging = dragId === place.id;
@@ -115,7 +139,7 @@ export function PlaceListView({
               '--place-depth': previewDepth,
             } as React.CSSProperties}
           >
-            {canReorder && (
+            {canDrag && (
               <button
                 className="place-list-drag-handle"
                 aria-label={`Reorder ${place.name}`}
@@ -132,7 +156,7 @@ export function PlaceListView({
             )}
 
             <button
-              className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
+              className={`place-list-item-content ${!canDrag ? 'place-list-item-content--flush' : ''}`}
               onClick={() => onSelectPlace(place)}
             >
               {place.image_url && (

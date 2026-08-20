@@ -987,6 +987,19 @@ select.input {
 }
 .section-caret--open { transform: rotate(90deg); }
 
+/* A label with an action beside it — the Notes section's way to open a first
+   bullet, since this sheet has no section heading to tap. */
+.detail-label-row { display: flex; align-items: center; gap: 6px; }
+.detail-label-row .detail-label { margin-bottom: 0; }
+.detail-label-add {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  margin: -4px 0;
+  border-radius: 50%;
+  color: var(--color-muted);
+}
+.detail-label-add:active { background: var(--color-bg); color: var(--color-text); }
+
 /* Multi-image gallery */
 .image-gallery {
   display: flex; gap: 8px;
@@ -1932,10 +1945,16 @@ textarea.mention-input {
    on one vertical axis and the text starts at the same x. */
 :root {
   --note-gutter: 22px;
-  /* One nesting level. Enough that a level is unmistakable at a glance,
-     small enough that MAX_DEPTH levels still leave a readable text column on
-     a 390px screen. */
-  --note-indent: 20px;
+  /* One level, for everything on the page: the bullet gutter plus the gap
+     after it. Declared beside the gutter it is derived from rather than 300
+     lines further down next to its first user. */
+  --note-step: calc(var(--note-gutter) + 8px);
+  /* One nesting level for a bullet — the same step a heading uses, so a
+     nested bullet and an anchored place land on the same axis. They were 20px
+     and 30px, which is exactly the drift the comment on --note-step claims to
+     prevent. MAX_DEPTH caps the total, which is what keeps a readable text
+     column on a 390px screen. */
+  --note-indent: var(--note-step);
 }
 
 .note-list { display: flex; flex-direction: column; position: relative; }
@@ -2249,8 +2268,6 @@ textarea.mention-input {
    plus the gap after it. Everything that is "one level in" moves by this and
    nothing else, which is what stops headings, notes and anchored places from
    each drifting to their own idea of an indent. */
-:root { --note-step: calc(var(--note-gutter) + 8px); }
-
 .notes-heading-dot { flex-shrink: 0; margin-right: 6px; }
 
 /* A section's own depth. A heading sits at it; the notes under that heading
@@ -2286,7 +2303,7 @@ textarea.mention-input {
    Doing it this way rather than with overflow-x:hidden also keeps a row
    dragged sideways visible — clipping the container would cut off the very
    gesture the indent exists for. */
-.place-list-item { padding-left: calc(var(--place-depth, 0) * 26px); position: relative; }
+.place-list-item { padding-left: calc(var(--place-depth, 0) * var(--place-indent, 36px)); position: relative; }
 
 /* While a row is being dragged past the indent threshold, it picks up the
    accent so the level it would land at is visible before the finger lifts —

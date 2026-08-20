@@ -8,7 +8,7 @@ import { NoteBody } from './NoteBody';
 import { NoteEditToolbar } from './NoteEditToolbar';
 import {
   normaliseDepths, canIndent, canOutdent, canMoveUp, canMoveDown, moveSubtree,
-  shiftSubtree, promotionsAfterDelete, hasChildren, visibleItems, MAX_DEPTH,
+  shiftSubtree, promotionsAfterDelete, hasChildren, visibleItems, siblings, MAX_DEPTH,
 } from '../lib/outline';
 import type { Place, TripNote } from '../types';
 
@@ -70,6 +70,12 @@ export function NoteList({
   const items = useMemo(() => normaliseDepths(notes), [notes]);
 
   const [focusId, setFocusId] = useState<string | null>(null);
+  // Mirrors focusId synchronously. blur() closes over the focusId of the
+  // render that drew the textarea, so after focus has deliberately moved on it
+  // cannot tell "the row I was on lost focus" from "focus already went
+  // somewhere else and this is that row unmounting". The ref lets it ask.
+  const focusIdRef = useRef<string | null>(null);
+  focusIdRef.current = focusId;
   const [body, setBody] = useState('');
   const [draftState, setDraftState] = useState<Draft | null>(null);
 
@@ -179,8 +185,28 @@ export function NoteList({
     onDraftStarted?.();
   }, [startDraft]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Folds that currently mean something: the id is in the fold set AND the
+   * bullet still has children.
+   *
+   * The stored flag outlives the children it was set on. Fold a bullet, then
+   * delete or outdent its last child, and the fold button disappears (nothing
+   * to fold) while the flag stays set — the dot kept its ring for good, and
+   * indenting the row below made it vanish on the spot, hidden under a parent
+   * nobody could unfold. TripNotesPage gates its headings this way for exactly
+   * the same reason; the bullets were left ungated.
+   */
+  const activeFolds = useMemo(() => {
+    const ids = new Set<string>();
+    items.forEach((n, i) => { if (folded(n.id) && hasChildren(items, i)) ids.add(n.id); });
+    return ids;
+  }, [items, folded]);
+
   /** What's actually on screen: everything not tucked under a folded bullet. */
-  const visible = useMemo(() => visibleItems(items, folded), [items, folded]);
+  const visible = useMemo(
+    () => visibleItems(items, id => activeFolds.has(id)),
+    [items, activeFolds],
+  );
 
   /** Where the draft row goes among the visible ones. */
   const draftVisibleIndex = useMemo(() => {
@@ -227,8 +253,20 @@ export function NoteList({
     movingFocus.current = false;
   }, [commit, focusId]);
 
-  const blur = useCallback(async () => {
+  /**
+   * `from` is the row the textarea was rendered for. If focus has since moved
+   * elsewhere, this blur is that row unmounting behind a move we made — and
+   * clearing state here would undo it.
+   *
+   * movingFocus alone could not cover this: it is lowered synchronously when a
+   * move finishes, but React re-renders after the current task, so the unmount
+   * blur always arrived after the guard was already down. Tapping Move Up on a
+   * bullet you were typing therefore dismissed the keyboard instead of staying
+   * on the moved bullet.
+   */
+  const blur = useCallback(async (from: string | null) => {
     if (movingFocus.current) return;
+    if (from !== null && focusIdRef.current !== from) return;
     await commit();
     setFocusId(null);
     setDraftState(null);
@@ -247,7 +285,7 @@ export function NoteList({
         // Enter on an empty bullet steps back out a level, and at the outer
         // edge closes the list — the standard way to end an outline.
         if (draft.depth > 0) setDraftState({ ...draft, depth: draft.depth - 1 });
-        else await blur();
+        else await blur(DRAFT);
         return;
       }
       busy.current = true;
@@ -290,11 +328,14 @@ export function NoteList({
     const id = focusId;
     if (!id || body.length > 0) return false;
 
-    // `items`, not `order`. Both indices are computed against items, while
-    // order lags a render behind it — so right after Enter created a bullet,
-    // order[draftIndex - 1] was undefined and Backspace closed the editor
-    // instead of stepping up to the bullet above.
-    const previous = id === DRAFT ? items[draftIndex - 1] : items[focusedIndex - 1];
+    // The bullet above ON SCREEN, not the one above in the outline. With a
+    // folded bullet between them the outline's predecessor is hidden, and
+    // focusing it left the keyboard up and the toolbar acting on a row that
+    // renders nowhere.
+    const visibleAt = visible.findIndex(n => n.id === (id === DRAFT ? draft?.afterId : id));
+    const previous = id === DRAFT
+      ? (draft?.afterId ? visible[visibleAt] : visible[visible.length - 1])
+      : visible[visibleAt - 1];
 
     if (id === DRAFT) {
       if (draft && draft.depth > 0) { setDraftState({ ...draft, depth: draft.depth - 1 }); return true; }
@@ -317,7 +358,7 @@ export function NoteList({
     else { setFocusId(null); setBody(''); }
     movingFocus.current = false;
     return true;
-  }, [focusId, body, draftIndex, focusedIndex, draft, items, onRemove, onSetDepths]);
+  }, [focusId, body, focusedIndex, draft, items, visible, onRemove, onSetDepths]);
 
   const deleteNote = useCallback(async (note: TripNote, index: number) => {
     const promotions = promotionsAfterDelete(items, index);
@@ -380,8 +421,21 @@ export function NoteList({
       return;
     }
     if (focusedIndex === -1) return;
+    // Indenting makes this bullet a child of the one above. If that one is
+    // carrying a fold flag from an earlier life — folded once, then emptied,
+    // so the flag survived with no control left to clear it — the new child
+    // would be hidden the instant it arrives, while the toolbar still points
+    // at it. Gating the flag on having children is not enough on its own,
+    // because this is the moment it gets children back.
+    if (delta === 1) {
+      // The row it becomes a child of is its previous SIBLING, which is not
+      // the row immediately above once anything in between is nested — with
+      // A(0), B(1), C(0), indenting C makes it a child of A, not of B.
+      const { prev } = siblings(items, focusedIndex);
+      if (prev !== -1 && folded(items[prev].id)) onExpand?.(items[prev].id);
+    }
     void onSetDepths(shiftSubtree(items, focusedIndex, delta));
-  }, [focusId, draft, draftMaxDepth, focusedIndex, items, onSetDepths]);
+  }, [focusId, draft, draftMaxDepth, focusedIndex, items, onSetDepths, folded, onExpand]);
 
   /**
    * Move the focused bullet past its sibling, children in tow. Unlike the drag
@@ -426,7 +480,7 @@ export function NoteList({
       value={body}
       onChange={setBody}
       onSubmit={handleEnter}
-      onBlur={blur}
+      onBlur={() => blur(focusId)}
       onBackspaceAtStart={handleBackspaceAtStart}
       onCancel={() => { movingFocus.current = true; setFocusId(null); setDraftState(null); setBody(''); movingFocus.current = false; }}
       places={places}
@@ -490,7 +544,7 @@ export function NoteList({
         suppressTransition={suppressTransition}
         canDrag={canDrag}
         collapsible={structural !== -1 && hasChildren(items, structural)}
-        collapsed={folded(note.id)}
+        collapsed={activeFolds.has(note.id)}
         onToggleCollapse={onToggleCollapse ? () => onToggleCollapse(note.id) : undefined}
         onStartEdit={() => void startEdit(note)}
         onDelete={() => structural === -1 ? false : deleteNote(note, structural)}
@@ -535,7 +589,7 @@ export function NoteList({
             if (focusedIndex === -1) return;
             void deleteNote(items[focusedIndex], focusedIndex);
           }}
-          onDone={() => void blur()}
+          onDone={() => void blur(focusId)}
         />
       )}
     </div>
