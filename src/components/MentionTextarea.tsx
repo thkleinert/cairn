@@ -12,16 +12,25 @@ interface Props {
   onCancel?: () => void;
   /**
    * Backspace pressed with the caret at position 0 and nothing selected.
-   * Return true to say it was handled and the keystroke should be swallowed —
-   * that's how an outline removes an empty bullet and steps back up to the
-   * previous one instead of deleting a character that isn't there.
+   *
+   * The keystroke is always swallowed when this is provided — at offset 0 with
+   * no selection there is nothing to the left to delete, so preventing the
+   * default costs nothing and spares the handler from racing the browser while
+   * it awaits. The handler decides what happens; it does not decide whether
+   * the key was consumed.
    */
-  onBackspaceAtStart?: () => boolean | Promise<boolean>;
+  onBackspaceAtStart?: () => void | Promise<void | boolean>;
   places: Place[];
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
   ariaLabel?: string;
+  /**
+   * The underlying textarea, so a caller can put focus back after something
+   * moved the row in the DOM. Reordering a keyed list moves the node rather
+   * than remounting it, which blurs it and does NOT re-run autoFocus.
+   */
+  inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 }
 
 // A textarea that grows with its content and offers the trip's places after an
@@ -29,7 +38,7 @@ interface Props {
 // can't drift apart.
 export function MentionTextarea({
   value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, places,
-  placeholder, autoFocus, className = '', ariaLabel,
+  placeholder, autoFocus, className = '', ariaLabel, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
@@ -116,7 +125,7 @@ export function MentionTextarea({
   return (
     <div className="mention-field">
       <textarea
-        ref={ref}
+        ref={el => { ref.current = el; if (inputRef) inputRef.current = el; }}
         rows={1}
         className={`input mention-input ${className}`}
         aria-label={ariaLabel}

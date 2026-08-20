@@ -2,11 +2,10 @@ import { useState, useCallback, useEffect } from 'react';
 
 // A set of ids remembered per trip in localStorage.
 //
-// Backs the two bits of state that are about how *you* are looking at a trip
-// rather than about the trip itself: which sections you have folded, and which
-// suggestions you have waved away. Neither belongs in the database — one would
-// fold a collaborator's sections shut while they were reading, the other would
-// dismiss a suggestion for everybody.
+// Backs state that is about how *you* are looking at a trip rather than about
+// the trip itself — which sections and bullets you have folded. That does not
+// belong in the database: stored there it would fold a collaborator's sections
+// shut while they were reading them.
 //
 // The consequence is that neither follows you to another device, which is the
 // right way round: stale view state on a second device is invisible, whereas

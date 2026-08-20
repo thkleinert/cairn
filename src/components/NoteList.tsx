@@ -157,6 +157,69 @@ export function NoteList({
     return next;
   }, [items, draft, draftIndex]);
 
+  /** The focused textarea, for putting focus back after a reorder moves it. */
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  /**
+   * Run something that moves focus, or moves the row focus is in.
+   *
+   * Every guarded region in this file used to raise `movingFocus`, await, and
+   * lower it — and each one got the edges wrong differently. Two mattered: a
+   * rejection left the guard raised for the life of the component (no edit
+   * ever committing again, Enter dead, nothing on screen to say why), and
+   * lowering it synchronously was too early, because React re-renders after
+   * the current task and the blur we are guarding against arrives then.
+   *
+   * So: raised here, lowered after the render has flushed, always. And if the
+   * row was only moved rather than replaced, focus is put back — reordering a
+   * keyed list moves the DOM node instead of remounting it, which blurs the
+   * textarea without re-running autoFocus. That is the case the previous fix
+   * missed: it only recognised a move that CHANGED which row was focused, and
+   * Move Up on an existing bullet does not.
+   */
+  const withFocusMove = useCallback(async (run: () => void | Promise<void>, refocus = false) => {
+    movingFocus.current = true;
+    try {
+      await run();
+    } finally {
+      requestAnimationFrame(() => {
+        if (refocus) inputRef.current?.focus();
+        movingFocus.current = false;
+      });
+    }
+  }, []);
+
+  /**
+   * Remove a bullet and promote whatever was under it — the one path, used by
+   * the swipe, by Backspace on an empty row, and by emptying a bullet's text.
+   *
+   * Emptying used to route through onUpdate straight to a delete, skipping the
+   * promotion the other two were careful to do. The children kept their stored
+   * depths while normaliseDepths drew them one level shallower, and the next
+   * move wrote that rendered shape back — silently re-nesting them under a
+   * bullet they had never been related to.
+   */
+  const removeBullet = useCallback(async (
+    note: TripNote, index: number, opts: { offerUndo: boolean },
+  ) => {
+    const promotions = promotionsAfterDelete(items, index);
+    const removed = await onRemove(note.id);
+    if (removed === false) return false;
+    if (promotions.length > 0) await onSetDepths(promotions);
+    if (opts.offerUndo && onRestore) {
+      toast('Note deleted', 'info', {
+        label: 'Undo',
+        run: () => {
+          void onRestore(note);
+          if (promotions.length > 0) {
+            void onSetDepths(promotions.map(p => ({ id: p.id, depth: p.depth + 1 })));
+          }
+        },
+      });
+    }
+    return true;
+  }, [items, onRemove, onSetDepths, onRestore]);
+
   /**
    * Open a new bullet and put the caret in it. Every way of starting one goes
    * through here so the committed-latch is cleared in exactly one place —
@@ -253,12 +316,19 @@ export function NoteList({
         return null;
       }
     }
-    const note = items.find(n => n.id === id);
-    // An emptied bullet deletes itself — the hook routes a blank body to
-    // onRemove, since a blank row can't be stored and shouldn't be shown.
-    if (note && body.trim() !== note.body) await onUpdate(id, body);
-    return note ?? null;
-  }, [focusId, body, draft, items, onAdd, onUpdate]);
+    const at = items.findIndex(n => n.id === id);
+    const note = at === -1 ? undefined : items[at];
+    if (!note) return null;
+    // An emptied bullet deletes itself, through removeBullet like every other
+    // deletion, so its children are promoted. Routing a blank body to onUpdate
+    // reached the same delete without them.
+    if (!body.trim()) {
+      await removeBullet(note, at, { offerUndo: true });
+      return null;
+    }
+    if (body.trim() !== note.body) await onUpdate(id, body);
+    return note;
+  }, [focusId, body, draft, items, onAdd, onUpdate, removeBullet]);
 
   const startEdit = useCallback(async (note: TripNote) => {
     if (focusId === note.id) return;
@@ -309,6 +379,49 @@ export function NoteList({
     setBody('');
   }, [commit, body]);
 
+  /**
+   * Backspace at the very start of an empty bullet removes it and puts the
+   * caret at the end of the one above — how every outliner walks back up a
+   * list. Only when it's empty: at the start of a bullet with text it would
+   * eat the previous bullet's content.
+   */
+  const handleBackspaceAtStart = useCallback(async () => {
+    const id = focusId;
+    if (!id || body.length > 0) return false;
+
+    // The bullet above ON SCREEN, not the one above in the outline. With a
+    // folded bullet between them the outline's predecessor is hidden, and
+    // focusing it left the keyboard up and the toolbar acting on a row that
+    // renders nowhere.
+    // A draft can be anchored to a bullet that is not on screen — the
+    // startDraft effect anchors to the last item in the outline, which may be
+    // a collapsed bullet's child. Falling back to the last visible row keeps
+    // Backspace stepping up instead of dismissing the keyboard.
+    const visibleAt = visible.findIndex(n => n.id === (id === DRAFT ? draft?.afterId : id));
+    const previous = id === DRAFT
+      ? (visibleAt === -1 ? visible[visible.length - 1] : visible[visibleAt])
+      : (visibleAt === -1 ? undefined : visible[visibleAt - 1]);
+
+    if (id === DRAFT) {
+      if (draft && draft.depth > 0) { setDraftState({ ...draft, depth: draft.depth - 1 }); return true; }
+      await withFocusMove(() => {
+        setDraftState(null);
+        if (previous) { setFocusId(previous.id); setBody(previous.body); }
+        else { setFocusId(null); setBody(''); }
+      });
+      return true;
+    }
+
+    // An empty row has nothing to restore, so no Undo is offered for it.
+    await withFocusMove(async () => {
+      const note = items[focusedIndex];
+      if (note) await removeBullet(note, focusedIndex, { offerUndo: false });
+      if (previous) { setFocusId(previous.id); setBody(previous.body); }
+      else { setFocusId(null); setBody(''); }
+    });
+    return true;
+  }, [focusId, body, focusedIndex, draft, items, visible, removeBullet, withFocusMove]);
+
   /** Enter: close this bullet and open the next one at the same level. */
   const handleEnter = useCallback(async () => {
     if (busy.current) return;
@@ -340,6 +453,11 @@ export function NoteList({
       return;
     }
 
+    // Emptied: this is a deletion, not a new bullet. Committing first would
+    // delete the row and then anchor the new draft to its dead id, which sent
+    // the bullet to the bottom of the list.
+    if (!body.trim()) { await handleBackspaceAtStart(); return; }
+
     busy.current = true;
     movingFocus.current = true;
     try {
@@ -362,79 +480,18 @@ export function NoteList({
       movingFocus.current = false;
       busy.current = false;
     }
-  }, [focusId, draft, body, commit, blur, items, folded, onExpand, openDraft]);
-
-  /**
-   * Backspace at the very start of an empty bullet removes it and puts the
-   * caret at the end of the one above — how every outliner walks back up a
-   * list. Only when it's empty: at the start of a bullet with text it would
-   * eat the previous bullet's content.
-   */
-  const handleBackspaceAtStart = useCallback(async () => {
-    const id = focusId;
-    if (!id || body.length > 0) return false;
-
-    // The bullet above ON SCREEN, not the one above in the outline. With a
-    // folded bullet between them the outline's predecessor is hidden, and
-    // focusing it left the keyboard up and the toolbar acting on a row that
-    // renders nowhere.
-    // A draft can be anchored to a bullet that is not on screen — the
-    // startDraft effect anchors to the last item in the outline, which may be
-    // a collapsed bullet's child. Falling back to the last visible row keeps
-    // Backspace stepping up instead of dismissing the keyboard.
-    const visibleAt = visible.findIndex(n => n.id === (id === DRAFT ? draft?.afterId : id));
-    const previous = id === DRAFT
-      ? (visibleAt === -1 ? visible[visible.length - 1] : visible[visibleAt])
-      : (visibleAt === -1 ? undefined : visible[visibleAt - 1]);
-
-    if (id === DRAFT) {
-      if (draft && draft.depth > 0) { setDraftState({ ...draft, depth: draft.depth - 1 }); return true; }
-      movingFocus.current = true;
-      setDraftState(null);
-      if (previous) { setFocusId(previous.id); setBody(previous.body); }
-      else { setFocusId(null); setBody(''); }
-      movingFocus.current = false;
-      return true;
-    }
-
-    movingFocus.current = true;
-    const note = items.find(n => n.id === id);
-    if (note) {
-      const promotions = promotionsAfterDelete(items, focusedIndex);
-      const removed = await onRemove(id);
-      if (removed !== false && promotions.length > 0) await onSetDepths(promotions);
-    }
-    if (previous) { setFocusId(previous.id); setBody(previous.body); }
-    else { setFocusId(null); setBody(''); }
-    movingFocus.current = false;
-    return true;
-  }, [focusId, body, focusedIndex, draft, items, visible, onRemove, onSetDepths]);
+  }, [focusId, draft, body, commit, blur, items, folded, onExpand, openDraft, handleBackspaceAtStart]);
 
   const deleteNote = useCallback(async (note: TripNote, index: number) => {
-    const promotions = promotionsAfterDelete(items, index);
-    if (focusId === note.id) { movingFocus.current = true; setFocusId(null); setBody(''); movingFocus.current = false; }
-    // Everything below is on behalf of a bullet that is gone. If it isn't —
-    // offline, RLS — promoting its children reshapes the outline under a
-    // bullet still sitting there, and offering Undo leads to an insert whose
-    // id already exists, which fails and says so.
-    const removed = await onRemove(note.id);
-    if (removed === false) return false;
-    // Children are promoted rather than deleted with their parent, so a swipe
-    // can never silently take a whole subtree with it.
-    if (promotions.length > 0) await onSetDepths(promotions);
-    if (onRestore) {
-      toast('Note deleted', 'info', {
-        label: 'Undo',
-        run: () => {
-          void onRestore(note);
-          if (promotions.length > 0) {
-            void onSetDepths(promotions.map(p => ({ id: p.id, depth: p.depth + 1 })));
-          }
-        },
-      });
+    const removed = await removeBullet(note, index, { offerUndo: true });
+    // Torn down only once the row has actually gone. Clearing first meant an
+    // offline delete took the keyboard, the toolbar and the caret away and
+    // then left the bullet sitting there with a toast saying it had failed.
+    if (removed && focusIdRef.current === note.id) {
+      await withFocusMove(() => { setFocusId(null); setBody(''); });
     }
-    return true;
-  }, [items, focusId, onRemove, onSetDepths, onRestore]);
+    return removed;
+  }, [removeBullet, withFocusMove]);
 
   // ---- toolbar ----------------------------------------------------------
 
@@ -445,11 +502,14 @@ export function NoteList({
     // bullet you had just typed could not be put where you wanted it without
     // committing, leaving, and coming back.
     if (focusId === DRAFT && draft) {
+      // Moving a draft commits it first, and an empty one cannot be committed
+      // — so the arrows were offered on a row where tapping them did nothing.
+      const movable = body.trim().length > 0;
       return {
         canIndent: draft.depth < draftMaxDepth,
         canOutdent: draft.depth > 0,
-        canMoveUp: canMoveUp(projected, draftIndex),
-        canMoveDown: canMoveDown(projected, draftIndex),
+        canMoveUp: movable && canMoveUp(projected, draftIndex),
+        canMoveDown: movable && canMoveDown(projected, draftIndex),
         canDelete: true,
       };
     }
@@ -463,7 +523,7 @@ export function NoteList({
       canMoveDown: canMoveDown(items, focusedIndex),
       canDelete: true,
     };
-  }, [focusId, draft, draftMaxDepth, projected, draftIndex, items, focusedIndex]);
+  }, [focusId, draft, draftMaxDepth, projected, draftIndex, items, focusedIndex, body]);
 
   const nudge = useCallback((delta: 1 | -1) => {
     if (focusId === DRAFT) {
@@ -524,8 +584,14 @@ export function NoteList({
 
     if (focusedIndex === -1) return;
     const next = moveSubtree(items, focusedIndex, direction);
-    if (next) onReorder(next);
-  }, [focusId, body, draftIndex, projected, commit, focusedIndex, items, onReorder]);
+    if (!next) return;
+    // Guarded AND refocused. Reordering moves this row's <li>, which blurs the
+    // textarea inside it — and because the move does not change which bullet
+    // is focused, neither of blur's guards fired and it tore the editor down.
+    // That is the exact symptom the guard was introduced to prevent; it only
+    // ever covered moves that changed focus.
+    void withFocusMove(() => { onReorder(next); }, true);
+  }, [focusId, body, draftIndex, projected, commit, focusedIndex, items, onReorder, withFocusMove]);
 
   // ---- render -----------------------------------------------------------
 
@@ -541,6 +607,7 @@ export function NoteList({
       autoFocus={autoFocus}
       ariaLabel={ariaLabel}
       className="note-bullet-input"
+      inputRef={inputRef}
       placeholder={focusId === DRAFT && items.length === 0 ? placeholder : undefined}
     />
   );

@@ -15,8 +15,8 @@ import { usePersistentSet } from './usePersistentSet';
 // recorded" always means "the default", and neither caller has to know which
 // way round the storage runs.
 //
-// Kept per view rather than shared: folding a stop on the itinerary is not a
-// statement about wanting its notes hidden too.
+// Kept per scope rather than shared: folding a section is not a statement
+// about wanting the bullets inside it folded too.
 //
 // localStorage rather than the database, because this is how *you* are looking
 // at a trip right now. Stored server-side it would fold a collaborator's
@@ -27,9 +27,7 @@ export type FoldScope =
   | 'notes'
   /** Bullets within those sections. Open by default — you opened the section
    *  to read them, and a bullet is not a section. */
-  | 'bullets'
-  /** Rows on the places list. Folded by default. */
-  | 'list';
+  | 'bullets';
 
 interface Options {
   /** What a section with nothing recorded about it does. */
