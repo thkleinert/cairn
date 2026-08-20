@@ -62,6 +62,18 @@ create table public.places (
   latitude        double precision not null,
   longitude       double precision not null,
   google_place_id text,
+  -- Anchors this place inside another — a café in the city it's in. Used by
+  -- the notes page to nest it under its parent's heading instead of giving it
+  -- a top-level section of its own. The composite FK below keeps parent and
+  -- child in the same trip; `on delete set null` so deleting a city releases
+  -- its cafés rather than deleting them.
+  parent_place_id uuid,
+  -- What this place IS: somewhere you go, or somewhere inside one of those.
+  -- A stop is a city, an island, a park; a location is a café, a hotel, a
+  -- viewpoint. The list view nests locations under their stop, and the map can
+  -- hide them. Recorded rather than guessed from the address, which misreads a
+  -- town carrying a postcode and cannot read a long-press pin at all.
+  kind            text not null default 'stop' check (kind in ('stop','location')),
   status          text not null default 'planned' check (status in ('planned','visited')),
   visited_at      timestamptz,
   notes           text,
@@ -82,6 +94,41 @@ create table public.places (
 -- what stops a note being attached to a place in a different trip. Declared
 -- here because that FK is created further down and needs this to already exist.
 alter table public.places add constraint places_id_trip_unique unique (id, trip_id);
+
+-- A place's parent must be in the same trip. Declared here rather than inline
+-- because it references the unique constraint just above. MATCH SIMPLE means a
+-- null parent skips the check, which is what an unanchored place needs.
+-- The column list on SET NULL is not optional: a bare `on delete set null` on
+-- a composite key nulls every referencing column, so deleting a parent would
+-- try to null the child's trip_id too and fail its not-null constraint —
+-- making a city with anything anchored to it undeletable. Requires PG 15+.
+alter table public.places
+  add constraint places_parent_in_trip
+  foreign key (parent_place_id, trip_id)
+  references public.places(id, trip_id)
+  on delete set null (parent_place_id);
+
+-- A place cannot be inside itself. Longer cycles can't be expressed as a
+-- check; the client renders one level only and treats a place whose parent
+-- itself has a parent as top-level, so a cycle shows as two unnested headings
+-- rather than as places that disappear.
+alter table public.places
+  add constraint places_parent_not_self
+  check (parent_place_id is null or parent_place_id <> id);
+
+-- Only a location sits inside something — the half of the stop/location model
+-- a check constraint can see, and the important half: it guarantees stops are
+-- always top level. That a parent is itself a stop is enforced by the client
+-- (only stops are offered) and degraded gracefully by groupPlaces, which
+-- ignores a parent that is not one.
+alter table public.places
+  add constraint places_anchored_is_location
+  check (parent_place_id is null or kind = 'location');
+
+create index places_kind_idx on public.places(trip_id, kind);
+
+create index places_parent_idx
+  on public.places(parent_place_id) where parent_place_id is not null;
 
 create table public.place_tags (
   place_id uuid not null references public.places(id) on delete cascade,
