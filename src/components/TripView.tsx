@@ -6,6 +6,7 @@ import { usePlaces } from '../hooks/usePlaces';
 import { useTripNotes } from '../hooks/useTripNotes';
 import { useTags } from '../hooks/useTags';
 import { useCollapsed } from '../hooks/useCollapsed';
+import { usePersistentSet } from '../hooks/usePersistentSet';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 // Lazy: mapbox-gl is ~90% of the bundle; splitting it means the auth screen,
@@ -42,6 +43,10 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // Owned here rather than inside the notes page so folding survives the page
   // being closed and reopened, which is most of what folding is for.
   const { isCollapsed, toggle: toggleCollapse, expand: expandCollapsed } = useCollapsed(trip.id);
+  // "Leave it where it is" for an anchor suggestion, remembered so the page
+  // doesn't ask again every time it's opened.
+  const { has: isAnchorDismissed, add: dismissAnchor } =
+    usePersistentSet(`cairn:anchor-dismissed:${trip.id}`);
   const {
     tripNotes, notesByPlace, loading: notesLoading,
     addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,
@@ -247,6 +252,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           isCollapsed={isCollapsed}
           toggleCollapse={toggleCollapse}
           onExpandNote={expandCollapsed}
+          onAnchorPlace={(childId, parentId) => { void setPlaceParent(childId, parentId); }}
+          isAnchorDismissed={isAnchorDismissed}
+          onDismissAnchor={dismissAnchor}
           onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
           onClose={() => setShowNotes(false)}
         />

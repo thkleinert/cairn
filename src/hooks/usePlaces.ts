@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
+import { nearestParent } from '../lib/anchor';
 import { removeStorageUrls } from '../lib/storage';
 import type { Place, PlaceImage } from '../types';
 
@@ -128,9 +129,25 @@ export function usePlaces(tripId: string | undefined) {
     // max+1, not length: after any delete the positions have gaps, and
     // length would collide with an existing position.
     const nextPosition = places.reduce((max, p) => Math.max(max, p.position), -1) + 1;
+
+    // Anchor a new venue to the settlement it is in, if the trip already has
+    // one nearby. Done here, in the insert, rather than as a follow-up write:
+    // it costs nothing extra and the place is never briefly top-level.
+    //
+    // Only on creation. There is no arrangement to disturb at this moment and
+    // the "Part of" field undoes it in one tap, whereas silently re-filing a
+    // place someone already put somewhere is not ours to do — existing places
+    // get a suggestion on the notes page instead.
+    const parent = nearestParent(place, places);
+
     const { data, error } = await supabase
       .from('places')
-      .insert({ ...place, trip_id: tripId, position: nextPosition })
+      .insert({
+        ...place,
+        trip_id: tripId,
+        position: nextPosition,
+        parent_place_id: parent?.id ?? null,
+      })
       .select()
       .single();
     if (error || !data) {

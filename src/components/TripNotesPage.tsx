@@ -1,8 +1,9 @@
-import { ArrowLeft, NotebookPen, ChevronRight, ChevronDown } from 'lucide-react';
+import { ArrowLeft, NotebookPen, ChevronRight, ChevronDown, X } from 'lucide-react';
 import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
 import { groupPlaces } from '../lib/outline';
+import { nearestParent } from '../lib/anchor';
 import type { Place, Tag, TripNote } from '../types';
 
 // The trip-wide section folds like any other, but has no place id to key that
@@ -31,6 +32,10 @@ interface Props {
   isCollapsed: (id: string) => boolean;
   toggleCollapse: (id: string) => void;
   onExpandNote: (id: string) => void;
+  /** Accepting a "looks like it's in X" suggestion. */
+  onAnchorPlace: (childId: string, parentId: string) => void;
+  isAnchorDismissed: (placeId: string) => boolean;
+  onDismissAnchor: (placeId: string) => void;
   onClose: () => void;
 }
 
@@ -55,7 +60,8 @@ interface Props {
 export function TripNotesPage({
   places, allTags, tripNotes, notesByPlace, loading,
   onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace,
-  isCollapsed, toggleCollapse, onExpandNote, onClose,
+  isCollapsed, toggleCollapse, onExpandNote,
+  onAnchorPlace, isAnchorDismissed, onDismissAnchor, onClose,
 }: Props) {
   useEscapeClose(onClose);
 
@@ -81,6 +87,10 @@ export function TripNotesPage({
     const notes = notesByPlace.get(place.id) ?? [];
     const collapsed = isCollapsed(place.id);
     const childCount = (childrenOf.get(place.id) ?? []).length;
+    // Only for places still at the top level, and only until waved away.
+    const suggestion = anchored || isAnchorDismissed(place.id)
+      ? null
+      : nearestParent(place, places);
 
     return (
       <section
@@ -131,6 +141,34 @@ export function TripNotesPage({
             <ChevronRight size={17} />
           </button>
         </h2>
+
+        {/* "Looks like it's in Bangkok." Offered, never applied — a place
+            already sitting at the top level was put there by someone, and a
+            heuristic good enough to guess is not good enough to overrule that.
+            New places are anchored outright instead, where there is nothing to
+            overrule. */}
+        {!anchored && suggestion && (
+          <div className="anchor-hint">
+            <span className="anchor-hint-text">
+              Looks like it&rsquo;s in <strong>{suggestion.name}</strong>
+            </span>
+            <button
+              type="button"
+              className="anchor-hint-accept"
+              onClick={() => onAnchorPlace(place.id, suggestion.id)}
+            >
+              Move it
+            </button>
+            <button
+              type="button"
+              className="anchor-hint-dismiss"
+              aria-label={`Leave ${place.name} where it is`}
+              onClick={() => onDismissAnchor(place.id)}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
 
         {/* What a folded section is hiding, so it isn't just gone. */}
         {collapsed && (notes.length > 0 || childCount > 0) && (
