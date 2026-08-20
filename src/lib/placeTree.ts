@@ -44,6 +44,28 @@ export function flattenPlaces(
   return rows;
 }
 
+/**
+ * Put the hidden rows back into an order taken from the screen.
+ *
+ * The list only renders — and so only reorders — what is visible, but a folded
+ * stop's locations still have positions, and sending an order that omits them
+ * would leave those positions describing a list they are no longer part of.
+ * Each stop's children follow it, whether they were on screen or not.
+ */
+export function withHiddenChildren(orderedIds: string[], places: Place[]): string[] {
+  const { childrenOf } = groupPlaces(places);
+  const shown = new Set(orderedIds);
+  const out: string[] = [];
+  for (const id of orderedIds) {
+    out.push(id);
+    for (const child of childrenOf.get(id) ?? []) {
+      // Skip the ones already in the list, or a child would appear twice.
+      if (!shown.has(child.id)) out.push(child.id);
+    }
+  }
+  return out;
+}
+
 /** Sideways travel needed before a drop re-nests rather than just reorders. */
 export const INDENT_PX = 36;
 

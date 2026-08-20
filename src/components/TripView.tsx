@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy } from 'react';
+import { useState, useEffect, useCallback, lazy } from 'react';
 import { MapBoundary } from './MapBoundary';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen, Eye, EyeOff } from 'lucide-react';
 import type { PickedPoint, Trip } from '../types';
@@ -47,6 +47,17 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // doesn't ask again every time it's opened.
   const { has: isAnchorDismissed, add: dismissAnchor } =
     usePersistentSet(`cairn:anchor-dismissed:${trip.id}`);
+  // The list view stores which stops have been OPENED, not which are shut, so
+  // it starts collapsed: the list is the overview of a trip, and a trip with
+  // a dozen places inside its cities reads as a wall of rows otherwise. The
+  // notes page keeps the opposite default — it is where you read what is
+  // written, so hiding it by default would hide the point of the page.
+  const { has: isListRowOpen, toggle: toggleListRow } =
+    usePersistentSet(`cairn:list-open:${trip.id}`);
+  // Memoised: PlaceListView flattens against this, and a new function each
+  // render would rebuild the row list every render and re-enter the drag
+  // hook's sync effect endlessly.
+  const isListRowFolded = useCallback((id: string) => !isListRowOpen(id), [isListRowOpen]);
   const {
     tripNotes, notesByPlace, loading: notesLoading,
     addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,
@@ -210,9 +221,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             allTags={tags}
             onSelectPlace={(place) => setSelectedPlaceId(place.id)}
             onReorder={reorderPlaces}
-            onSetParent={(placeId, parentId) => { void setPlaceParent(placeId, parentId); }}
-            isFolded={isCollapsed}
-            onToggleFold={toggleCollapse}
+            onSetParent={setPlaceParent}
+            isFolded={isListRowFolded}
+            onToggleFold={toggleListRow}
           />
         )}
       </div>

@@ -2,7 +2,7 @@ import { useRef, useMemo } from 'react';
 import { CheckCircle, Circle, MapPin, GripVertical, Plus, Minus } from 'lucide-react';
 import type { Place, Tag } from '../types';
 import { useDragReorder } from '../hooks/useDragReorder';
-import { flattenPlaces, resolveDrop, INDENT_PX } from '../lib/placeTree';
+import { flattenPlaces, resolveDrop, withHiddenChildren, INDENT_PX } from '../lib/placeTree';
 
 interface Props {
   places: Place[];
@@ -10,8 +10,11 @@ interface Props {
   allTags: Tag[];
   onSelectPlace: (place: Place) => void;
   onReorder: (orderedIds: string[]) => void;
-  /** Re-nesting after a sideways drop. null makes the place a stop again. */
-  onSetParent: (placeId: string, parentId: string | null) => void;
+  /**
+   * Re-nesting after a sideways drop. null makes the place a stop again.
+   * Awaited before the reorder is written, so the two cannot race.
+   */
+  onSetParent: (placeId: string, parentId: string | null) => Promise<unknown> | void;
   isFolded: (id: string) => boolean;
   onToggleFold: (id: string) => void;
 }
@@ -40,10 +43,22 @@ export function PlaceListView({
     getId: p => p.id,
     enabled: canReorder,
     trackSideways: true,
-    onReorder: (orderedIds, sidewaysPx = 0) => {
+    onReorder: async (orderedIds, sidewaysPx = 0) => {
       const drop = resolveDrop(orderedIds, dragId ?? '', sidewaysPx, places);
-      if (drop.changed && dragId) onSetParent(dragId, drop.parentId);
-      onReorder(orderedIds);
+
+      // Re-nest first and wait for it. Both writes end in a refetch, and the
+      // reorder's arriving first would describe the row as it was before it
+      // moved out.
+      if (drop.changed && dragId) await onSetParent(dragId, drop.parentId);
+
+      // A purely sideways drag leaves the order untouched, and writing an
+      // unchanged order is a round trip whose refetch can only undo what just
+      // happened.
+      const full = withHiddenChildren(orderedIds, places);
+      const before = places.map(p => p.id);
+      if (full.length !== before.length || full.some((id, i) => id !== before[i])) {
+        onReorder(full);
+      }
     },
   });
 
