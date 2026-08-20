@@ -134,42 +134,37 @@ export function useTripNotes(tripId: string | undefined) {
    * statements no matter how large the subtree.
    */
   const setNoteDepths = useCallback(async (updates: { id: string; depth: number }[]) => {
-    if (updates.length === 0) return;
+    if (!tripId || updates.length === 0) return;
     const next = new Map(updates.map(u => [u.id, u.depth]));
-    // The depths as they were, read from the rows themselves rather than kept
-    // as a snapshot of the whole list. A whole-list snapshot is taken before
-    // the call and restored after it, so anything that happened in between
-    // comes back with it — and deleting a bullet promotes its children, which
-    // calls this immediately afterwards, so a failed promotion put the just
-    // deleted bullet back on screen while it was already gone from the
-    // database.
-    const restore: { id: string; depth: number }[] = [];
-    setNotes(prev => prev.map(n => {
-      if (!next.has(n.id)) return n;
-      restore.push({ id: n.id, depth: n.depth });
-      return { ...n, depth: next.get(n.id)! };
-    }));
 
-    // Group by target depth so a subtree of any size costs one statement per
-    // distinct level rather than one per bullet.
-    const byDepth = new Map<number, string[]>();
-    for (const u of updates) {
-      const list = byDepth.get(u.depth);
-      if (list) list.push(u.id); else byDepth.set(u.depth, [u.id]);
-    }
-    for (const [depth, ids] of byDepth) {
-      const { error } = await supabase.from('trip_notes').update({ depth }).in('id', ids);
-      if (error) {
-        toast('Could not change the indent');
-        // Only the depths this call changed, on whatever rows still exist.
-        const back = new Map(restore.map(r => [r.id, r.depth]));
-        setNotes(prev => prev.map(n => back.has(n.id) ? { ...n, depth: back.get(n.id)! } : n));
-        return;
-      }
-    }
-  }, []);
+    // Snapshotted from a plain read, BEFORE the state update. Collecting it
+    // inside the updater looked equivalent but is not: React may invoke an
+    // updater more than once (StrictMode does, and so does concurrent
+    // rebasing), and a second run against already-updated state records the
+    // new depth as the thing to roll back to — a rollback that restores
+    // exactly what it was meant to undo.
+    const previousDepths = notes
+      .filter(n => next.has(n.id))
+      .map(n => ({ id: n.id, depth: n.depth }));
 
-  /** Returns whether the row actually went, so callers can act on failure. */
+    setNotes(prev => prev.map(n => next.has(n.id) ? { ...n, depth: next.get(n.id)! } : n));
+
+    // One statement, through an RPC, for the reason reorder_trip_notes is one:
+    // this used to be an UPDATE per distinct depth, and a failure on the
+    // second left the first committed — whose realtime event then overwrote
+    // the client's rollback with the half-applied shape.
+    const { error } = await supabase.rpc('set_trip_note_depths', {
+      p_trip_id: tripId,
+      p_note_ids: updates.map(u => u.id),
+      p_depths: updates.map(u => u.depth),
+    });
+    if (error) {
+      toast('Could not change the indent');
+      const back = new Map(previousDepths.map(r => [r.id, r.depth]));
+      setNotes(prev => prev.map(n => back.has(n.id) ? { ...n, depth: back.get(n.id)! } : n));
+    }
+  }, [tripId, notes]);
+
   const removeNote = useCallback(async (id: string) => {
     // Snapshot for rollback: a delete is the one operation where refetching on
     // failure isn't enough — the row is still there, so the user needs to see

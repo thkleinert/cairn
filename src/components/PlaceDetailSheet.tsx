@@ -285,7 +285,14 @@ export function PlaceDetailSheet({
                 places={allPlaces}
                 onAdd={(body, opts) => onAddNote?.(body, opts)}
                 onUpdate={(id, body) => onUpdateNote?.(id, body)}
-                onRemove={(id) => onRemoveNote?.(id)}
+                // `?? false`, not a bare optional call. deleteNote treats
+                // anything but a literal false as "the row went", so an absent
+                // handler would have it promote the children of a note that is
+                // still there and leave the swiped row parked off-screen,
+                // invisible and unswipeable — the exact failure useSwipeToDelete
+                // documents. No caller omits these today; the signature invited
+                // one to.
+                onRemove={(id) => onRemoveNote?.(id) ?? false}
                 onRestore={onRestoreNote}
                 onSetDepths={(updates) => onSetNoteDepths?.(updates)}
                 onReorder={(ids) => onReorderNotes?.(ids)}

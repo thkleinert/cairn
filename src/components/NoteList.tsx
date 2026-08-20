@@ -233,8 +233,25 @@ export function NoteList({
       // round trip, and a blur arriving during it must find the door shut.
       if (draftCommitted.current) return null;
       draftCommitted.current = true;
-      const created = await onAdd(trimmed, { depth: draft.depth, afterId: draft.afterId });
-      return created ?? null;
+      try {
+        const created = await onAdd(trimmed, { depth: draft.depth, afterId: draft.afterId }) ?? null;
+        // …and lift again if nothing was written. The latch exists to stop the
+        // same bullet being inserted twice, not to stop it being inserted at
+        // all: left raised after a failed insert it made every later attempt a
+        // silent no-op, so the row sat there with its text and then vanished
+        // when the user tapped away, having shown one toast minutes earlier.
+        if (created === null) draftCommitted.current = false;
+        return created;
+      } catch {
+        // A rejection is a write that did not happen, same as a null — and it
+        // has to clear the latch by the same reasoning. It arrives by a
+        // different door: addNote awaits supabase.auth.getUser(), which
+        // REJECTS on a dead network rather than returning an error, so nothing
+        // downstream has reported it either.
+        draftCommitted.current = false;
+        toast('Could not add note');
+        return null;
+      }
     }
     const note = items.find(n => n.id === id);
     // An emptied bullet deletes itself — the hook routes a blank body to
@@ -246,11 +263,20 @@ export function NoteList({
   const startEdit = useCallback(async (note: TripNote) => {
     if (focusId === note.id) return;
     movingFocus.current = true;
-    await commit();
-    setDraftState(null);
-    setFocusId(note.id);
-    setBody(note.body);
-    movingFocus.current = false;
+    try {
+      await commit();
+      setDraftState(null);
+      setFocusId(note.id);
+      setBody(note.body);
+    } finally {
+      // In a finally, not after the await. These guards suppress blur and
+      // Enter while focus is deliberately moving; left raised by a rejected
+      // promise they stay raised for the life of the component — no edit ever
+      // commits again and Enter stops responding, with nothing on screen to
+      // say why. addNote awaits supabase.auth.getUser(), which REJECTS rather
+      // than returning an error when the network is down.
+      movingFocus.current = false;
+    }
   }, [commit, focusId]);
 
   /**
@@ -267,11 +293,21 @@ export function NoteList({
   const blur = useCallback(async (from: string | null) => {
     if (movingFocus.current) return;
     if (from !== null && focusIdRef.current !== from) return;
-    await commit();
+    const saved = await commit();
+    // Checked AGAIN, because commit() awaits a network write and the world
+    // moves during it: tapping another bullet fires this blur first, then
+    // opens that bullet, and this resolving afterwards would tear down the
+    // editor that is now open — the keyboard dropping a beat after the user
+    // tapped somewhere else.
+    if (movingFocus.current) return;
+    if (from !== null && focusIdRef.current !== from) return;
+    // A draft whose insert failed keeps its text and its row. Clearing here
+    // would throw away what was typed with nothing but a toast to show for it.
+    if (from === DRAFT && saved === null && body.trim()) return;
     setFocusId(null);
     setDraftState(null);
     setBody('');
-  }, [commit]);
+  }, [commit, body]);
 
   /** Enter: close this bullet and open the next one at the same level. */
   const handleEnter = useCallback(async () => {
@@ -290,15 +326,23 @@ export function NoteList({
       }
       busy.current = true;
       movingFocus.current = true;
-      const created = await commit();
-      openDraft(created?.id ?? draft.afterId, draft.depth);
-      movingFocus.current = false;
-      busy.current = false;
+      try {
+        const created = await commit();
+        // Nothing was written — keep the bullet, its text and the caret where
+        // they are so it can simply be tried again. Opening the next bullet
+        // here would discard what was typed on the strength of a toast.
+        if (!created) return;
+        openDraft(created.id, draft.depth);
+      } finally {
+        movingFocus.current = false;
+        busy.current = false;
+      }
       return;
     }
 
     busy.current = true;
     movingFocus.current = true;
+    try {
     const at = items.findIndex(n => n.id === id);
     const note = items[at];
     // The new bullet is inserted directly after this one, which is inside its
@@ -314,8 +358,10 @@ export function NoteList({
     // it. Every outliner does it this way for the same reason.
     const nests = at !== -1 && hasChildren(items, at);
     openDraft(id, Math.min((note?.depth ?? 0) + (nests ? 1 : 0), MAX_DEPTH));
-    movingFocus.current = false;
-    busy.current = false;
+    } finally {
+      movingFocus.current = false;
+      busy.current = false;
+    }
   }, [focusId, draft, body, commit, blur, items, folded, onExpand, openDraft]);
 
   /**
@@ -332,10 +378,14 @@ export function NoteList({
     // folded bullet between them the outline's predecessor is hidden, and
     // focusing it left the keyboard up and the toolbar acting on a row that
     // renders nowhere.
+    // A draft can be anchored to a bullet that is not on screen — the
+    // startDraft effect anchors to the last item in the outline, which may be
+    // a collapsed bullet's child. Falling back to the last visible row keeps
+    // Backspace stepping up instead of dismissing the keyboard.
     const visibleAt = visible.findIndex(n => n.id === (id === DRAFT ? draft?.afterId : id));
     const previous = id === DRAFT
-      ? (draft?.afterId ? visible[visibleAt] : visible[visible.length - 1])
-      : visible[visibleAt - 1];
+      ? (visibleAt === -1 ? visible[visible.length - 1] : visible[visibleAt])
+      : (visibleAt === -1 ? undefined : visible[visibleAt - 1]);
 
     if (id === DRAFT) {
       if (draft && draft.depth > 0) { setDraftState({ ...draft, depth: draft.depth - 1 }); return true; }
@@ -454,17 +504,21 @@ export function NoteList({
       if (!body.trim() || draftIndex === -1) return;
       busy.current = true;
       movingFocus.current = true;
-      const created = await commit();
-      if (created) {
+      try {
+        const created = await commit();
+        // Nothing written: leave the draft, its text and the caret alone so it
+        // can be tried again, rather than moving a bullet that does not exist.
+        if (!created) return;
         const next = moveSubtree(
           projected.map(n => (n.id === DRAFT ? created : n)), draftIndex, direction,
         );
         if (next) onReorder(next);
         setDraftState(null);
         setFocusId(created.id);
+      } finally {
+        movingFocus.current = false;
+        busy.current = false;
       }
-      movingFocus.current = false;
-      busy.current = false;
       return;
     }
 

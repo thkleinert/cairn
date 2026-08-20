@@ -48,14 +48,12 @@ export function restoreRow<T extends { id: string; position: number; created_at:
  *
  * Two properties matter, and both were once absent from the places version:
  *
- *   - rows not named in `orderedIds` are KEPT. A view may reorder only part of
- *     a list — the places list sends what is on screen, which excludes
- *     anything folded away — and the rest must survive untouched rather than
- *     vanish until the next refetch.
+ *   - rows not named in `orderedIds` are KEPT, so a view that reorders only
+ *     part of a list leaves the rest untouched rather than dropping it until
+ *     the next refetch.
  *   - only `position` is written. Rebuilding each row from a captured array
  *     writes back a stale copy of every other field, silently undoing anything
- *     changed in the same tick. Re-nesting a place does exactly that: it sets
- *     the parent and reorders together.
+ *     changed in the same tick.
  */
 export function applyOrder<T extends { id: string; position: number; created_at: string }>(
   rows: T[], orderedIds: string[],

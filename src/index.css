@@ -1950,10 +1950,10 @@ textarea.mention-input {
      lines further down next to its first user. */
   --note-step: calc(var(--note-gutter) + 8px);
   /* One nesting level for a bullet — the same step a heading uses, so a
-     nested bullet and an anchored place land on the same axis. They were 20px
-     and 30px, which is exactly the drift the comment on --note-step claims to
-     prevent. MAX_DEPTH caps the total, which is what keeps a readable text
-     column on a 390px screen. */
+     nested bullet and a heading's own notes land on the same axis. These were
+     20px and 30px, which is exactly the drift --note-step exists to prevent.
+     MAX_DEPTH caps the total, which is what keeps a readable text column on a
+     390px screen. */
   --note-indent: var(--note-step);
 }
 
@@ -2266,14 +2266,14 @@ textarea.mention-input {
 
 /* The page is one outline, so it has exactly one step size: the bullet gutter
    plus the gap after it. Everything that is "one level in" moves by this and
-   nothing else, which is what stops headings, notes and anchored places from
-   each drifting to their own idea of an indent. */
+   nothing else, which is what stops headings and notes from each drifting to
+   their own idea of an indent. */
 .notes-heading-dot { flex-shrink: 0; margin-right: 6px; }
 
-/* A section's own depth. A heading sits at it; the notes under that heading
-   sit one step further in, because they are its children. An anchored place
-   is one step in from its parent — which puts it on exactly the same axis as
-   its parent's notes, since it is their sibling. */
+/* A section's own depth: a heading sits at it, and the notes under that
+   heading sit one step further in because they are its children. Every
+   section is at the outer level here — the hook is kept because the rule it
+   expresses is what the two rules below are derived from. */
 .notes-block { --block-indent: 0px; }
 .notes-heading { padding-left: var(--block-indent); }
 .notes-block > .note-list { padding-left: calc(var(--block-indent) + var(--note-step)); }
@@ -2284,8 +2284,8 @@ textarea.mention-input {
 
 
 /* What a folded section is hiding. A collapsed heading with nothing under it
-   is indistinguishable from an empty one, and "3 notes · 1 place" is the
-   difference between folded and forgotten. */
+   is indistinguishable from an empty one, and a note count is the difference
+   between folded and forgotten. */
 .notes-folded-hint {
   display: block;
   width: 100%;
