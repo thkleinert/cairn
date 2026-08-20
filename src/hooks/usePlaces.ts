@@ -125,6 +125,12 @@ export function usePlaces(tripId: string | undefined) {
     google_place_id?: string;
     image_url?: string;
     notes?: string;
+    /**
+     * Google's own classification, when the caller has it. A hint for kindFor
+     * only — there is no such column, so it is destructured out below rather
+     * than spread into the insert, which would fail the whole write.
+     */
+    types?: string[];
   }) => {
     if (!tripId) return null;
     // max+1, not length: after any delete the positions have gaps, and
@@ -140,11 +146,13 @@ export function usePlaces(tripId: string | undefined) {
     // someone already put somewhere is not ours to do — existing places get an
     // offer on the notes page instead.
     const { kind, parentId } = kindFor(place, places);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { types, ...row } = place;
 
     const { data, error } = await supabase
       .from('places')
       .insert({
-        ...place,
+        ...row,
         trip_id: tripId,
         position: nextPosition,
         kind,

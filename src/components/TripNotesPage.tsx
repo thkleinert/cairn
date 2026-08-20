@@ -108,8 +108,13 @@ export function TripNotesPage({
     // collapsing a place and then deleting its last note would strand it: the
     // stored flag still says shut, and the control that would open it is gone.
     const collapsed = foldable && isCollapsed(place.id);
-    // Only for places still at the top level, and only until waved away.
-    const suggestion = anchored || isAnchorDismissed(place.id)
+    // Only for places still at the top level, only until waved away — and
+    // never for a place that holds other places. setPlaceParent refuses that
+    // move (a stop cannot become a location while it still has locations in
+    // it), so offering it puts up a button whose only possible outcome is a
+    // toast saying no. The list view already declines to draw the drag grip
+    // for the same reason; this is the same rule on the other screen.
+    const suggestion = anchored || childCount > 0 || isAnchorDismissed(place.id)
       ? null
       : nearestParent(place, places);
 

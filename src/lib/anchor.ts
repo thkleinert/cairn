@@ -18,33 +18,68 @@ import type { Place, PlaceKind } from '../types';
 export const ANCHOR_MAX_KM = 15;
 
 /**
+ * Google's own answer to "what kind of thing is this?", when we have it.
+ *
+ * This is the signal worth trusting, and it is free: `types` rides along with
+ * the Place Details call the search field already makes and with every nearby
+ * result, so nothing here adds a request or moves a SKU.
+ *
+ * Returns null when the types say nothing either way, leaving the address
+ * heuristic below to answer.
+ */
+const BROAD_TYPES = new Set([
+  // Settlements and the administrative shells around them.
+  'locality', 'sublocality', 'sublocality_level_1', 'neighborhood',
+  'administrative_area_level_1', 'administrative_area_level_2',
+  'administrative_area_level_3', 'administrative_area_level_4',
+  'administrative_area_level_5',
+  'country', 'continent', 'colloquial_area', 'postal_town', 'political',
+  // Things you go to and move around inside, which this app calls stops even
+  // though Google files them as establishments: an island, a lake, a massif,
+  // a national park.
+  'natural_feature', 'archipelago', 'park',
+]);
+
+export function specificFromTypes(types: string[] | undefined): boolean | null {
+  if (!types || types.length === 0) return null;
+  // Broad wins over establishment, because Google marks a national park as
+  // both. Reading `establishment` first filed Khao Sok inside Surat Thani.
+  if (types.some(t => BROAD_TYPES.has(t))) return false;
+  if (types.includes('establishment') || types.includes('point_of_interest')) return true;
+  return null;
+}
+
+/**
  * Does this address describe a specific venue rather than a whole settlement?
  *
- * "Bangkok, Thailand" is somewhere you can be inside. "Salvatorstraße 37-33,
- * 6912 Hörbranz, Österreich" is a front door. A house number or postcode, or
- * three or more comma-separated parts, reliably separates the two without
- * knowing the language or the country's addressing conventions.
+ * The fallback for when Google's types are absent — a place typed in by hand,
+ * or an existing row, which is all the "looks like it's in X" suggestion ever
+ * has to work with.
  *
- * It is a heuristic and it does misfire: a town whose address carries a
- * postcode ("73150 Val-d'Isère, Frankreich") reads as a venue. That only
- * matters if such a town also sits within ANCHOR_MAX_KM of a settlement, and
- * it is why nothing already arranged is ever moved without being asked.
+ * Only the FIRST comma-separated component is examined, because that is the
+ * only part that describes the thing itself; everything after it is the
+ * administrative trail, and in most of the world that trail contains a
+ * postcode. Testing the whole string called every one of these a venue:
+ *
+ *     Les Chapieux, 73700 Bourg-Saint-Maurice, Frankreich   — a hamlet
+ *     Lac du Mont Cenis, 73480 Val-Cenis, Frankreich        — a lake
+ *     Cornettes de Bise, 74360 La Chapelle-d'Abondance      — a mountain
+ *     Ko Lanta, Ko Lanta District, Krabi 81150, Thailand    — an island
+ *
+ * All four are real rows in a real trip, and the first two sit close enough to
+ * a marked stop to have been silently filed inside one. The old rule also
+ * counted commas — three or more parts meant a venue — which by itself made a
+ * venue of "Cambridge, MA, USA" and of every city Google writes with a region.
+ * Both tests are gone; what remains is a house number in the name part.
  */
 export function looksSpecific(address: string | null | undefined): boolean {
   if (!address) return false;
+  const head = address.split(',')[0] ?? '';
   // A leading postcode is how a town writes itself in much of Europe —
-  // "6060 Hall in Tirol, Österreich" — and it is the whole address, not a
-  // number within one. Dropping it first is what separates that from
-  // "Salvatorstraße 37-33, 6912 Hörbranz, Österreich", where the digits sit
-  // after a street name.
-  //
-  // Without this the digit test alone called Hall in Tirol, Val-d'Isère and
-  // Mayrhofen venues, and a town added 8km from a marked city was silently
-  // filed inside it — the same misreading 20260820_places_kind.sql refuses to
-  // trust for its backfill.
-  const withoutLeadingPostcode = address.replace(/^\s*\d{4,6}\s+/, '');
-  if (/\d/.test(withoutLeadingPostcode)) return true;
-  return (withoutLeadingPostcode.match(/,/g)?.length ?? 0) >= 2;
+  // "6060 Hall in Tirol" — and it is the whole address, not a number within
+  // one. Dropping it is what separates that from "Salvatorstraße 37-33",
+  // where the digits sit after a street name.
+  return /\d/.test(head.replace(/^\s*\d{4,6}\s+/, ''));
 }
 
 /**
@@ -77,19 +112,27 @@ export function distanceKm(
 /**
  * The place `candidate` most likely contains, or null if none is convincing.
  *
- * The threshold is not a guess. Measured against a real account: the one
- * genuine containment (a café and the city it is in) sits at 4.9km, and the
- * nearest false pair — a village near a city it is not part of — at 38.2km.
- * Fifteen other pairs run from 44km to 158km. Nothing at all falls between 5
- * and 38, so any threshold in that gap separates them cleanly; 15km is picked
- * to be city-scale rather than tuned to the sample.
+ * The threshold is city-scale, and it is only half of the decision. An earlier
+ * version of this comment claimed the sample had a clean gap between 5km and
+ * 38km that any threshold in between would separate. That was measured over
+ * pairs the OLD classifier had already called venues, and it was wrong on its
+ * own data: a hamlet 8.2km from a lake and a lake 10.5km from a village both
+ * sit inside the supposed gap, and both were being filed as locations.
+ *
+ * Distance cannot fix that, because both really are close. What fixes it is
+ * not asking the distance question at all unless the thing is actually a
+ * venue — which is why the classifier above got stricter and why Google's own
+ * types are preferred over it whenever they exist.
  *
  * Deliberately returns nothing rather than a best guess when the nearest
  * settlement is far away: a trip whose café is in a town nobody marked has no
  * right answer, and inventing one is worse than leaving it at the top level.
  */
 export function nearestParent(
-  candidate: { latitude: number; longitude: number; address?: string | null; id?: string },
+  candidate: {
+    latitude: number; longitude: number;
+    address?: string | null; id?: string; types?: string[];
+  },
   places: Place[],
   maxKm = ANCHOR_MAX_KM,
 ): Place | null {
@@ -103,7 +146,10 @@ export function nearestParent(
   // The address is the right signal here precisely because it disagrees with
   // the stored kind. A café filed as a stop is exactly the case worth offering
   // to fix; asking the row what it already is can only ever agree with itself.
-  if (!looksSpecific(candidate.address)) return null;
+  // Google's types when the caller has them — a place being created — and the
+  // address otherwise, which is all an existing row carries.
+  const specific = specificFromTypes(candidate.types) ?? looksSpecific(candidate.address);
+  if (!specific) return null;
 
   let best: Place | null = null;
   let bestKm = Infinity;
@@ -120,18 +166,20 @@ export function nearestParent(
  * What a place being created should be, and what it should sit inside.
  *
  * A place only becomes a location when there is somewhere concrete to put it.
- * The address classifier alone is not trusted for this: it reads a town
- * carrying a postcode ("73150 Val-d'Isère, Frankreich") as a venue, and a
- * place created that way would be filed as a location with no parent —
- * top-level in the list but hidden whenever the map is showing stops only,
- * which is a confusing thing to happen to a town you just added.
+ * Neither classifier is trusted on its own: a misread would file a town as a
+ * location with no parent — top-level in the list but hidden whenever the map
+ * is showing stops only, which is a confusing thing to happen to a town you
+ * just added.
  *
  * Requiring a nearby stop ties the weaker signal to the stronger one. Nothing
  * is ever created as an orphan location, so "stop" keeps meaning "visible and
  * top level", exactly as every place behaves today.
  */
 export function kindFor(
-  candidate: { latitude: number; longitude: number; address?: string | null },
+  candidate: {
+    latitude: number; longitude: number;
+    address?: string | null; types?: string[];
+  },
   places: Place[],
 ): { kind: PlaceKind; parentId: string | null } {
   const parent = nearestParent(candidate, places);

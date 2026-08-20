@@ -1351,7 +1351,11 @@ select.input {
 
    Doing it this way rather than with overflow-x:hidden also keeps a row
    dragged sideways visible — clipping the container would cut off the very
-   gesture the indent exists for. */
+   gesture the indent exists for. The trade is that a drag in progress does
+   widen the scroll range, since its transform is not padding; that lasts as
+   long as the finger is down, and touch-action:none on the grip means it
+   cannot be panned to. Only the resting layout is guaranteed overflow-free,
+   which is the one that has to be. */
 .place-list-item {
   width: 100%;
   display: flex; align-items: stretch;
@@ -1429,6 +1433,8 @@ select.input {
   cursor: grab;
 }
 .place-list-drag-handle:active { cursor: grabbing; color: var(--color-text); }
+/* Holds the column open on a row with no grip, so content stays on one axis. */
+.place-list-drag-handle--empty { pointer-events: none; }
 
 .place-list-item-content {
   flex: 1; min-width: 0;

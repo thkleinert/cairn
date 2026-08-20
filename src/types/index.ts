@@ -129,6 +129,8 @@ export interface NearbyPlace {
   /** Metres from the picked point. */
   distance: number;
   image_url?: string;
+  /** Google's classification, used once to decide stop vs location. */
+  types?: string[];
 }
 
 export interface PointLookup {

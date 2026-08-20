@@ -17,10 +17,13 @@ interface Props {
   onSetParent: (placeId: string, parentId: string | null) => Promise<unknown> | void;
   isFolded: (id: string) => boolean;
   onToggleFold: (id: string) => void;
+  /** Force a row open — used after a drop nests something inside a folded stop. */
+  onExpandFold: (id: string) => void;
 }
 
 export function PlaceListView({
-  places, activeTags, allTags, onSelectPlace, onReorder, onSetParent, isFolded, onToggleFold,
+  places, activeTags, allTags, onSelectPlace, onReorder, onSetParent,
+  isFolded, onToggleFold, onExpandFold,
 }: Props) {
   // Reordering only makes sense against the full, unfiltered order.
   const canReorder = activeTags.length === 0;
@@ -37,15 +40,30 @@ export function PlaceListView({
 
   // Dragging moves one row, never a subtree. A FOLDED stop is fine —
   // withHiddenChildren re-attaches its locations to wherever it landed — but
-  // an expanded one is not: the drop writes an order with the stop moved and
+  // an EXPANDED one is not: the drop writes an order with the stop moved and
   // its children left behind, and groupPlaces re-derives them straight back
-  // underneath it, so the drag silently does nothing. NoteList refuses to drag
-  // at all once anything is nested, for the same reason.
+  // underneath it, so the drag silently does nothing.
   //
-  // The handle is hidden along with the behaviour: a grip that can be held and
-  // dragged and then changes nothing is worse than no grip.
-  const canDrag = canReorder &&
-    !rows.some(r => r.depth === 0 && r.childCount > 0 && !isFolded(r.place.id));
+  // Per row, not per list. Written as a list-wide flag this said "no row is
+  // draggable if ANY expanded stop has children" — and since a location is
+  // only ever a row at all when its parent is expanded, that meant the first
+  // time you opened a stop to look inside it, every grip on the screen
+  // disappeared: you could not reorder the cities below it, and you could
+  // never drag a location at all, which made the drag-left-to-release half of
+  // the gesture unreachable. Opening a stop is how you look at it, not a mode
+  // that suspends the list.
+  //
+  // The handle is hidden rather than made inert on the rows this does exclude:
+  // a grip that can be held and dragged and then changes nothing is worse than
+  // no grip.
+  const draggableIds = useMemo(
+    () => new Set(
+      rows
+        .filter(r => canReorder && !(r.depth === 0 && r.childCount > 0 && !isFolded(r.place.id)))
+        .map(r => r.place.id),
+    ),
+    [rows, canReorder, isFolded],
+  );
 
   const {
     order, dragId, dragLevel, suppressTransition,
@@ -59,17 +77,23 @@ export function PlaceListView({
     // its children left behind, and groupPlaces then re-derives them straight
     // back underneath it, so the drag silently does nothing. NoteList refuses
     // to drag at all once anything is nested, for this same reason.
-    enabled: canDrag,
+    enabled: canReorder,
     trackSideways: true,
     sidewaysStep: INDENT_PX,
-    onReorder: async (orderedIds, sidewaysPx = 0) => {
+    onReorder: (orderedIds, sidewaysPx = 0) => {
       const drop = resolveDrop(orderedIds, dragId ?? '', sidewaysPx, places);
 
-      // Re-nest first and wait for it. Both writes end in a refetch, and the
-      // reorder's arriving first would describe the row as it was before it
-      // moved out.
-      if (drop.changed && dragId) await onSetParent(dragId, drop.parentId);
-
+      // Order first, and without awaiting anything before it. The drag hook
+      // drops its own copy of the order on release and falls back to `items`,
+      // so `places` has to be updated in this same tick — both handlers below
+      // are optimistic, so it is. Awaiting the re-nest first, as this did,
+      // left the list showing the pre-drag order for a whole round trip and
+      // then jumping again when the write returned.
+      //
+      // Nothing is lost by not sequencing them: one writes `position` and the
+      // other writes `parent_place_id`, so the two cannot disagree and neither
+      // refetch can undo the other.
+      //
       // A purely sideways drag leaves the order untouched, and writing an
       // unchanged order is a round trip whose refetch can only undo what just
       // happened.
@@ -77,6 +101,14 @@ export function PlaceListView({
       const before = places.map(p => p.id);
       if (full.length !== before.length || full.some((id, i) => id !== before[i])) {
         onReorder(full);
+      }
+
+      if (drop.changed && dragId) {
+        void onSetParent(dragId, drop.parentId);
+        // Otherwise the row just dragged into a folded stop simply vanishes,
+        // and the only sign of where it went is the stop's count going up by
+        // one. Adding a place already opens its stop for this reason.
+        if (drop.parentId) onExpandFold(drop.parentId);
       }
     },
   });
@@ -89,6 +121,20 @@ export function PlaceListView({
     const map = new Map(rows.map(r => [r.place.id, r.childCount]));
     return (id: string) => map.get(id) ?? 0;
   }, [rows]);
+
+  // What letting go right now would actually do. Derived from resolveDrop
+  // rather than from the sideways distance alone, because the two disagree in
+  // exactly the cases a user is most likely to try: dragging a stop that holds
+  // locations (it cannot become a location itself), and dragging the top row
+  // right (there is nothing above to go into). Both were drawn with the accent
+  // outline and the indent, promising a nest, and both then did nothing at all
+  // on release — no movement, no toast, no reason given.
+  const previewDrop = useMemo(
+    () => (dragId && dragLevel !== 0
+      ? resolveDrop(order.map(p => p.id), dragId, dragLevel * INDENT_PX, places)
+      : null),
+    [dragId, dragLevel, order, places],
+  );
 
   const filtered = canReorder
     ? order
@@ -113,15 +159,17 @@ export function PlaceListView({
     >
       {filtered.map((place, index) => {
         const isVisited = place.status === 'visited';
-        const offsetPx = canDrag ? getRowOffsetPx(index, place.id) : 0;
+        const offsetPx = canReorder ? getRowOffsetPx(index, place.id) : 0;
         const depth = canReorder ? depthOf(place.id) : 0;
         const children = canReorder ? childCountOf(place.id) : 0;
         const dragging = dragId === place.id;
         // While a row is being dragged sideways, show the level it would land
         // at rather than the one it came from — the point of following the
-        // finger is that you can see what letting go will do.
-        const previewDepth = dragging && dragLevel === 1 ? 1
-          : dragging && dragLevel === -1 ? 0
+        // finger is that you can see what letting go will do. A drop that
+        // resolveDrop will refuse shows no change, because that is what will
+        // happen.
+        const previewDepth = dragging && previewDrop?.changed
+          ? (previewDrop.parentId ? 1 : 0)
           : depth;
         const folded = isFolded(place.id);
 
@@ -136,10 +184,16 @@ export function PlaceListView({
             ].filter(Boolean).join(' ')}
             style={{
               ...(offsetPx ? { transform: `translateY(${offsetPx}px)` } : undefined),
-              '--place-depth': previewDepth,
+              // The row being dragged keeps its real indent. Its transform is
+              // already carrying it sideways under the finger, so changing the
+              // padding underneath it too moved the content by dx PLUS a full
+              // indent — at the threshold it jumped 38px in one frame and sat
+              // 34px past where a nested row actually settles. The accent
+              // outline says what the drop will do; the finger says where.
+              '--place-depth': dragging ? depth : previewDepth,
             } as React.CSSProperties}
           >
-            {canDrag && (
+            {draggableIds.has(place.id) && (
               <button
                 className="place-list-drag-handle"
                 aria-label={`Reorder ${place.name}`}
@@ -154,9 +208,17 @@ export function PlaceListView({
                 <GripVertical size={16} />
               </button>
             )}
+            {/* The grip's column is held open on a row that has none, so an
+                expanded stop does not sit 34px left of its own siblings.
+                Reserving the space is what lets the handle be per-row at all —
+                hiding it used to be safe only because it was hidden on every
+                row at once. */}
+            {canReorder && !draggableIds.has(place.id) && (
+              <span className="place-list-drag-handle place-list-drag-handle--empty" aria-hidden="true" />
+            )}
 
             <button
-              className={`place-list-item-content ${!canDrag ? 'place-list-item-content--flush' : ''}`}
+              className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
               onClick={() => onSelectPlace(place)}
             >
               {place.image_url && (

@@ -76,6 +76,21 @@ export function PlaceDetailSheet({
 
   const { comments, currentUserId, loading: commentsLoading, error: commentsError, reload: reloadComments, addComment, deleteComment } = useComments(place.id);
 
+  // Only a top-level stop can hold anything, and a place cannot hold itself.
+  const parentOptions = allPlaces.filter(
+    p => p.id !== place.id && p.kind === 'stop' && !p.parent_place_id,
+  );
+  // A place holding locations cannot be moved into one — it would have to
+  // become a location while still holding them, which setPlaceParent refuses.
+  const hasChildren = allPlaces.some(p => p.parent_place_id === place.id);
+  // A location whose stop was deleted while the follow-up write was in flight,
+  // or one a collaborator orphaned. It behaves as top-level everywhere that
+  // reads the tree, but its `kind` still says otherwise, which quietly bars it
+  // from being a parent and from the map's Locations filter. The select cannot
+  // repair it — its value already matches "Nowhere in particular", so choosing
+  // that fires no change — so this is the one control that can.
+  const isOrphanLocation = place.kind === 'location' && !place.parent_place_id;
+
   const handleAddComment = async () => {
     const body = commentDraft.trim();
     if (!body) return;
@@ -251,24 +266,43 @@ export function PlaceDetailSheet({
 
             Choosing a stop also makes this place a location: the two are one
             decision, and the database refuses anything anchored that is not
-            one. Choosing "Nowhere in particular" turns it back into a stop. */}
-        {!readOnly && onSetParent &&
-          allPlaces.some(p => p.id !== place.id && p.kind === 'stop' && !p.parent_place_id) && (
+            one. Choosing "Nowhere in particular" turns it back into a stop.
+
+            A place that holds other places cannot be moved into one — it would
+            have to become a location while still holding locations. The select
+            is disabled rather than hidden: this is the screen someone comes to
+            in order to file a place, and a control that has quietly vanished
+            explains nothing. The list view hides its drag grip in the same
+            situation because there is nowhere on a row to say why. */}
+        {!readOnly && onSetParent && (parentOptions.length > 0 || isOrphanLocation) && (
           <div className="detail-section">
             <label className="detail-label" htmlFor="place-parent">Part of</label>
             <select
               id="place-parent"
               className="input"
               value={place.parent_place_id ?? ''}
+              disabled={hasChildren}
               onChange={e => onSetParent(e.target.value || null)}
             >
               <option value="">Nowhere in particular</option>
-              {allPlaces
-                .filter(p => p.id !== place.id && p.kind === 'stop' && !p.parent_place_id)
-                .map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
+              {parentOptions.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
             </select>
+            {hasChildren && (
+              <p className="detail-hint">
+                Move the places inside this one out first.
+              </p>
+            )}
+            {isOrphanLocation && !hasChildren && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => onSetParent(null)}
+              >
+                Make it a stop of its own
+              </button>
+            )}
           </div>
         )}
 

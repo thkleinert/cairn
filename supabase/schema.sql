@@ -71,9 +71,10 @@ create table public.places (
   -- What this place IS: somewhere you go, or somewhere inside one of those.
   -- A stop is a city, an island, a park; a location is a café, a hotel, a
   -- viewpoint. The list view nests locations under their stop, and the map can
-  -- hide them. Recorded rather than guessed from the address, which misreads a
-  -- town carrying a postcode and cannot read a long-press pin at all.
-  kind            text not null default 'stop' check (kind in ('stop','location')),
+  -- hide them. Recorded once at creation rather than re-derived on every read:
+  -- the guess comes from Google's own place types, and the row is what the
+  -- user may then have corrected.
+  kind            text not null default 'stop',
   status          text not null default 'planned' check (status in ('planned','visited')),
   visited_at      timestamptz,
   notes           text,
@@ -84,6 +85,13 @@ create table public.places (
   position        integer not null default 0,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
+  -- Named rather than written inline on the column above. An inline check is
+  -- auto-named places_kind_check, while the migration that introduced this
+  -- column created places_kind_valid and guards on that name — so a project
+  -- built from this file and then replayed through supabase/migrations/ picked
+  -- up a second, redundant copy of the same check, and a rejected value
+  -- reported a different constraint name than production does.
+  constraint places_kind_valid check (kind in ('stop','location')),
   -- A visited place must carry its visit time — the GeoJSON export filters on
   -- both and orders by visited_at, so a desynced row would silently vanish.
   constraint places_visited_at_coherent check (status <> 'visited' or visited_at is not null),

@@ -139,8 +139,15 @@ export function resolveDrop(
   const currentParent = dragged.parent_place_id ?? null;
 
   if (sidewaysPx <= -INDENT_PX) {
-    // Pulled out. Already a stop means nothing to do.
-    return { parentId: null, changed: currentParent !== null };
+    // Pulled out. Already a top-level stop means nothing to do — but a
+    // top-level LOCATION is not nothing: that is a place whose stop was
+    // deleted while the write releasing it was still in flight, or one a
+    // collaborator orphaned. It reads as top-level everywhere that walks the
+    // tree while its kind still says otherwise, which quietly bars it from
+    // being a parent and from the map's Locations filter. Letting the drag
+    // repair it means the gesture that visibly pulls a row out to the top
+    // level actually puts it there.
+    return { parentId: null, changed: currentParent !== null || dragged.kind === 'location' };
   }
 
   if (sidewaysPx >= INDENT_PX) {

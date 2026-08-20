@@ -130,6 +130,13 @@ function nearbySearch(point: { lat: number; lng: number }): Promise<NearbyPlace[
               // Same ephemeral session URL the search field yields; addPlace
               // re-hosts it to our own storage right after insert.
               image_url: r.photos?.[0]?.getUrl({ maxWidth: 800 }),
+              // Free — it is already in the response we paid for. This is the
+              // only reliable signal on this path: a nearby result carries
+              // `vicinity`, which is a neighbourhood rather than a street
+              // address, so the address heuristic alone never fires here and
+              // a café picked off the map used to arrive as a stop of its own
+              // while the same café from the search field nested correctly.
+              types: r.types,
             }];
           });
           mapped.sort((a, b) => a.distance - b.distance);
