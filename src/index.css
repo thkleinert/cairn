@@ -987,6 +987,19 @@ select.input {
 }
 .section-caret--open { transform: rotate(90deg); }
 
+/* A label with an action beside it — the Notes section's way to open a first
+   bullet, since this sheet has no section heading to tap. */
+.detail-label-row { display: flex; align-items: center; gap: 6px; }
+.detail-label-row .detail-label { margin-bottom: 0; }
+.detail-label-add {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  margin: -4px 0;
+  border-radius: 50%;
+  color: var(--color-muted);
+}
+.detail-label-add:active { background: var(--color-bg); color: var(--color-text); }
+
 /* Multi-image gallery */
 .image-gallery {
   display: flex; gap: 8px;
@@ -1667,10 +1680,20 @@ select.input {
 .toast-stack {
   position: fixed;
   left: 0; right: 0;
-  bottom: calc(env(safe-area-inset-bottom) + 92px);
+  /* Above the keyboard when one is up, using the same inset .note-toolbar is
+     pinned to — on iOS the layout viewport does not shrink for the keyboard,
+     so a toast placed from the bottom edge alone sits underneath it. That hid
+     the only signal that a bullet being typed had failed to save. The 52px
+     clears the edit toolbar itself; with no keyboard the inset is 0 and this
+     falls back to where it always sat. */
+  bottom: calc(env(safe-area-inset-bottom) + 92px + var(--keyboard-inset, 0px));
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   z-index: 100;
   pointer-events: none;
+}
+/* Clear of the edit toolbar when that is up too. */
+body:has(.note-toolbar) .toast-stack {
+  bottom: calc(env(safe-area-inset-bottom) + 52px + var(--keyboard-inset, 0px));
 }
 .toast {
   display: flex; align-items: center; gap: 8px;
@@ -1683,6 +1706,22 @@ select.input {
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
   animation: toastIn 0.25s cubic-bezier(0.32,0.72,0,1);
 }
+/* The stack stays click-through so a passing toast never eats a tap meant for
+   the page under it — but an action has to be reachable, so it opts back in.
+   Only the button: the toast body itself is still not a target. */
+.toast-action {
+  pointer-events: auto;
+  flex-shrink: 0;
+  margin: -4px -8px -4px 4px;
+  padding: 6px 10px;
+  border-radius: 99px;
+  color: var(--color-surface);
+  font-size: 13px; font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.toast-action:active { background: rgba(255, 255, 255, 0.16); }
+
 .toast--error svg { color: #f87171; }
 .toast--success svg { color: #4ade80; }
 .toast--info svg { color: #60a5fa; }
@@ -1872,11 +1911,18 @@ select.input {
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 16px 20px calc(32px + env(safe-area-inset-bottom));
+  padding: 16px 20px calc(32px + env(safe-area-inset-bottom)) 12px;
 }
 
-.notes-block { margin-bottom: 20px; }
-.notes-block:last-of-type { margin-bottom: 0; }
+/* A top-level place and everything inside it is one group. The breathing room
+   goes between groups; inside one, a parent, its notes and its locations are a
+   single list and sit at bullet spacing.
+   Previously each block carried its own margin, which meant the gap after a
+   nested place was the nested place's margin — zero — so the next top-level
+   place sat flush against it. */
+.notes-group { margin-bottom: 28px; }
+.notes-group:last-child { margin-bottom: 0; }
+.notes-block { margin-bottom: 0; }
 
 /* Anchors the @-suggestion popup, which is positioned against this box
    rather than the sheet — the sheet scrolls, and a popup pinned to it
@@ -1905,20 +1951,32 @@ textarea.mention-input {
   font-size: 16px;
 }
 
-/* Width of the marker column (grip / dot / +). All three rows use it so the
-   markers share one vertical axis and the text starts at the same x. */
-:root { --note-gutter: 22px; }
+/* Width of the marker column (the bullet dot). Rows share it so every dot sits
+   on one vertical axis and the text starts at the same x. */
+:root {
+  --note-gutter: 22px;
+  /* One level, for everything on the page: the bullet gutter plus the gap
+     after it. Declared beside the gutter it is derived from rather than 300
+     lines further down next to its first user. */
+  --note-step: calc(var(--note-gutter) + 8px);
+  /* One nesting level for a bullet — the same step a heading uses, so a
+     nested bullet and a heading's own notes land on the same axis. These were
+     20px and 30px, which is exactly the drift --note-step exists to prevent.
+     MAX_DEPTH caps the total, which is what keeps a readable text column on a
+     390px screen. */
+  --note-indent: var(--note-step);
+}
 
-/* No gap: the add row's own top padding already supplies the rhythm, and an
-   extra gap here made the space after the last bullet visibly larger than the
-   space between bullets. */
-.note-list { display: flex; flex-direction: column; }
+.note-list { display: flex; flex-direction: column; position: relative; }
 
 .note-bullets { list-style: none; }
 
+/* The row is the swipe track: it holds the delete backing still while
+   .note-bullet-slide moves across it, and it owns the indent so the backing
+   is revealed at the bullet's own left edge rather than the list's. */
 .note-bullet {
-  display: flex; align-items: flex-start; gap: 8px;
-  padding: 6px 4px 6px 0;
+  position: relative;
+  margin-left: calc(var(--note-depth, 0) * var(--note-indent));
   border-radius: var(--radius-sm);
   /* Transition is for the reorder shuffle; the dragged row overrides it
      inline so it tracks the pointer 1:1. */
@@ -1926,28 +1984,61 @@ textarea.mention-input {
   background: var(--color-surface);
 }
 .note-bullet--dragging {
-  position: relative;
   z-index: 2;
   box-shadow: var(--shadow-sheet);
 }
+/* Clip the sliding layer only while it is actually moving. Permanent overflow
+   hidden would crop the @-mention popup, which has to escape the row. */
+.note-bullet--swiping { overflow: hidden; }
 
-/* Grip is the drag handle. touch-action:none so the browser doesn't claim
-   the gesture for scrolling before pointermove ever fires. */
-.note-bullet-grip {
-  flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  width: var(--note-gutter); min-height: 28px;
-  margin-top: 1px;
-  color: var(--color-muted);
-  cursor: grab;
-  touch-action: none;
-  opacity: 0.55;
+/* The guide line down a nested group, drawn on the row rather than as a
+   container because the list is flat — there is no element wrapping a
+   subtree to hang a border on. Sits in the parent's gutter, one indent step
+   to the left of this row's own dot. */
+.note-bullet--nested::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--note-indent) + var(--note-gutter) / 2);
+  top: 0; bottom: 0;
+  width: 1.5px;
+  background: var(--color-border);
+  border-radius: 1px;
 }
-.note-bullet-grip:active { cursor: grabbing; opacity: 1; }
+
+/* Everything that visually *is* the row. Separate from the <li> so a swipe
+   translates the content while the delete backing beneath stays put. */
+.note-bullet-slide {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 4px 6px 0;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  /* Vertical scrolling stays the browser's; only horizontal is ours to
+     claim. Without this the page would not scroll from a row at all. */
+  touch-action: pan-y;
+}
+
+/* Revealed as the row slides off it. Invisible until the swipe actually
+   starts: at rest the sliding layer covers it, but the row's rounded corners
+   let a red fringe show through on every bullet in the list. */
+.note-bullet-trail {
+  position: absolute;
+  inset: 0;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 18px;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger, #ef4444);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.note-bullet--swiping .note-bullet-trail { opacity: 0.55; }
+/* Full strength once the swipe is far enough that letting go would delete —
+   the gesture says what it is about to do before it does it. */
+.note-bullet--swiping .note-bullet-trail--armed { opacity: 1; }
 
 /* Occupies the full gutter and centres a 5px dot inside it, rather than being
-   a 5px box nudged into place with margins — margins can't stay aligned with
-   the grip when either changes size. */
+   a 5px box nudged into place with margins. */
 .note-bullet-dot {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -1959,6 +2050,17 @@ textarea.mention-input {
   width: 5px; height: 5px;
   border-radius: 50%;
   background: var(--color-muted);
+  transition: box-shadow 0.15s, background 0.15s;
+}
+/* The dot doubles as the drag handle, so it needs the grab affordance and has
+   to keep the browser from treating the press as the start of a scroll. */
+.note-bullet-dot--draggable { cursor: grab; touch-action: none; }
+.note-bullet-dot--draggable:active { cursor: grabbing; }
+.note-bullet-dot--draggable:active::before {
+  background: var(--color-text);
+  /* Halo rather than a size change: growing the dot shifts the text baseline
+     it is aligned against. */
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-muted) 25%, transparent);
 }
 
 .note-bullet-body {
@@ -1974,8 +2076,13 @@ textarea.mention-input {
   border-radius: 4px;
 }
 .note-bullet-body:active { background: var(--color-bg); }
+.note-bullet-body--placeholder { color: var(--color-muted); }
 
-.note-bullet-delete {
+/* Fold control on the right edge of a bullet that has children. The left of
+   the row is spoken for — the dot drags, the text edits — so the right edge is
+   the only part of a bullet not already a target. Quiet until touched: it is
+   navigation furniture, not something to read past on every line. */
+.note-fold {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   width: 30px; height: 30px;
@@ -1983,28 +2090,58 @@ textarea.mention-input {
   border-radius: 50%;
   color: var(--color-muted);
   opacity: 0.6;
+  transition: opacity 0.12s, background 0.12s;
 }
-.note-bullet-delete:active { background: var(--color-bg); color: var(--color-danger, #ef4444); opacity: 1; }
+.note-fold:active { opacity: 1; background: var(--color-bg); }
 
-/* Same gap as .note-bullet, so the text column lines up exactly. */
-.note-add-row {
-  display: flex; align-items: flex-start; gap: 8px;
+/* A folded dot gains a ring — on a bullet and on a place heading alike, since
+   they are the same dot meaning the same thing. Something is hidden under
+   this, and it reads that way at a glance rather than as an ordinary bullet.
+   It is only ever drawn on something that IS folded: when every dot carries it
+   the ring stops meaning anything. */
+.note-bullet-dot--folded::before {
+  background: transparent;
+  border: 2px solid var(--color-muted);
+  width: 9px; height: 9px;
 }
 
-/* Tuck the + closer to the bullets it belongs to — it's an affordance hanging
-   off the list, not another entry in it. Only when bullets actually precede
-   it: with an empty list the row is first in the block, and pulling it up ran
-   the focused field's border straight through the heading above. */
-.note-bullets:not(:empty) + .note-add-row { margin-top: -8px; }
-.note-add-icon {
-  flex-shrink: 0;
+/* Sits on top of the keyboard while a bullet is focused. --keyboard-inset is
+   0 when no keyboard is up (and on Android, which resizes the viewport
+   itself), so the bar simply rests on the bottom edge there. */
+.note-toolbar {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: var(--keyboard-inset, 0px);
+  z-index: 70;
+  display: flex; align-items: center;
+  gap: 4px;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  animation: noteToolbarIn 0.16s ease-out;
+}
+/* With the keyboard up there is no safe-area gap to clear — the keyboard
+   already covers it, and padding for it leaves a bar of dead space. */
+@supports (bottom: env(safe-area-inset-bottom)) {
+  .note-toolbar { padding-bottom: max(6px, calc(6px + env(safe-area-inset-bottom) - var(--keyboard-inset, 0px))); }
+}
+
+@keyframes noteToolbarIn { from { transform: translateY(100%); } }
+
+.note-toolbar-btn {
   display: flex; align-items: center; justify-content: center;
-  width: var(--note-gutter); min-height: 28px;
-  margin-top: 7px;
-  color: var(--color-muted);
+  width: 44px; height: 40px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  transition: background 0.12s, opacity 0.12s;
 }
-.note-add-input { border-color: transparent; background: transparent; }
-.note-add-input:focus { border-color: var(--color-primary); background: var(--color-surface); }
+.note-toolbar-btn:active { background: var(--color-bg); }
+.note-toolbar-btn:disabled { opacity: 0.3; }
+/* Pushed to the far end: it ends the interaction, the others act within it.
+   No accent colour — the bar is uniformly monochrome, delete included. */
+.note-toolbar-done { margin-left: auto; }
+
 
 
 .mention-chip {
@@ -2094,14 +2231,79 @@ textarea.mention-input {
    all; without min-width a flex item refuses to go below its content width. */
 .notes-heading-link {
   display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
-  width: 100%; min-width: 0;
+  /* Shrinks to its text rather than filling the row: what is left over is a
+     separate target that starts a note, so the name must not claim it. Still
+     allowed to shrink (and ellipsise) when the name is long. */
+  flex: 0 1 auto; min-width: 0;
   text-align: left;
   padding: 4px 0;
   border-radius: 4px;
   color: var(--color-text);
   font: inherit;
 }
+.notes-heading-link:active .notes-heading-name { opacity: 0.55; }
+
+/* The blank remainder of the heading line. Invisible until touched — it is a
+   place to start writing, not a button, and drawing it as one would put a
+   second piece of furniture on every heading. Grows to fill, but never below
+   a thumb's width, so a long name cannot squeeze it out of existence. */
+.notes-heading-space {
+  flex: 1 0 56px;
+  align-self: stretch;
+  min-width: 56px;
+  border-radius: var(--radius-sm);
+  cursor: text;
+}
+.notes-heading-space:active { background: var(--color-bg); }
 .notes-heading-link:active { opacity: 0.55; }
+
+/* A foldable heading is two targets, not one: the caret folds, everything
+   after it still opens the place. That split is what lets collapse coexist
+   with a heading whose whole job was already to navigate. */
+.notes-heading--foldable { display: flex; align-items: center; gap: 2px; }
+
+.notes-fold {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  /* Wider than the glyph: a heading control on a phone needs a thumb-sized
+     target or folding becomes a game of precision. */
+  width: 32px; height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--color-muted);
+}
+.notes-fold:active { background: var(--color-bg); color: var(--color-text); }
+
+/* The page is one outline, so it has exactly one step size: the bullet gutter
+   plus the gap after it. Everything that is "one level in" moves by this and
+   nothing else, which is what stops headings and notes from each drifting to
+   their own idea of an indent. */
+.notes-heading-dot { flex-shrink: 0; margin-right: 6px; }
+
+/* A section's own depth: a heading sits at it, and the notes under that
+   heading sit one step further in because they are its children. Every
+   section is at the outer level here — the hook is kept because the rule it
+   expresses is what the two rules below are derived from. */
+.notes-block { --block-indent: 0px; }
+.notes-heading { padding-left: var(--block-indent); }
+.notes-block > .note-list { padding-left: calc(var(--block-indent) + var(--note-step)); }
+
+/* Hangs off the text column of the section it belongs to, so it lines up with
+   the notes rather than with the heading's bullet. */
+.notes-block > .notes-folded-hint { margin-left: calc(var(--block-indent) + var(--note-step)); }
+
+
+/* What a folded section is hiding. A collapsed heading with nothing under it
+   is indistinguishable from an empty one, and a note count is the difference
+   between folded and forgotten. */
+.notes-folded-hint {
+  display: block;
+  width: 100%;
+  padding: 2px 0 6px 0;
+  text-align: left;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.notes-folded-hint:active { color: var(--color-text); }
 
 .notes-heading-name {
   flex: 1 1 auto;
@@ -2121,9 +2323,6 @@ textarea.mention-input {
   display: flex; gap: 4px;
 }
 
-/* Pushed to the far edge so it reads as "go here" rather than punctuation
-   after the name. */
-.notes-heading-chevron { margin-left: auto; color: var(--color-muted); flex-shrink: 0; }
 
 .place-note-tag {
   /* Shrinks by ellipsising its own text, so a squeezed pill still looks like a

@@ -50,6 +50,14 @@ export interface TripNote {
   place_id?: string | null;
   body: string;
   position: number;
+  /**
+   * Nesting level, 0 at the outer edge. The outline is a flat ordered list
+   * plus a depth rather than a parent_id tree — an item's parent is the
+   * nearest item above it with a smaller depth. A depth more than one past
+   * its predecessor's is impossible in an outline but expressible here, so
+   * rendering clamps it (see normaliseDepths).
+   */
+  depth: number;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
@@ -74,7 +82,7 @@ export interface Place {
   images?: PlaceImage[];
   // Only populated by get_shared_trip — the authenticated app reads bullets
   // through useTripNotes instead.
-  note_items?: Pick<TripNote, 'id' | 'body' | 'position'>[];
+  note_items?: Pick<TripNote, 'id' | 'body' | 'position' | 'depth'>[];
 }
 
 export interface GooglePlacePrediction {

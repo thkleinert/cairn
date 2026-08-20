@@ -669,12 +669,22 @@ create table public.trip_notes (
   place_id   uuid,
   body       text not null,
   position   int  not null default 0,
+  -- Nesting level. The outline is a flat ordered list plus a depth, not a
+  -- parent_id tree: the tree is implied by the order (an item's parent is the
+  -- nearest item above it with a smaller depth), which keeps one atomic
+  -- reorder RPC, one realtime row per bullet, and no way to orphan a row by
+  -- deleting its parent. The client clamps an impossible depth on render.
+  depth      int  not null default 0,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
   -- An empty bullet is a UI state, never a stored row.
   constraint trip_notes_body_not_blank check (length(btrim(body)) > 0),
+
+  -- A ceiling rather than unlimited nesting: each level costs horizontal
+  -- space, and past this a bullet on a 390px phone has more indent than text.
+  constraint trip_notes_depth_bounded check (depth between 0 and 5),
 
   -- A note's place must belong to the note's trip. MATCH SIMPLE means a null
   -- place_id skips the check, which is exactly right for trip-wide notes — and
@@ -733,6 +743,40 @@ $$;
 
 grant execute on function public.reorder_trip_notes(uuid, uuid[]) to authenticated;
 
+-- ------------------------------------------------------------
+-- Depth — same shape and same reason as reorder above: one atomic write, so a
+-- subtree spanning several levels cannot half-apply and leave the client, the
+-- server and realtime disagreeing about the outline's shape.
+-- ------------------------------------------------------------
+create or replace function public.set_trip_note_depths(
+  p_trip_id uuid,
+  p_note_ids uuid[],
+  p_depths int[]
+)
+returns void
+language plpgsql security definer
+set search_path = public, auth
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.is_trip_editor(p_trip_id, auth.uid()) then
+    raise exception 'Not an editor of this trip';
+  end if;
+  if array_length(p_note_ids, 1) is distinct from array_length(p_depths, 1) then
+    raise exception 'Mismatched ids and depths';
+  end if;
+
+  -- Scoped to the trip as well as the ids, so a caller cannot reach a bullet
+  -- in a trip they are not an editor of by passing its id.
+  update public.trip_notes n
+     set depth = u.depth
+    from unnest(p_note_ids, p_depths) as u(id, depth)
+   where n.id = u.id and n.trip_id = p_trip_id;
+end;
+$$;
+
+grant execute on function public.set_trip_note_depths(uuid, uuid[], int[]) to authenticated;
+
 -- ============================================================
 -- READ-ONLY TRIP SHARING (token-scoped RPC)
 -- ------------------------------------------------------------
@@ -774,7 +818,8 @@ as $$
           -- never be swept in here.
           'note_items', coalesce(
             (select jsonb_agg(
-               jsonb_build_object('id', n.id, 'body', n.body, 'position', n.position)
+               jsonb_build_object(
+                 'id', n.id, 'body', n.body, 'position', n.position, 'depth', n.depth)
                order by n.position, n.created_at)
              from public.trip_notes n where n.place_id = p.id),
             '[]'::jsonb)

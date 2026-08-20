@@ -6,6 +6,8 @@ import { ImageLightbox } from './ImageLightbox';
 import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
 import { NoteList } from './NoteList';
+import { NoteBody } from './NoteBody';
+import { normaliseDepths } from '../lib/outline';
 import {
   X,
   Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
@@ -38,9 +40,11 @@ interface Props {
   // flattened copy on the place itself instead.
   notes?: TripNote[];
   allPlaces?: Place[];
-  onAddNote?: (body: string) => Promise<unknown> | void;
+  onAddNote?: (body: string, opts: { depth: number; afterId: string | null }) => Promise<TripNote | null> | void;
   onUpdateNote?: (id: string, body: string) => Promise<unknown> | void;
-  onRemoveNote?: (id: string) => Promise<unknown> | void;
+  onRemoveNote?: (id: string) => Promise<boolean | void> | boolean | void;
+  onRestoreNote?: (note: TripNote) => Promise<boolean | void> | boolean | void;
+  onSetNoteDepths?: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorderNotes?: (orderedIds: string[]) => void;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
   readOnly?: boolean;
@@ -53,7 +57,8 @@ export function PlaceDetailSheet({
   place, allTags, onClose, onToggleVisited, onDelete,
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
   scrollToComments = false, onCommentsShown,
-  notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onReorderNotes,
+  notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onRestoreNote,
+  onSetNoteDepths, onReorderNotes,
 }: Props) {
   const [selectedTags, setSelectedTags] = useState<string[]>((place.tags ?? []).map(t => t.id));
   const [dirty, setDirty] = useState(false);
@@ -61,6 +66,7 @@ export function PlaceDetailSheet({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(true);
   const galleryRef = useRef<HTMLDivElement>(null);
@@ -235,13 +241,41 @@ export function PlaceDetailSheet({
         {/* Notes — one row per bullet, each independently editable */}
         {(!readOnly || sharedNotes.length > 0) && (
           <div className="detail-section">
-            <label className="detail-label">Notes</label>
+            <div className="detail-label-row">
+              <label className="detail-label">Notes</label>
+              {!readOnly && (
+                // The outliner opens a bullet by tapping the blank part of a
+                // section heading; this sheet has no such heading, and when
+                // NoteList lost its own add row it lost its only way in — a
+                // place with no notes rendered an empty list and nothing to
+                // tap. This is that way in.
+                <button
+                  type="button"
+                  className="detail-label-add"
+                  aria-label="Add a note"
+                  onClick={() => setAddingNote(true)}
+                >
+                  <Plus size={16} />
+                </button>
+              )}
+            </div>
             {readOnly ? (
               <ul className="note-bullets">
-                {sharedNotes.map(n => (
-                  <li key={n.id} className="note-bullet">
-                    <span className="note-bullet-dot" aria-hidden="true" />
-                    <span className="note-bullet-body">{n.body}</span>
+                {normaliseDepths(sharedNotes).map(n => (
+                  <li
+                    key={n.id}
+                    className="note-bullet"
+                    style={{ '--note-depth': n.depth } as React.CSSProperties}
+                  >
+                    <div className="note-bullet-slide">
+                      <span className="note-bullet-dot" aria-hidden="true" />
+                      <span className="note-bullet-body">
+                        {/* Mentions render inert here — no onSelectPlace — but
+                            links still resolve, so a shared trip shows the
+                            same host pills the editor does. */}
+                        <NoteBody body={n.body} places={allPlaces} />
+                      </span>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -249,11 +283,22 @@ export function PlaceDetailSheet({
               <NoteList
                 notes={notes}
                 places={allPlaces}
-                onAdd={(body) => onAddNote?.(body)}
+                onAdd={(body, opts) => onAddNote?.(body, opts)}
                 onUpdate={(id, body) => onUpdateNote?.(id, body)}
-                onRemove={(id) => onRemoveNote?.(id)}
+                // `?? false`, not a bare optional call. deleteNote treats
+                // anything but a literal false as "the row went", so an absent
+                // handler would have it promote the children of a note that is
+                // still there and leave the swiped row parked off-screen,
+                // invisible and unswipeable — the exact failure useSwipeToDelete
+                // documents. No caller omits these today; the signature invited
+                // one to.
+                onRemove={(id) => onRemoveNote?.(id) ?? false}
+                onRestore={onRestoreNote}
+                onSetDepths={(updates) => onSetNoteDepths?.(updates)}
                 onReorder={(ids) => onReorderNotes?.(ids)}
-                addPlaceholder="Add a note…"
+                startDraft={addingNote}
+                onDraftStarted={() => setAddingNote(false)}
+                placeholder="Add a note…"
               />
             )}
           </div>

@@ -10,19 +10,35 @@ interface Props {
   onSubmit?: () => void;
   onBlur?: () => void;
   onCancel?: () => void;
+  /**
+   * Backspace pressed with the caret at position 0 and nothing selected.
+   *
+   * The keystroke is always swallowed when this is provided — at offset 0 with
+   * no selection there is nothing to the left to delete, so preventing the
+   * default costs nothing and spares the handler from racing the browser while
+   * it awaits. The handler decides what happens; it does not decide whether
+   * the key was consumed.
+   */
+  onBackspaceAtStart?: () => void | Promise<void | boolean>;
   places: Place[];
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
   ariaLabel?: string;
+  /**
+   * The underlying textarea, so a caller can put focus back after something
+   * moved the row in the DOM. Reordering a keyed list moves the node rather
+   * than remounting it, which blurs it and does NOT re-run autoFocus.
+   */
+  inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 }
 
 // A textarea that grows with its content and offers the trip's places after an
 // "@". Shared by the add-a-bullet box and inline bullet editing so the two
 // can't drift apart.
 export function MentionTextarea({
-  value, onChange, onSubmit, onBlur, onCancel, places,
-  placeholder, autoFocus, className = '', ariaLabel,
+  value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, places,
+  placeholder, autoFocus, className = '', ariaLabel, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
@@ -83,6 +99,18 @@ export function MentionTextarea({
         return;
       }
     }
+    // Only a bare caret at the very start counts: with a selection, Backspace
+    // is deleting that selection, and mid-text it's deleting a character.
+    if (
+      e.key === 'Backspace' && onBackspaceAtStart &&
+      e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0
+    ) {
+      // Prevent first: the handler may be async, and by the time it resolves
+      // the browser has already eaten a character from the row above.
+      e.preventDefault();
+      void Promise.resolve(onBackspaceAtStart());
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && onSubmit) {
       e.preventDefault();
       onSubmit();
@@ -97,7 +125,7 @@ export function MentionTextarea({
   return (
     <div className="mention-field">
       <textarea
-        ref={ref}
+        ref={el => { ref.current = el; if (inputRef) inputRef.current = el; }}
         rows={1}
         className={`input mention-input ${className}`}
         aria-label={ariaLabel}
