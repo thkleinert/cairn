@@ -27,7 +27,9 @@ export type FoldScope =
   | 'notes'
   /** Bullets within those sections. Open by default — you opened the section
    *  to read them, and a bullet is not a section. */
-  | 'bullets';
+  | 'bullets'
+  /** Rows on the places list. Folded by default. */
+  | 'list';
 
 interface Options {
   /** What a section with nothing recorded about it does. */

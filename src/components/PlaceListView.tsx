@@ -1,7 +1,8 @@
-import { useRef } from 'react';
-import { CheckCircle, Circle, MapPin, GripVertical } from 'lucide-react';
+import { useRef, useMemo } from 'react';
+import { CheckCircle, Circle, MapPin, GripVertical, Plus, Minus } from 'lucide-react';
 import type { Place, Tag } from '../types';
 import { useDragReorder } from '../hooks/useDragReorder';
+import { flattenPlaces, resolveDrop, withHiddenChildren, INDENT_PX } from '../lib/placeTree';
 
 interface Props {
   places: Place[];
@@ -9,15 +10,85 @@ interface Props {
   allTags: Tag[];
   onSelectPlace: (place: Place) => void;
   onReorder: (orderedIds: string[]) => void;
+  /**
+   * Re-nesting after a sideways drop. null makes the place a stop again.
+   * Awaited before the reorder is written, so the two cannot race.
+   */
+  onSetParent: (placeId: string, parentId: string | null) => Promise<unknown> | void;
+  isFolded: (id: string) => boolean;
+  onToggleFold: (id: string) => void;
 }
 
-export function PlaceListView({ places, activeTags, allTags, onSelectPlace, onReorder }: Props) {
-  // Reordering only makes sense against the full, unfiltered order
+export function PlaceListView({
+  places, activeTags, allTags, onSelectPlace, onReorder, onSetParent, isFolded, onToggleFold,
+}: Props) {
+  // Reordering only makes sense against the full, unfiltered order.
   const canReorder = activeTags.length === 0;
   const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
 
-  const { order, dragId, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx } =
-    useDragReorder({ items: places, getId: p => p.id, onReorder, enabled: canReorder });
+  // Stops with their locations under them, folded ones collapsed away. The
+  // drag operates on exactly this list, so what you grab and what moves are
+  // the same thing even when half the trip is folded shut.
+  const rows = useMemo(
+    () => flattenPlaces(places, isFolded),
+    [places, isFolded],
+  );
+  const rowPlaces = useMemo(() => rows.map(r => r.place), [rows]);
+
+  // Dragging moves one row, never a subtree. A FOLDED stop is fine —
+  // withHiddenChildren re-attaches its locations to wherever it landed — but
+  // an expanded one is not: the drop writes an order with the stop moved and
+  // its children left behind, and groupPlaces re-derives them straight back
+  // underneath it, so the drag silently does nothing. NoteList refuses to drag
+  // at all once anything is nested, for the same reason.
+  //
+  // The handle is hidden along with the behaviour: a grip that can be held and
+  // dragged and then changes nothing is worse than no grip.
+  const canDrag = canReorder &&
+    !rows.some(r => r.depth === 0 && r.childCount > 0 && !isFolded(r.place.id));
+
+  const {
+    order, dragId, dragLevel, suppressTransition,
+    handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx,
+  } = useDragReorder({
+    items: rowPlaces,
+    getId: p => p.id,
+    // Dragging moves one row, never a subtree. A FOLDED stop is fine —
+    // withHiddenChildren re-attaches its locations to wherever it landed — but
+    // an expanded one is not: the drop writes an order with the stop moved and
+    // its children left behind, and groupPlaces then re-derives them straight
+    // back underneath it, so the drag silently does nothing. NoteList refuses
+    // to drag at all once anything is nested, for this same reason.
+    enabled: canDrag,
+    trackSideways: true,
+    sidewaysStep: INDENT_PX,
+    onReorder: async (orderedIds, sidewaysPx = 0) => {
+      const drop = resolveDrop(orderedIds, dragId ?? '', sidewaysPx, places);
+
+      // Re-nest first and wait for it. Both writes end in a refetch, and the
+      // reorder's arriving first would describe the row as it was before it
+      // moved out.
+      if (drop.changed && dragId) await onSetParent(dragId, drop.parentId);
+
+      // A purely sideways drag leaves the order untouched, and writing an
+      // unchanged order is a round trip whose refetch can only undo what just
+      // happened.
+      const full = withHiddenChildren(orderedIds, places);
+      const before = places.map(p => p.id);
+      if (full.length !== before.length || full.some((id, i) => id !== before[i])) {
+        onReorder(full);
+      }
+    },
+  });
+
+  const depthOf = useMemo(() => {
+    const map = new Map(rows.map(r => [r.place.id, r.depth]));
+    return (id: string) => map.get(id) ?? 0;
+  }, [rows]);
+  const childCountOf = useMemo(() => {
+    const map = new Map(rows.map(r => [r.place.id, r.childCount]));
+    return (id: string) => map.get(id) ?? 0;
+  }, [rows]);
 
   const filtered = canReorder
     ? order
@@ -33,18 +104,42 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace, onRe
   }
 
   return (
-    <ul className={`place-list ${suppressTransition ? 'place-list--reordering' : ''}`}>
+    <ul
+      className={`place-list ${suppressTransition ? 'place-list--reordering' : ''}`}
+      // One number for both: how far sideways re-nests a row, and how far in a
+      // nested row sits. They were 36px and 26px, so a row dragged far enough
+      // to nest landed somewhere it had never been shown.
+      style={{ '--place-indent': `${INDENT_PX}px` } as React.CSSProperties}
+    >
       {filtered.map((place, index) => {
         const isVisited = place.status === 'visited';
-        const offsetPx = canReorder ? getRowOffsetPx(index, place.id) : 0;
+        const offsetPx = canDrag ? getRowOffsetPx(index, place.id) : 0;
+        const depth = canReorder ? depthOf(place.id) : 0;
+        const children = canReorder ? childCountOf(place.id) : 0;
+        const dragging = dragId === place.id;
+        // While a row is being dragged sideways, show the level it would land
+        // at rather than the one it came from — the point of following the
+        // finger is that you can see what letting go will do.
+        const previewDepth = dragging && dragLevel === 1 ? 1
+          : dragging && dragLevel === -1 ? 0
+          : depth;
+        const folded = isFolded(place.id);
+
         return (
           <li
             key={place.id}
             ref={el => { rowRefs.current[place.id] = el; }}
-            className={`place-list-item ${dragId === place.id ? 'place-list-item--dragging' : ''}`}
-            style={offsetPx ? { transform: `translateY(${offsetPx}px)` } : undefined}
+            className={[
+              'place-list-item',
+              dragging ? 'place-list-item--dragging' : '',
+              dragging && previewDepth !== depth ? 'place-list-item--renesting' : '',
+            ].filter(Boolean).join(' ')}
+            style={{
+              ...(offsetPx ? { transform: `translateY(${offsetPx}px)` } : undefined),
+              '--place-depth': previewDepth,
+            } as React.CSSProperties}
           >
-            {canReorder && (
+            {canDrag && (
               <button
                 className="place-list-drag-handle"
                 aria-label={`Reorder ${place.name}`}
@@ -59,8 +154,9 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace, onRe
                 <GripVertical size={16} />
               </button>
             )}
+
             <button
-              className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
+              className={`place-list-item-content ${!canDrag ? 'place-list-item-content--flush' : ''}`}
               onClick={() => onSelectPlace(place)}
             >
               {place.image_url && (
@@ -73,6 +169,11 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace, onRe
                     : <Circle size={16} color="var(--color-muted)" />
                   }
                   <span className="place-list-name">{place.name}</span>
+                  {folded && children > 0 && (
+                    <span className="place-list-folded-count">
+                      {children} inside
+                    </span>
+                  )}
                 </div>
                 {place.address && <p className="place-list-address">{place.address}</p>}
                 {(place.tags ?? []).length > 0 && (
@@ -90,6 +191,22 @@ export function PlaceListView({ places, activeTags, allTags, onSelectPlace, onRe
                 )}
               </div>
             </button>
+
+            {/* Right-aligned plus/minus, the same control a note bullet and a
+                notes-page heading use — "there is more under this" looks the
+                same everywhere. Only a stop with something inside it gets one;
+                a row with nothing to fold shows no control rather than a dead
+                one. */}
+            {canReorder && children > 0 && (
+              <button
+                className="place-list-fold"
+                aria-label={folded ? `Expand ${place.name}` : `Collapse ${place.name}`}
+                aria-expanded={!folded}
+                onClick={() => onToggleFold(place.id)}
+              >
+                {folded ? <Plus size={15} /> : <Minus size={15} />}
+              </button>
+            )}
           </li>
         );
       })}
