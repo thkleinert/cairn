@@ -1,5 +1,41 @@
 import type { Place } from '../types';
-import { groupPlaces } from './outline';
+
+/**
+ * Split places into the ones that stand alone and the children anchored to
+ * each of them — a café under the city it is in.
+ *
+ * One level, deliberately. A place whose parent is itself anchored is treated
+ * as top-level, which keeps the page readable on a phone and, more usefully,
+ * means a cycle (a inside b, b inside a) renders as two ordinary headings
+ * rather than as two places that appear nowhere. A parent that isn't in this
+ * trip's places at all is treated the same way.
+ */
+export function groupPlaces<T extends { id: string; parent_place_id?: string | null; kind?: string }>(
+  places: T[],
+): { top: T[]; childrenOf: Map<string, T[]> } {
+  const byId = new Map(places.map(p => [p.id, p]));
+  const isAnchored = (p: T) => {
+    const parent = p.parent_place_id ? byId.get(p.parent_place_id) : undefined;
+    if (!parent || parent.id === p.id) return false;
+    // A parent must be a stop. The database can only guarantee that anything
+    // anchored is a location, not that what it points at is a stop, so this is
+    // where the other half is enforced — by declining to nest, which shows up
+    // as an unnested place rather than as one that renders nowhere.
+    if (parent.kind !== undefined && parent.kind !== 'stop') return false;
+    return !parent.parent_place_id;
+  };
+
+  const top: T[] = [];
+  const childrenOf = new Map<string, T[]>();
+  for (const place of places) {
+    if (!isAnchored(place)) { top.push(place); continue; }
+    const key = place.parent_place_id!;
+    const list = childrenOf.get(key);
+    if (list) list.push(place); else childrenOf.set(key, [place]);
+  }
+  return { top, childrenOf };
+}
+
 
 // Flattening a trip's stops and the locations inside them into the single
 // ordered list the list view actually renders, and working out what a drop

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import { insertOnce, applyOrder } from '../lib/rows';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
 import { kindFor } from '../lib/anchor';
 import { removeStorageUrls } from '../lib/storage';
@@ -156,13 +157,7 @@ export function usePlaces(tripId: string | undefined) {
       return null;
     }
     placeIdsRef.current.add(data.id);
-    // Guarded for the same reason the notes insert is: this insert fires its
-    // own realtime event, and if the refetch it triggers lands first the row
-    // is already here — an unconditional append would then show the place
-    // twice until the next refetch tidied it up.
-    setPlaces(prev => prev.some(p => p.id === data.id)
-      ? prev
-      : [...prev, { ...data, tags: [], images: [] }]);
+    setPlaces(prev => insertOnce(prev, { ...data, tags: [], images: [] }));
 
     // The image_url passed in (if any) is a fresh but still-ephemeral
     // Google session URL — persist it to our own storage right away so
@@ -230,26 +225,7 @@ export function usePlaces(tripId: string | undefined) {
   // leaving server, client, and realtime with three different orders).
   const reorderPlaces = async (orderedIds: string[]) => {
     if (!tripId) return;
-    // A functional update that touches only `position`, the way reorderNotes
-    // does. The previous version rebuilt each row from the `places` closure
-    // and replaced the whole array with just the ids passed in, which broke
-    // two ways:
-    //
-    //   - it wrote back a stale copy of every row, so any change made in the
-    //     same tick was silently undone. Dragging a location out of a stop
-    //     does exactly that — it sets the parent and reorders together — and
-    //     the reorder put the old parent straight back, which is why the row
-    //     sprang home.
-    //   - it DROPPED every place not in the list it was given. The list view
-    //     only passes the rows on screen, so reordering while anything was
-    //     folded made the hidden places vanish until the next refetch.
-    setPlaces(prev => {
-      const rank = new Map(orderedIds.map((id, index) => [id, index]));
-      return prev
-        .map(p => rank.has(p.id) ? { ...p, position: rank.get(p.id)! } : p)
-        .sort((a, b) => a.position - b.position ||
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    });
+    setPlaces(prev => applyOrder(prev, orderedIds));
 
     const { error } = await supabase.rpc('reorder_places', {
       p_trip_id: tripId,

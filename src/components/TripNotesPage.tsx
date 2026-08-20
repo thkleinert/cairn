@@ -2,7 +2,7 @@ import { ArrowLeft, NotebookPen, Plus, Minus, X } from 'lucide-react';
 import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
-import { groupPlaces } from '../lib/outline';
+import { groupPlaces } from '../lib/placeTree';
 import { nearestParent } from '../lib/anchor';
 import type { Place, Tag, TripNote } from '../types';
 

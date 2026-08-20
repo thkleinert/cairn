@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, lazy } from 'react';
+import { useState, useEffect, lazy } from 'react';
 import { MapBoundary } from './MapBoundary';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen, Eye, EyeOff } from 'lucide-react';
 import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTripNotes } from '../hooks/useTripNotes';
 import { useTags } from '../hooks/useTags';
-import { useCollapsed } from '../hooks/useCollapsed';
+import { useFoldState } from '../hooks/useFoldState';
 import { usePersistentSet } from '../hooks/usePersistentSet';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -42,22 +42,18 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
   // Owned here rather than inside the notes page so folding survives the page
   // being closed and reopened, which is most of what folding is for.
-  const { isCollapsed, toggle: toggleCollapse, expand: expandCollapsed } = useCollapsed(trip.id);
+  const { isFolded: isCollapsed, toggle: toggleCollapse, expand: expandCollapsed } =
+    useFoldState(trip.id, 'notes', { defaultFolded: false });
   // "Leave it where it is" for an anchor suggestion, remembered so the page
   // doesn't ask again every time it's opened.
   const { has: isAnchorDismissed, add: dismissAnchor } =
     usePersistentSet(`cairn:anchor-dismissed:${trip.id}`);
-  // The list view stores which stops have been OPENED, not which are shut, so
-  // it starts collapsed: the list is the overview of a trip, and a trip with
-  // a dozen places inside its cities reads as a wall of rows otherwise. The
-  // notes page keeps the opposite default — it is where you read what is
-  // written, so hiding it by default would hide the point of the page.
-  const { has: isListRowOpen, toggle: toggleListRow } =
-    usePersistentSet(`cairn:list-open:${trip.id}`);
-  // Memoised: PlaceListView flattens against this, and a new function each
-  // render would rebuild the row list every render and re-enter the drag
-  // hook's sync effect endlessly.
-  const isListRowFolded = useCallback((id: string) => !isListRowOpen(id), [isListRowOpen]);
+  // The list starts collapsed: it is the overview of a trip, and one with a
+  // dozen places inside its cities reads as a wall of rows otherwise. The
+  // notes page takes the opposite default above — it is where you read what is
+  // written, so hiding that by default would hide the point of the page.
+  const { isFolded: isListRowFolded, toggle: toggleListRow } =
+    useFoldState(trip.id, 'list', { defaultFolded: true });
   const {
     tripNotes, notesByPlace, loading: notesLoading,
     addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,

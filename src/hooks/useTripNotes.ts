@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import { insertOnce, restoreRow, applyOrder } from '../lib/rows';
 import type { TripNote } from '../types';
 
 // Every bullet for a trip, both the trip-wide ones (place_id null) and the
@@ -106,17 +107,7 @@ export function useTripNotes(tripId: string | undefined) {
       .single();
     if (error || !data) { toast('Could not add note'); return null; }
     const created = data as TripNote;
-    // Guarded, not a plain append. The insert above fires its own realtime
-    // event, which triggers a refetch that already contains this row — and if
-    // that refetch resolves first, an unconditional append puts the same id in
-    // the array twice and the bullet renders twice. restoreNote has always
-    // guarded for exactly this reason; this path did not.
-    //
-    // The window is normally a few milliseconds, which is why plain typing
-    // rarely showed it. Using the toolbar's move arrows on a new bullet holds
-    // it open much longer: the reorder below is awaited before this function
-    // returns, so insert, realtime refetch and append all overlap.
-    setNotes(prev => prev.some(n => n.id === created.id) ? prev : [...prev, created]);
+    setNotes(prev => insertOnce(prev, created));
 
     // Only when it isn't already where it belongs — appending after the last
     // bullet, which is the common case, needs no reorder at all.
@@ -187,10 +178,7 @@ export function useTripNotes(tripId: string | undefined) {
    * at the outer level. Nothing references a note's id, so reusing it is safe.
    */
   const restoreNote = useCallback(async (note: TripNote) => {
-    setNotes(prev => prev.some(n => n.id === note.id)
-      ? prev
-      : [...prev, note].sort((a, b) => a.position - b.position ||
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+    setNotes(prev => restoreRow(prev, note));
 
     const { data: auth } = await supabase.auth.getUser();
     const { error } = await supabase.from('trip_notes').insert({
@@ -232,12 +220,7 @@ export function useTripNotes(tripId: string | undefined) {
     if (!tripId) return;
     // Apply immediately, then write the whole order atomically — per-row
     // updates could partially fail and leave three different orders around.
-    setNotes(prev => {
-      const rank = new Map(orderedIds.map((id, i) => [id, i]));
-      return prev.map(n => rank.has(n.id) ? { ...n, position: rank.get(n.id)! } : n)
-        .sort((a, b) => a.position - b.position ||
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    });
+    setNotes(prev => applyOrder(prev, orderedIds));
     const { error } = await supabase.rpc('reorder_trip_notes', {
       p_trip_id: tripId,
       p_note_ids: orderedIds,
