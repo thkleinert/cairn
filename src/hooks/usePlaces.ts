@@ -156,7 +156,13 @@ export function usePlaces(tripId: string | undefined) {
       return null;
     }
     placeIdsRef.current.add(data.id);
-    setPlaces(prev => [...prev, { ...data, tags: [], images: [] }]);
+    // Guarded for the same reason the notes insert is: this insert fires its
+    // own realtime event, and if the refetch it triggers lands first the row
+    // is already here — an unconditional append would then show the place
+    // twice until the next refetch tidied it up.
+    setPlaces(prev => prev.some(p => p.id === data.id)
+      ? prev
+      : [...prev, { ...data, tags: [], images: [] }]);
 
     // The image_url passed in (if any) is a fresh but still-ephemeral
     // Google session URL — persist it to our own storage right away so

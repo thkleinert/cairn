@@ -106,7 +106,17 @@ export function useTripNotes(tripId: string | undefined) {
       .single();
     if (error || !data) { toast('Could not add note'); return null; }
     const created = data as TripNote;
-    setNotes(prev => [...prev, created]);
+    // Guarded, not a plain append. The insert above fires its own realtime
+    // event, which triggers a refetch that already contains this row — and if
+    // that refetch resolves first, an unconditional append puts the same id in
+    // the array twice and the bullet renders twice. restoreNote has always
+    // guarded for exactly this reason; this path did not.
+    //
+    // The window is normally a few milliseconds, which is why plain typing
+    // rarely showed it. Using the toolbar's move arrows on a new bullet holds
+    // it open much longer: the reorder below is awaited before this function
+    // returns, so insert, realtime refetch and append all overlap.
+    setNotes(prev => prev.some(n => n.id === created.id) ? prev : [...prev, created]);
 
     // Only when it isn't already where it belongs — appending after the last
     // bullet, which is the common case, needs no reorder at all.

@@ -1,5 +1,5 @@
 import { useRef, useMemo } from 'react';
-import { CheckCircle, Circle, MapPin, GripVertical, ChevronDown } from 'lucide-react';
+import { CheckCircle, Circle, MapPin, GripVertical, Plus, Minus } from 'lucide-react';
 import type { Place, Tag } from '../types';
 import { useDragReorder } from '../hooks/useDragReorder';
 import { flattenPlaces, resolveDrop, INDENT_PX } from '../lib/placeTree';
@@ -116,23 +116,6 @@ export function PlaceListView({
               </button>
             )}
 
-            {/* Only a stop with something in it can fold, and the control sits
-                before the row's own content so it never competes with the tap
-                that opens the place. */}
-            {canReorder && children > 0 ? (
-              <button
-                className="place-list-fold"
-                aria-label={folded ? `Expand ${place.name}` : `Collapse ${place.name}`}
-                aria-expanded={!folded}
-                onClick={() => onToggleFold(place.id)}
-              >
-                <ChevronDown
-                  size={15}
-                  className={`place-list-fold-caret ${folded ? 'place-list-fold-caret--closed' : ''}`}
-                />
-              </button>
-            ) : canReorder ? <span className="place-list-fold place-list-fold--empty" aria-hidden="true" /> : null}
-
             <button
               className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
               onClick={() => onSelectPlace(place)}
@@ -169,6 +152,22 @@ export function PlaceListView({
                 )}
               </div>
             </button>
+
+            {/* Right-aligned plus/minus, the same control a note bullet and a
+                notes-page heading use — "there is more under this" looks the
+                same everywhere. Only a stop with something inside it gets one;
+                a row with nothing to fold shows no control rather than a dead
+                one. */}
+            {canReorder && children > 0 && (
+              <button
+                className="place-list-fold"
+                aria-label={folded ? `Expand ${place.name}` : `Collapse ${place.name}`}
+                aria-expanded={!folded}
+                onClick={() => onToggleFold(place.id)}
+              >
+                {folded ? <Plus size={15} /> : <Minus size={15} />}
+              </button>
+            )}
           </li>
         );
       })}

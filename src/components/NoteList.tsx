@@ -79,6 +79,19 @@ export function NoteList({
   // Same window, different hazard: two Enters in quick succession would both
   // see an uncommitted draft and post it twice.
   const busy = useRef(false);
+  /**
+   * Latched the moment a draft's insert is issued, and only cleared when a
+   * fresh draft is opened.
+   *
+   * `movingFocus` cannot cover this. It is lowered synchronously once a move
+   * or an Enter has run, but React re-renders after the current task — so the
+   * draft row unmounts, its focused textarea fires blur, and the blur handler
+   * still closes over `focusId === DRAFT` from the render before. commit()
+   * then inserted the same bullet a second time, which is what "shift it up
+   * and it duplicates" was. A latch on the insert itself does not depend on
+   * which of those two things happens first.
+   */
+  const draftCommitted = useRef(false);
 
   // No standing empty bullet, in any state. An empty list used to show one as
   // its own way in, which put a grey "Add a note…" under every place on the
@@ -137,6 +150,19 @@ export function NoteList({
     return next;
   }, [items, draft, draftIndex]);
 
+  /**
+   * Open a new bullet and put the caret in it. Every way of starting one goes
+   * through here so the committed-latch is cleared in exactly one place —
+   * forgetting it at a call site would mean a bullet that silently refuses to
+   * save, which is a worse bug than the duplicate it guards against.
+   */
+  const openDraft = useCallback((afterId: string | null, depth: number) => {
+    draftCommitted.current = false;
+    setDraftState({ afterId, depth });
+    setFocusId(DRAFT);
+    setBody('');
+  }, []);
+
   // Opening a bullet because the heading asked for one. Keyed on the flag
   // going true rather than on its value, so the parent can leave it set for a
   // render without reopening the draft on every re-render in between.
@@ -148,9 +174,7 @@ export function NoteList({
     // note in this section" — inheriting the depth of whatever was written
     // last would tuck it under an unrelated bullet purely because that bullet
     // was nested.
-    setDraftState({ afterId: last?.id ?? null, depth: 0 });
-    setFocusId(DRAFT);
-    setBody('');
+    openDraft(last?.id ?? null, 0);
     onDraftStarted?.();
   }, [startDraft]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -178,6 +202,10 @@ export function NoteList({
     if (id === DRAFT) {
       const trimmed = body.trim();
       if (!trimmed || !draft) return null;
+      // Latch before awaiting, not after: the insert is in flight for a whole
+      // round trip, and a blur arriving during it must find the door shut.
+      if (draftCommitted.current) return null;
+      draftCommitted.current = true;
       const created = await onAdd(trimmed, { depth: draft.depth, afterId: draft.afterId });
       return created ?? null;
     }
@@ -224,8 +252,7 @@ export function NoteList({
       busy.current = true;
       movingFocus.current = true;
       const created = await commit();
-      setDraftState({ afterId: created?.id ?? draft.afterId, depth: draft.depth });
-      setBody('');
+      openDraft(created?.id ?? draft.afterId, draft.depth);
       movingFocus.current = false;
       busy.current = false;
       return;
@@ -247,15 +274,10 @@ export function NoteList({
     // just appeared — pressing Enter on a heading would steal everything under
     // it. Every outliner does it this way for the same reason.
     const nests = at !== -1 && hasChildren(items, at);
-    setDraftState({
-      afterId: id,
-      depth: Math.min((note?.depth ?? 0) + (nests ? 1 : 0), MAX_DEPTH),
-    });
-    setFocusId(DRAFT);
-    setBody('');
+    openDraft(id, Math.min((note?.depth ?? 0) + (nests ? 1 : 0), MAX_DEPTH));
     movingFocus.current = false;
     busy.current = false;
-  }, [focusId, draft, body, commit, blur, items, folded, onExpand]);
+  }, [focusId, draft, body, commit, blur, items, folded, onExpand, openDraft]);
 
   /**
    * Backspace at the very start of an empty bullet removes it and puts the
@@ -419,9 +441,11 @@ export function NoteList({
             className="note-bullet-body note-bullet-body--placeholder"
             role="button"
             tabIndex={0}
-            onClick={() => { setFocusId(DRAFT); setBody(''); }}
+            onClick={() => { draftCommitted.current = false; setFocusId(DRAFT); setBody(''); }}
             onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocusId(DRAFT); setBody(''); }
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault(); draftCommitted.current = false; setFocusId(DRAFT); setBody('');
+              }
             }}
           >
             {placeholder}

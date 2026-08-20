@@ -2212,17 +2212,13 @@ textarea.mention-input {
 .notes-fold {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  /* Wider than it looks: the caret is small, but a heading control on a phone
-     needs a thumb-sized target or folding becomes a game of precision. */
-  width: 30px; height: 34px;
-  margin-left: -6px;
+  /* Wider than the glyph: a heading control on a phone needs a thumb-sized
+     target or folding becomes a game of precision. */
+  width: 32px; height: 34px;
   border-radius: var(--radius-sm);
   color: var(--color-muted);
 }
-.notes-fold:active { background: var(--color-bg); }
-
-.notes-fold-caret { transition: transform 0.18s var(--spring); }
-.notes-fold-caret--closed { transform: rotate(-90deg); }
+.notes-fold:active { background: var(--color-bg); color: var(--color-text); }
 
 /* Anchored places sit inside their parent's section — a café under the city
    it's in. Indented and hung off a guide line, the same vocabulary a nested
@@ -2254,18 +2250,18 @@ textarea.mention-input {
   border-radius: var(--radius-sm);
 }
 
+/* Right-aligned, matching .note-fold and .notes-fold — one control for "there
+   is more under this" everywhere it appears. */
 .place-list-fold {
   flex-shrink: 0;
+  align-self: center;
   display: flex; align-items: center; justify-content: center;
-  width: 26px; align-self: stretch;
+  width: 34px; height: 34px;
+  margin-right: 4px;
+  border-radius: 50%;
   color: var(--color-muted);
 }
-.place-list-fold:active { color: var(--color-text); }
-/* Keeps the column width when a row has nothing to fold, so names stay on one
-   vertical axis whether or not a stop has anything inside it. */
-.place-list-fold--empty { pointer-events: none; }
-.place-list-fold-caret { transition: transform 0.18s var(--spring); }
-.place-list-fold-caret--closed { transform: rotate(-90deg); }
+.place-list-fold:active { background: var(--color-bg); color: var(--color-text); }
 
 .place-list-folded-count {
   flex-shrink: 0;

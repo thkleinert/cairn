@@ -1,4 +1,4 @@
-import { ArrowLeft, NotebookPen, ChevronRight, ChevronDown, X } from 'lucide-react';
+import { ArrowLeft, NotebookPen, ChevronRight, Plus, Minus, X } from 'lucide-react';
 import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
@@ -98,18 +98,6 @@ export function TripNotesPage({
         key={place.id}
       >
         <h2 className="notes-heading notes-heading--foldable">
-          <button
-            type="button"
-            className="notes-fold"
-            aria-label={collapsed ? `Expand ${place.name}` : `Collapse ${place.name}`}
-            aria-expanded={!collapsed}
-            onClick={() => toggleCollapse(place.id)}
-          >
-            <ChevronDown
-              size={16}
-              className={`notes-fold-caret ${collapsed ? 'notes-fold-caret--closed' : ''}`}
-            />
-          </button>
           {/* Tapping the line writes; the chevron travels. Three targets on
               one row — fold, write, go — and each is the obvious size and
               place for what it does. This is also what let every place stop
@@ -131,6 +119,19 @@ export function TripNotesPage({
                 ))}
               </span>
             )}
+          </button>
+          {/* Fold sits on the right, as a plus or a minus, the same control a
+              note bullet uses — one gesture for "there is more under this"
+              wherever it appears. It comes before the chevron because it acts
+              on this row, while the chevron leaves for somewhere else. */}
+          <button
+            type="button"
+            className="notes-fold"
+            aria-label={collapsed ? `Expand ${place.name}` : `Collapse ${place.name}`}
+            aria-expanded={!collapsed}
+            onClick={() => toggleCollapse(place.id)}
+          >
+            {collapsed ? <Plus size={16} /> : <Minus size={16} />}
           </button>
           <button
             type="button"
@@ -214,18 +215,6 @@ export function TripNotesPage({
       <div className="notes-page-body">
         <section className="notes-block">
           <h2 className="notes-heading notes-heading--foldable">
-            <button
-              type="button"
-              className="notes-fold"
-              aria-label={isCollapsed(TRIP_WIDE) ? 'Expand trip notes' : 'Collapse trip notes'}
-              aria-expanded={!isCollapsed(TRIP_WIDE)}
-              onClick={() => toggleCollapse(TRIP_WIDE)}
-            >
-              <ChevronDown
-                size={16}
-                className={`notes-fold-caret ${isCollapsed(TRIP_WIDE) ? 'notes-fold-caret--closed' : ''}`}
-              />
-            </button>
             {/* No chevron: there is no page for "the whole trip" to open, so
                 the line only ever means "write here". */}
             <button
@@ -238,6 +227,15 @@ export function TripNotesPage({
               }}
             >
               <span className="notes-heading-name">For the whole trip</span>
+            </button>
+            <button
+              type="button"
+              className="notes-fold"
+              aria-label={isCollapsed(TRIP_WIDE) ? 'Expand trip notes' : 'Collapse trip notes'}
+              aria-expanded={!isCollapsed(TRIP_WIDE)}
+              onClick={() => toggleCollapse(TRIP_WIDE)}
+            >
+              {isCollapsed(TRIP_WIDE) ? <Plus size={16} /> : <Minus size={16} />}
             </button>
           </h2>
 
