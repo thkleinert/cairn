@@ -2262,7 +2262,17 @@ textarea.mention-input {
    an anchored place on the notes page has no line: it is the stop's own
    content, not something nested inside a bullet. Drawing it here and not
    there would just move the inconsistency to a different screen. */
-.place-list-item { margin-left: calc(var(--place-depth, 0) * 26px); position: relative; }
+/* The indent is PADDING, not a margin. The row is width:100% with
+   border-box sizing, so a margin is added outside a box that already fills
+   the container — a nested row came out exactly one indent wider than the
+   screen, and .place-list scrolled sideways to show it. (Its overflow-y:auto
+   makes overflow-x compute to auto, so the excess became a scrollbar rather
+   than being clipped.) Padding is inside the box: the row stays exactly the
+   container's width and the content insets instead.
+   Doing it this way rather than with overflow-x:hidden also keeps a row
+   dragged sideways visible — clipping the container would cut off the very
+   gesture the indent exists for. */
+.place-list-item { padding-left: calc(var(--place-depth, 0) * 26px); position: relative; }
 
 /* While a row is being dragged past the indent threshold, it picks up the
    accent so the level it would land at is visible before the finger lifts —
