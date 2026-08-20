@@ -72,7 +72,15 @@ export function TripNotesPage({
   const tagsOf = (place: Place) =>
     allTags.filter(t => (place.tags ?? []).some(pt => pt.id === t.id));
 
-  const { top, childrenOf } = groupPlaces(places);
+  const { top: unsortedTop, childrenOf } = groupPlaces(places);
+
+  // Alphabetical, and only here. The list view is the itinerary — its order is
+  // dragged by hand and means something — whereas this page is looked things
+  // up in, and a name is what you look up by. localeCompare rather than a raw
+  // comparison so "Österreich" and "Zurich" land where a reader expects.
+  const byName = (a: Place, b: Place) => a.name.localeCompare(b.name);
+  const top = [...unsortedTop].sort(byName);
+  const sortedChildren = (id: string) => [...(childrenOf.get(id) ?? [])].sort(byName);
   // Same rule as a place section: with nothing written there is nothing to
   // fold, and nothing that can be left folded.
   const tripWideCollapsed = tripNotes.length > 0 && isCollapsed(TRIP_WIDE);
@@ -112,12 +120,12 @@ export function TripNotesPage({
         key={place.id}
       >
         <h2 className="notes-heading notes-heading--foldable">
-          {/* An anchored place is its parent's content in exactly the way a
-              note is, so it is drawn as one: the same dot, in the same gutter,
-              at the same indent. Reusing the bullet's own class rather than
-              copying its measurements is what keeps the two from drifting
-              apart the next time either is adjusted. */}
-          {anchored && <span className="note-bullet-dot notes-heading-dot" aria-hidden="true" />}
+          {/* Every heading is a bullet, because on this page everything is:
+              the page is one outline, and a place is simply a bullet whose
+              children happen to be notes and other places. Reusing the
+              bullet's own class rather than copying its measurements is what
+              keeps the two from drifting apart the next time either moves. */}
+          <span className="note-bullet-dot notes-heading-dot" aria-hidden="true" />
           {/* The name is the place: tapping the words themselves goes there.
               A chevron saying so was redundant once the text does it, and it
               cost a target's width on every heading. */}
@@ -241,8 +249,9 @@ export function TripNotesPage({
       <div className="notes-page-body">
         <section className="notes-block">
           <h2 className="notes-heading notes-heading--foldable">
-            {/* No chevron: there is no page for "the whole trip" to open, so
-                the line only ever means "write here". */}
+            <span className="note-bullet-dot notes-heading-dot" aria-hidden="true" />
+            {/* Nowhere for these words to lead — there is no page for the
+                general section — so the whole line means "write here". */}
             <button
               type="button"
               className="notes-heading-link"
@@ -252,7 +261,7 @@ export function TripNotesPage({
                 setAddingFor(TRIP_WIDE);
               }}
             >
-              <span className="notes-heading-name">For the whole trip</span>
+              <span className="notes-heading-name">General</span>
             </button>
             {/* Same blank remainder as a place heading, so the fold lands on
                 the same axis and the row is written on the same way. There is
@@ -312,7 +321,7 @@ export function TripNotesPage({
             {/* Places anchored to this one, nested under it rather than each
                 claiming a top-level section. Folded away with their parent. */}
             {!isCollapsed(place.id) &&
-              (childrenOf.get(place.id) ?? []).map(child => renderPlace(child, true))}
+              sortedChildren(place.id).map(child => renderPlace(child, true))}
           </div>
         ))}
 

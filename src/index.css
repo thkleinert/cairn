@@ -2235,18 +2235,27 @@ textarea.mention-input {
 }
 .notes-fold:active { background: var(--color-bg); color: var(--color-text); }
 
-/* Anchored places sit inside their parent's section — a café under the city
-   it's in — and are drawn as bullets of it, because that is what they are.
-   The indent comes from the bullet gutter the dot occupies, exactly as a
-   note's does, rather than from a margin of its own: a margin would be a
-   second, separate measure of "one level in" that has to be kept in step with
-   the first by hand.
+/* The page is one outline, so it has exactly one step size: the bullet gutter
+   plus the gap after it. Everything that is "one level in" moves by this and
+   nothing else, which is what stops headings, notes and anchored places from
+   each drifting to their own idea of an indent. */
+:root { --note-step: calc(var(--note-gutter) + 8px); }
 
-   The rule the whole page follows:
-     indentation  = this belongs to the thing above it
-     guide line   = this is nested inside a BULLET
-   so an anchored place, like a note under a heading, gets no line. */
 .notes-heading-dot { flex-shrink: 0; margin-right: 6px; }
+
+/* A section's own depth. A heading sits at it; the notes under that heading
+   sit one step further in, because they are its children. An anchored place
+   is one step in from its parent — which puts it on exactly the same axis as
+   its parent's notes, since it is their sibling. */
+.notes-block { --block-indent: 0px; }
+.notes-block--anchored { --block-indent: var(--note-step); }
+.notes-heading { padding-left: var(--block-indent); }
+.notes-block > .note-list { padding-left: calc(var(--block-indent) + var(--note-step)); }
+
+/* Both hang off the text column of the section they belong to, so they line up
+   with the notes rather than with the heading's bullet. */
+.notes-block > .notes-folded-hint,
+.notes-block > .anchor-hint { margin-left: calc(var(--block-indent) + var(--note-step)); }
 
 /* Bullets sit closer together than sections do. A place and the places inside
    it are one list, so the gap between them is a bullet's, not a section's —
@@ -2328,7 +2337,7 @@ textarea.mention-input {
    aside rather than as a warning that something is wrong. */
 .anchor-hint {
   display: flex; align-items: center; gap: 8px;
-  margin: 2px 0 8px calc(var(--note-gutter) + 8px);
+  margin: 2px 0 8px 0;
   padding: 6px 8px 6px 10px;
   border-radius: var(--radius-sm);
   background: var(--color-bg);
@@ -2364,7 +2373,7 @@ textarea.mention-input {
 .notes-folded-hint {
   display: block;
   width: 100%;
-  padding: 2px 0 6px calc(var(--note-gutter) + 8px);
+  padding: 2px 0 6px 0;
   text-align: left;
   color: var(--color-muted);
   font-size: 12px;
