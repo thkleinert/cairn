@@ -669,12 +669,22 @@ create table public.trip_notes (
   place_id   uuid,
   body       text not null,
   position   int  not null default 0,
+  -- Nesting level. The outline is a flat ordered list plus a depth, not a
+  -- parent_id tree: the tree is implied by the order (an item's parent is the
+  -- nearest item above it with a smaller depth), which keeps one atomic
+  -- reorder RPC, one realtime row per bullet, and no way to orphan a row by
+  -- deleting its parent. The client clamps an impossible depth on render.
+  depth      int  not null default 0,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
   -- An empty bullet is a UI state, never a stored row.
   constraint trip_notes_body_not_blank check (length(btrim(body)) > 0),
+
+  -- A ceiling rather than unlimited nesting: each level costs horizontal
+  -- space, and past this a bullet on a 390px phone has more indent than text.
+  constraint trip_notes_depth_bounded check (depth between 0 and 5),
 
   -- A note's place must belong to the note's trip. MATCH SIMPLE means a null
   -- place_id skips the check, which is exactly right for trip-wide notes — and
@@ -774,7 +784,8 @@ as $$
           -- never be swept in here.
           'note_items', coalesce(
             (select jsonb_agg(
-               jsonb_build_object('id', n.id, 'body', n.body, 'position', n.position)
+               jsonb_build_object(
+                 'id', n.id, 'body', n.body, 'position', n.position, 'depth', n.depth)
                order by n.position, n.created_at)
              from public.trip_notes n where n.place_id = p.id),
             '[]'::jsonb)

@@ -5,6 +5,7 @@ import type { PickedPoint, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTripNotes } from '../hooks/useTripNotes';
 import { useTags } from '../hooks/useTags';
+import { useFoldState } from '../hooks/useFoldState';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 // Lazy: mapbox-gl is ~90% of the bundle; splitting it means the auth screen,
@@ -38,9 +39,22 @@ type ViewMode = 'map' | 'list';
 export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, initialOpenComments, openNonce }: Props) {
   const { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces } = usePlaces(trip.id);
   const { tags, createTag, deleteTag, updateTag } = useTags(trip.id);
+  // Owned here rather than inside the notes page so folding survives the page
+  // being closed and reopened, which is most of what folding is for.
+  // Sections start collapsed. An outline's value is seeing the shape of a trip
+  // at a glance and opening only the part you want; opening everything by
+  // default is the state you would immediately undo.
+  const { isFolded: isCollapsed, toggle: toggleCollapse } =
+    useFoldState(trip.id, 'notes', { defaultFolded: true });
+  // Bullets fold separately from the sections that hold them, and open by
+  // default. Sharing one state was a real bug: with sections defaulting to
+  // folded, every note bullet counted as folded too — which drew the ringed
+  // "there is more here" dot on all of them and hid every nested note.
+  const { isFolded: isNoteFolded, toggle: toggleNoteFold, expand: expandNote } =
+    useFoldState(trip.id, 'bullets', { defaultFolded: false });
   const {
     tripNotes, notesByPlace, loading: notesLoading,
-    addNote, updateNote, removeNote, reorderNotes,
+    addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,
   } = useTripNotes(trip.id);
 
   // Selection is an id — the place object is always derived fresh from `places`,
@@ -237,7 +251,14 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onAdd={addNote}
           onUpdate={updateNote}
           onRemove={removeNote}
+          onRestore={restoreNote}
+          onSetDepths={setNoteDepths}
           onReorder={reorderNotes}
+          isCollapsed={isCollapsed}
+          toggleCollapse={toggleCollapse}
+          isNoteFolded={isNoteFolded}
+          toggleNoteFold={toggleNoteFold}
+          onExpandNote={expandNote}
           onSelectPlace={(placeId) => setSelectedPlaceId(placeId)}
           onClose={() => setShowNotes(false)}
         />
@@ -259,9 +280,11 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onCreateTag={createTag}
           notes={notesByPlace.get(selectedPlace.id) ?? []}
           allPlaces={places}
-          onAddNote={(body) => addNote(body, selectedPlace.id)}
+          onAddNote={(body, opts) => addNote(body, selectedPlace.id, opts)}
           onUpdateNote={updateNote}
           onRemoveNote={removeNote}
+          onRestoreNote={restoreNote}
+          onSetNoteDepths={setNoteDepths}
           onReorderNotes={reorderNotes}
         />
       )}

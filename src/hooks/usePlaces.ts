@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import { insertOnce, applyOrder } from '../lib/rows';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
 import { removeStorageUrls } from '../lib/storage';
 import type { Place, PlaceImage } from '../types';
@@ -128,9 +129,14 @@ export function usePlaces(tripId: string | undefined) {
     // max+1, not length: after any delete the positions have gaps, and
     // length would collide with an existing position.
     const nextPosition = places.reduce((max, p) => Math.max(max, p.position), -1) + 1;
+
     const { data, error } = await supabase
       .from('places')
-      .insert({ ...place, trip_id: tripId, position: nextPosition })
+      .insert({
+        ...place,
+        trip_id: tripId,
+        position: nextPosition,
+      })
       .select()
       .single();
     if (error || !data) {
@@ -138,7 +144,7 @@ export function usePlaces(tripId: string | undefined) {
       return null;
     }
     placeIdsRef.current.add(data.id);
-    setPlaces(prev => [...prev, { ...data, tags: [], images: [] }]);
+    setPlaces(prev => insertOnce(prev, { ...data, tags: [], images: [] }));
 
     // The image_url passed in (if any) is a fresh but still-ephemeral
     // Google session URL — persist it to our own storage right away so
@@ -188,6 +194,7 @@ export function usePlaces(tripId: string | undefined) {
 
   const deletePlace = async (id: string) => {
     const place = places.find(p => p.id === id);
+
     const { error } = await supabase.from('places').delete().eq('id', id);
     if (error) {
       toast('Could not delete place');
@@ -195,6 +202,7 @@ export function usePlaces(tripId: string | undefined) {
     }
     placeIdsRef.current.delete(id);
     setPlaces(prev => prev.filter(p => p.id !== id));
+
     // The bucket is public — remove the actual files, not just the rows.
     if (place) {
       removeStorageUrls([place.image_url, ...(place.images ?? []).map(i => i.url)]);
@@ -206,13 +214,7 @@ export function usePlaces(tripId: string | undefined) {
   // leaving server, client, and realtime with three different orders).
   const reorderPlaces = async (orderedIds: string[]) => {
     if (!tripId) return;
-    const reordered = orderedIds
-      .map((id, index) => {
-        const place = places.find(p => p.id === id);
-        return place ? { ...place, position: index } : null;
-      })
-      .filter((p): p is Place => p !== null);
-    setPlaces(reordered);
+    setPlaces(prev => applyOrder(prev, orderedIds));
 
     const { error } = await supabase.rpc('reorder_places', {
       p_trip_id: tripId,
