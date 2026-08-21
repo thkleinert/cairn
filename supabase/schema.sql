@@ -193,6 +193,29 @@ create trigger trip_created after insert on public.trips
 -- HELPERS
 -- ============================================================
 
+-- Defined first: can_read_place and can_write_place below call it, and this
+-- file is meant to be run top to bottom on a fresh project. It used to sit
+-- after them, which Postgres accepts for a plpgsql body but not for a SQL one
+-- — a SQL function is parsed and its calls resolved at creation time, so
+-- can_read_place failed with "function public.auth_uid() does not exist" and
+-- the run stopped there, roughly a third of the way in. Every table existed
+-- and most policies did not, which is the worst place for it to stop: not
+-- obviously broken, just missing its access rules.
+-- Modern PostgreSQL restricts non-superuser roles from reading the custom GUC
+-- parameters PostgREST sets (request.jwt.*). Inline the JWT parse inside a
+-- SECURITY DEFINER function so it runs as postgres, which can read them.
+create or replace function public.auth_uid()
+returns uuid language sql security definer stable
+set search_path = extensions, public, auth
+as $$
+  select coalesce(
+    nullif(current_setting('request.jwt.claim.sub', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::json->>'sub'
+  )::uuid
+$$;
+
+grant execute on function public.auth_uid() to anon, authenticated;
+
 create or replace function public.is_trip_member(trip uuid, usr uuid)
 returns boolean language sql security definer stable
 set search_path = public
@@ -236,21 +259,6 @@ as $$
     where p.id = place and public.is_trip_editor(p.trip_id, public.auth_uid())
   );
 $$;
-
--- Modern PostgreSQL restricts non-superuser roles from reading the custom GUC
--- parameters PostgREST sets (request.jwt.*). Inline the JWT parse inside a
--- SECURITY DEFINER function so it runs as postgres, which can read them.
-create or replace function public.auth_uid()
-returns uuid language sql security definer stable
-set search_path = extensions, public, auth
-as $$
-  select coalesce(
-    nullif(current_setting('request.jwt.claim.sub', true), ''),
-    nullif(current_setting('request.jwt.claims', true), '')::json->>'sub'
-  )::uuid
-$$;
-
-grant execute on function public.auth_uid() to anon, authenticated;
 
 -- SECURITY DEFINER RPC for trip creation — bypasses RLS INSERT evaluation
 -- entirely. auth.uid() runs in SECURITY DEFINER context where request.jwt.claims
