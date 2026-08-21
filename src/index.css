@@ -1423,20 +1423,26 @@ select.input {
    reflow and the transform reset happen together with no visible jump */
 .place-list--reordering .place-list-item { transition: none; }
 
-/* Held clear of the screen edge, because the OS owns that strip.
-   iOS reserves roughly the leftmost 20px for its back-swipe and handles it
-   before any touch event reaches the page — preventDefault and touch-action
-   cannot reach it, so the only fix available to us is not to start a gesture
-   there. The grip used to sit at x=0-34, which put "drag right to nest" inside
-   the system gesture: the row would not move and the app would navigate back.
+/* Nudged clear of the screen edge, because the OS owns that strip. iOS
+   reserves roughly the leftmost 20px for its back-swipe and handles it before
+   any touch event reaches the page, so the only fix available to us is not to
+   start a gesture there — the grip used to sit at x=0-34, which put "drag
+   right to nest" inside the system gesture.
 
-   Only at the outer level. A nested row is already indented past the strip, so
-   max() gives it no gutter at all and the extra offset costs nothing on the
-   rows that can least afford it. 22px clears the strip with 2px to spare. */
+   What has to clear the strip is where a finger LANDS, not the whole control.
+   A first attempt pushed the entire grip past 20px, which cost 22px of the
+   text column and read as the whole list having been shoved right. Centring
+   the grip just past the boundary instead costs a third of that: the grip
+   spans 12-44 with its centre at 28, so an ordinary press is clear while the
+   row keeps its width. A press deliberately aimed at the grip's leftmost few
+   pixels still belongs to iOS, and nothing in a web page can take it back.
+
+   Only at the outer level — a nested row is already indented past the strip,
+   so max() gives it no gutter at all. */
 .place-list-drag-handle {
   flex-shrink: 0;
-  margin-left: max(0px, calc(22px - var(--place-depth, 0) * var(--place-indent, 36px)));
-  width: 34px;
+  margin-left: max(0px, calc(12px - var(--place-depth, 0) * var(--place-indent, 36px)));
+  width: 32px;
   display: flex; align-items: center; justify-content: center;
   color: var(--color-muted);
   touch-action: none;
@@ -1450,7 +1456,9 @@ select.input {
 .place-list-item-content {
   flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 16px 12px 6px;
+  /* No left padding: the grip's own width is the separation, and on a 390px
+     screen this column is the one that pays for everything to its left. */
+  padding: 12px 16px 12px 0;
   text-align: left;
   transition: background 0.12s;
 }
