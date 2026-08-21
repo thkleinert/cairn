@@ -33,6 +33,8 @@ interface Props {
   onToggleVisited: () => void;
   onDelete: () => void;
   onSetTags: (tagIds: string[]) => void;
+  /** Anchor this place inside another, or release it with null. */
+  onSetParent?: (parentId: string | null) => void;
   onAddImage: (url: string, caption?: string) => Promise<PlaceImage | null>;
   onUploadImage?: (file: File) => Promise<PlaceImage | null>;
   onRemoveImage: (imageId: string) => void;
@@ -54,7 +56,7 @@ interface Props {
 }
 
 export function PlaceDetailSheet({
-  place, allTags, onClose, onToggleVisited, onDelete,
+  place, allTags, onClose, onToggleVisited, onDelete, onSetParent,
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
   scrollToComments = false, onCommentsShown,
   notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onRestoreNote,
@@ -73,6 +75,21 @@ export function PlaceDetailSheet({
   const discussionRef = useRef<HTMLDivElement>(null);
 
   const { comments, currentUserId, loading: commentsLoading, error: commentsError, reload: reloadComments, addComment, deleteComment } = useComments(place.id);
+
+  // Only a top-level stop can hold anything, and a place cannot hold itself.
+  const parentOptions = allPlaces.filter(
+    p => p.id !== place.id && p.kind === 'stop' && !p.parent_place_id,
+  );
+  // A place holding spots cannot be moved into one — it would have to
+  // become a spot while still holding them, which setPlaceParent refuses.
+  const hasChildren = allPlaces.some(p => p.parent_place_id === place.id);
+  // A spot whose stop was deleted while the follow-up write was in flight,
+  // or one a collaborator orphaned. It behaves as top-level everywhere that
+  // reads the tree, but its `kind` still says otherwise, which quietly bars it
+  // from being a parent and from the map's Spots filter. The select cannot
+  // repair it — its value already matches "Nowhere in particular", so choosing
+  // that fires no change — so this is the one control that can.
+  const isOrphanSpot = place.kind === 'spot' && !place.parent_place_id;
 
   const handleAddComment = async () => {
     const body = commentDraft.trim();
@@ -235,6 +252,57 @@ export function PlaceDetailSheet({
                 </button>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Part of — anchors this place inside another, so the notes page nests
+            it under that one instead of giving a café its own top-level
+            section next to the city it's in.
+
+            Only stops are offered. That a parent is a stop is the half of the
+            model a check constraint cannot see — a check cannot read the
+            parent row — so this select is where it is enforced, and
+            groupPlaces declines to nest under anything else if it ever isn't.
+
+            Choosing a stop also makes this place a spot: the two are one
+            decision, and the database refuses anything anchored that is not
+            one. Choosing "Nowhere in particular" turns it back into a stop.
+
+            A place that holds other places cannot be moved into one — it would
+            have to become a spot while still holding spots. The select
+            is disabled rather than hidden: this is the screen someone comes to
+            in order to file a place, and a control that has quietly vanished
+            explains nothing. The list view hides its drag grip in the same
+            situation because there is nowhere on a row to say why. */}
+        {!readOnly && onSetParent && (parentOptions.length > 0 || isOrphanSpot) && (
+          <div className="detail-section">
+            <label className="detail-label" htmlFor="place-parent">Part of</label>
+            <select
+              id="place-parent"
+              className="input"
+              value={place.parent_place_id ?? ''}
+              disabled={hasChildren}
+              onChange={e => onSetParent(e.target.value || null)}
+            >
+              <option value="">Nowhere in particular</option>
+              {parentOptions.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            {hasChildren && (
+              <p className="detail-hint">
+                Move the places inside this one out first.
+              </p>
+            )}
+            {isOrphanSpot && !hasChildren && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => onSetParent(null)}
+              >
+                Make it a stop of its own
+              </button>
+            )}
           </div>
         )}
 

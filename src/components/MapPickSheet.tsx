@@ -15,6 +15,8 @@ interface Props {
     google_place_id?: string;
     image_url?: string;
     notes?: string;
+    types?: string[];
+    spanKm?: number;
   }) => Promise<boolean>;
   onClose: () => void;
 }
@@ -85,6 +87,8 @@ export function MapPickSheet({ point, onAdd, onClose }: Props) {
     longitude: p.longitude,
     google_place_id: p.place_id,
     image_url: p.image_url,
+    types: p.types,
+    spanKm: p.spanKm,
   });
 
   const addCustom = () => {

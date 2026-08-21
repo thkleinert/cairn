@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import type { GooglePlacePrediction } from '../types';
+import { spanFromViewport } from '../lib/anchor';
 
 declare global {
   interface Window {
@@ -16,6 +17,8 @@ interface Props {
     longitude: number;
     google_place_id: string;
     image_url?: string;
+    types?: string[];
+    spanKm?: number;
   }) => void;
 }
 
@@ -108,7 +111,9 @@ export function PlaceSearch({ onSelect }: Props) {
     placesService.current.getDetails(
       {
         placeId: prediction.place_id,
-        fields: ['name', 'formatted_address', 'geometry', 'photos'],
+        // `types` is an Essentials-tier field and this call is already Pro
+        // tier because of `photos`, so asking for it costs nothing.
+        fields: ['name', 'formatted_address', 'geometry', 'photos', 'types'],
         sessionToken: sessionToken.current ?? undefined,
       },
       (result, status) => {
@@ -126,6 +131,10 @@ export function PlaceSearch({ onSelect }: Props) {
             longitude: location.lng(),
             google_place_id: prediction.place_id,
             image_url,
+            types: result.types,
+            // Free: `geometry` is already requested, and the viewport rides
+            // along with it. This is what keeps a national park a stop.
+            spanKm: spanFromViewport(result.geometry?.viewport),
           });
           setQuery('');
           setPredictions([]);

@@ -1,13 +1,45 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+
+/** Move one element, returning a new array. Shared so a previewed drop and the
+ *  real one cannot drift apart. */
+function moveWithin<T>(items: T[], from: number, to: number): T[] {
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
 
 interface Options<T> {
   items: T[];
   getId: (item: T) => string;
-  onReorder: (orderedIds: string[]) => void;
+  /**
+   * `sidewaysPx` is how far the row was dragged horizontally when it was let
+   * go — only ever non-zero when `trackSideways` is on. Callers that nest use
+   * it to decide whether the drop also changed what the row belongs to; the
+   * flat lists ignore it entirely.
+   */
+  onReorder: (orderedIds: string[], sidewaysPx?: number) => void;
   enabled: boolean;
+  /**
+   * Follow horizontal movement as well as vertical, Notion-style: drag a row
+   * right to tuck it under the one above, left to pull it back out. Off by
+   * default so a list with no hierarchy can't be nudged into one by a shaky
+   * thumb, and so those lists keep ignoring horizontal movement completely.
+   */
+  trackSideways?: boolean;
+  /**
+   * How far sideways counts as one level, so the hook can report the LEVEL a
+   * drop would land at rather than a pixel count.
+   *
+   * The distinction is the whole point: a pixel count changes on every
+   * pointermove and re-renders every row in the list — thumbnails and tag
+   * pills included — for a preview that only ever has three states.
+   */
+  sidewaysStep?: number;
 }
 
 interface DragInfo {
+  startX: number;
   startY: number;
   startIndex: number;
   height: number;     // dragged row's height == the gap siblings open
@@ -23,11 +55,18 @@ interface DragInfo {
 // the open gap, then — once settled — the array reorders and every
 // transform clears in the same frame with transitions suppressed, so the
 // DOM reflow and the transform reset exactly cancel out with no jump.
-export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<T>) {
+export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSideways = false, sidewaysStep = 36 }: Options<T>) {
   const [order, setOrder] = useState(items);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [suppressTransition, setSuppressTransition] = useState(false);
+  // Which way a drop would move the row: -1 out, 0 nowhere, 1 in. State,
+  // because the preview has to render — but only three values, so it settles
+  // instead of changing every frame.
+  const [dragLevel, setDragLevel] = useState<-1 | 0 | 1>(0);
+  // The raw offset, which the drop itself needs. A ref: nothing renders from
+  // it, so writing it per move costs nothing.
+  const dragDxRef = useRef(0);
   const dragInfo = useRef<DragInfo | null>(null);
   const draggedElRef = useRef<HTMLElement | null>(null);
   const pendingCommitRef = useRef<{ timer: number; run: () => void } | null>(null);
@@ -71,6 +110,7 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
       (el): el is HTMLElement => el instanceof HTMLElement && el.tagName === row.tagName
     );
     dragInfo.current = {
+      startX: e.clientX,
       startY: e.clientY,
       startIndex: index,
       height: row.getBoundingClientRect().height,
@@ -79,13 +119,24 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
     row.style.transition = 'none';
     setDragId(id);
     setOverIndex(index);
+    setDragLevel(0);
+    dragDxRef.current = 0;
   }, [enabled]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const info = dragInfo.current;
     if (!info || !draggedElRef.current) return;
     const deltaY = e.clientY - info.startY;
-    draggedElRef.current.style.transform = `translateY(${deltaY}px) scale(1.02)`;
+    // Horizontal travel is carried on the transform only when the caller asked
+    // for it; otherwise the row tracks vertically exactly as it always has.
+    const deltaX = trackSideways ? e.clientX - info.startX : 0;
+    if (trackSideways) {
+      dragDxRef.current = deltaX;
+      const level = deltaX >= sidewaysStep ? 1 : deltaX <= -sidewaysStep ? -1 : 0;
+      setDragLevel(prev => (prev === level ? prev : level));
+    }
+    draggedElRef.current.style.transform =
+      `translate(${deltaX}px, ${deltaY}px) scale(1.02)`;
     // Walk row by row using each passed row's own height: crossing more than
     // half of a neighbour claims its slot.
     let newIndex = info.startIndex;
@@ -103,28 +154,40 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
       }
     }
     setOverIndex(prev => (prev === newIndex ? prev : newIndex));
-  }, [order.length]);
+  }, [order.length, trackSideways, sidewaysStep]);
 
   const handlePointerUp = useCallback(() => {
     const info = dragInfo.current;
     const el = draggedElRef.current;
     if (!info || dragId === null || !el) return;
-    const finalIndex = overIndex ?? info.startIndex;
+    // Re-derived rather than read from `info`. A commit is deferred while the
+    // row glides home, and grabbing a second row inside that window flushes
+    // the pending one — which reorders `order` AFTER handlePointerDown
+    // recorded this row's index against the pre-flush list. The stale index
+    // then moved whichever row had landed in that slot, while the row under
+    // the finger sat still.
+    const liveStart = order.findIndex(i => getId(i) === dragId);
+    const startIndex = liveStart === -1 ? info.startIndex : liveStart;
+    const finalIndex = overIndex ?? startIndex;
+    const droppedDx = trackSideways ? dragDxRef.current : 0;
     const settledOffset = travelPx(info.startIndex, finalIndex, info.heights);
 
     const commit = () => {
       el.style.transition = 'none';
       el.style.transform = '';
+      setDragLevel(0);
+      dragDxRef.current = 0;
       // Restore the stylesheet transition next frame — leaving 'none' behind
       // permanently made every later drag of this row snap instead of slide.
       requestAnimationFrame(() => { el.style.transition = ''; });
       setSuppressTransition(true);
-      if (finalIndex !== info.startIndex) {
-        const next = [...order];
-        const [moved] = next.splice(info.startIndex, 1);
-        next.splice(finalIndex, 0, moved);
+      // A sideways drag is a real change even when the row did not move up or
+      // down, so the commit can't be skipped on index alone any more.
+      const movedSideways = trackSideways && Math.abs(droppedDx) > 0;
+      if (finalIndex !== startIndex || movedSideways) {
+        const next = moveWithin(order, startIndex, finalIndex);
         setOrder(next);
-        onReorder(next.map(getId));
+        onReorder(next.map(getId), droppedDx);
       }
       dragInfo.current = null;
       draggedElRef.current = null;
@@ -146,7 +209,7 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
       }, 250);
       pendingCommitRef.current = { timer, run: commit };
     }
-  }, [dragId, order, overIndex, getId, onReorder, travelPx]);
+  }, [dragId, order, overIndex, getId, onReorder, travelPx, trackSideways]);
 
   // Pixel offset applied to a non-dragged row so it slides out of the
   // dragged row's way — 0 for everything outside the affected range.
@@ -162,5 +225,22 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled }: Options<
     return 0;
   }, [dragId, overIndex, order, getId]);
 
-  return { order, dragId, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
+  // The order a drop RIGHT NOW would produce. commit builds its array with the
+  // same helper from the same two indices, so a caller previewing the drop is
+  // reading exactly what the drop will act on.
+  //
+  // Without this a preview had to guess from `order`, which does not move
+  // during a drag — only `overIndex` does. Any drag with both a vertical and a
+  // sideways component then previewed against the row's ORIGINAL neighbours:
+  // dragging the top row down and right showed no nest and then nested, and
+  // dragging the bottom row up and right showed a nest and then did nothing.
+  const projectedOrder = useMemo(() => {
+    if (dragId === null || overIndex === null) return order;
+    // Same re-derivation as commit, for the same reason.
+    const start = order.findIndex(i => getId(i) === dragId);
+    if (start === -1) return order;
+    return moveWithin(order, start, overIndex);
+  }, [dragId, overIndex, order, getId]);
+
+  return { order, projectedOrder, dragId, dragLevel, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
 }

@@ -82,6 +82,14 @@ interface Props {
   places: Place[];
   selectedPlace: Place | null;
   activeTags: string[];
+  /**
+   * Whether the map is the surface being looked at. It stays MOUNTED behind
+   * the list view and the outliner — unmounting destroys the mapbox instance
+   * and every toggle back would re-download the style and lose the viewport —
+   * so "rendered" and "visible" are different questions, and flying to a place
+   * is only meaningful when the answer to the second one is yes.
+   */
+  visible?: boolean;
   allTags: Tag[];
   onSelectPlace: (place: Place) => void;
   // Long-press / right-click on empty map — omit to disable pin dropping.
@@ -118,7 +126,7 @@ function styleMarker(inner: HTMLDivElement, emoji: string | null, isVisited: boo
   if (outer) outer.style.zIndex = isSelected ? '10' : '1';
 }
 
-export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPlace, onPickPoint, pendingPoint }: Props) {
+export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPlace, onPickPoint, pendingPoint, visible = true }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, { marker: mapboxgl.Marker; anchor: string }>>(new Map());
@@ -349,14 +357,30 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
   const selId = selectedPlace?.id;
   const selLng = selectedPlace?.longitude;
   const selLat = selectedPlace?.latitude;
+  //
+  // Gated on visibility, and deferred rather than dropped: opening a place from
+  // the list or the outliner used to fly the hidden map anyway, so you closed
+  // the sheet, switched back, and found yourself parked on a coordinate with
+  // nothing under it. Now the same tap lands you there when the map returns.
+  //
+  // Once per place, though. `visible` is in the deps so a deferred fly can
+  // happen at all, and without this ref every return to the map re-flew and
+  // re-zoomed to whatever was still selected — panning away to look at the
+  // area, glancing at the outliner and coming back would snap the viewport
+  // straight back to the pin. A pan is a deliberate act; the fly is a
+  // courtesy, and the courtesy should not keep overruling it.
+  const flownFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!selId || selLng === undefined || selLat === undefined || !mapRef.current) return;
+    if (!selId) { flownFor.current = null; return; }
+    if (!visible || selLng === undefined || selLat === undefined || !mapRef.current) return;
+    if (flownFor.current === selId) return;
+    flownFor.current = selId;
     mapRef.current.flyTo({
       center: [selLng, selLat],
       zoom: Math.max(mapRef.current.getZoom(), 13),
       duration: 600,
     });
-  }, [selId, selLng, selLat]);
+  }, [visible, selId, selLng, selLat]);
 
   // Provisional pin for the point being added. Coordinates as deps, not the
   // object: TripView re-creates it on every render of the open sheet, and on

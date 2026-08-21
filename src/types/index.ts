@@ -63,6 +63,8 @@ export interface TripNote {
   updated_at: string;
 }
 
+export type PlaceKind = 'stop' | 'spot';
+
 export interface Place {
   id: string;
   trip_id: string;
@@ -71,6 +73,20 @@ export interface Place {
   latitude: number;
   longitude: number;
   google_place_id?: string;
+  /**
+   * The place this one sits inside — a café anchored to its city. Only the
+   * notes page reads it, to nest this place under its parent's heading.
+   * One level only: a place whose parent itself has a parent is treated as
+   * top-level, which is also what stops a cycle hiding places entirely.
+   */
+  parent_place_id?: string | null;
+  /**
+   * What this place is: somewhere you go ('stop' — a city, an island, a park)
+   * or somewhere inside one ('spot' — a café, a hotel, a viewpoint).
+   * Only stops can be parents, and only spots can have one. The list view
+   * nests by it and the map can hide spots entirely.
+   */
+  kind: PlaceKind;
   status: PlaceStatus;
   visited_at?: string | null;
   image_url?: string;
@@ -113,6 +129,10 @@ export interface NearbyPlace {
   /** Metres from the picked point. */
   distance: number;
   image_url?: string;
+  /** Google's classification, used once to decide stop vs spot. */
+  types?: string[];
+  /** How many km the place's recommended viewport spans, when Google gave one. */
+  spanKm?: number;
 }
 
 export interface PointLookup {

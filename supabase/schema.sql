@@ -62,6 +62,19 @@ create table public.places (
   latitude        double precision not null,
   longitude       double precision not null,
   google_place_id text,
+  -- Anchors this place inside another — a café in the city it's in. Used by
+  -- the notes page to nest it under its parent's heading instead of giving it
+  -- a top-level section of its own. The composite FK below keeps parent and
+  -- child in the same trip; `on delete set null` so deleting a city releases
+  -- its cafés rather than deleting them.
+  parent_place_id uuid,
+  -- What this place IS: somewhere you go, or somewhere inside one of those.
+  -- A stop is a city, an island, a park; a spot is a café, a hotel, a
+  -- viewpoint. The list view nests spots under their stop, and the map can
+  -- hide them. Recorded once at creation rather than re-derived on every read:
+  -- the guess comes from Google's own place types, and the row is what the
+  -- user may then have corrected.
+  kind            text not null default 'stop',
   status          text not null default 'planned' check (status in ('planned','visited')),
   visited_at      timestamptz,
   notes           text,
@@ -72,6 +85,13 @@ create table public.places (
   position        integer not null default 0,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
+  -- Named rather than written inline on the column above. An inline check is
+  -- auto-named places_kind_check, while the migration that introduced this
+  -- column created places_kind_valid and guards on that name — so a project
+  -- built from this file and then replayed through supabase/migrations/ picked
+  -- up a second, redundant copy of the same check, and a rejected value
+  -- reported a different constraint name than production does.
+  constraint places_kind_valid check (kind in ('stop','spot')),
   -- A visited place must carry its visit time — the GeoJSON export filters on
   -- both and orders by visited_at, so a desynced row would silently vanish.
   constraint places_visited_at_coherent check (status <> 'visited' or visited_at is not null),
@@ -82,6 +102,109 @@ create table public.places (
 -- what stops a note being attached to a place in a different trip. Declared
 -- here because that FK is created further down and needs this to already exist.
 alter table public.places add constraint places_id_trip_unique unique (id, trip_id);
+
+-- A place's parent must be in the same trip. Declared here rather than inline
+-- because it references the unique constraint just above. MATCH SIMPLE means a
+-- null parent skips the check, which is what an unanchored place needs.
+-- The column list on SET NULL is not optional: a bare `on delete set null` on
+-- a composite key nulls every referencing column, so deleting a parent would
+-- try to null the child's trip_id too and fail its not-null constraint —
+-- making a city with anything anchored to it undeletable. Requires PG 15+.
+alter table public.places
+  add constraint places_parent_in_trip
+  foreign key (parent_place_id, trip_id)
+  references public.places(id, trip_id)
+  on delete set null (parent_place_id);
+
+-- A place cannot be inside itself. Longer cycles can't be expressed as a
+-- check; the client renders one level only and treats a place whose parent
+-- itself has a parent as top-level, so a cycle shows as two unnested headings
+-- rather than as places that disappear.
+alter table public.places
+  add constraint places_parent_not_self
+  check (parent_place_id is null or parent_place_id <> id);
+
+-- Only a spot sits inside something — the half of the stop/spot model
+-- a check constraint can see, and the important half: it guarantees stops are
+-- always top level. That a parent is itself a stop is enforced by the client
+-- (only stops are offered) and degraded gracefully by groupPlaces, which
+-- ignores a parent that is not one.
+alter table public.places
+  add constraint places_anchored_is_spot
+  check (parent_place_id is null or kind = 'spot');
+
+create index places_kind_idx on public.places(trip_id, kind);
+
+create index places_parent_idx
+  on public.places(parent_place_id) where parent_place_id is not null;
+
+-- The half of the stop/spot model a CHECK constraint cannot see.
+--
+-- A check can only read the row being written, so three rules were left to the
+-- client: that a parent is itself a stop, that a parent is not itself anchored,
+-- and that a place holding spots cannot move inside one. Every one of those
+-- reads the writer's local snapshot of the trip, which is exactly what two
+-- collaborators do not share.
+--
+-- Concretely: A files X inside Y while B, whose realtime channel has not yet
+-- delivered A's write, files Y inside X. Both snapshots say the other place is
+-- an unanchored stop with nothing in it, so both guards pass and both writes
+-- satisfy places_anchored_is_spot. The result is a cycle that no screen can
+-- show and almost no gesture can undo — groupPlaces refuses to nest either one
+-- so both render as ordinary top-level rows, while the detail sheet disables
+-- its picker on both and every plain reorder of them is silently discarded.
+--
+-- Requiring a parent to be a TOP-LEVEL stop is what closes it, and it closes
+-- more than the cycle: if every parent is a root, the tree is at most one level
+-- deep by construction, so no chain of any length can form and the "one level
+-- only" rule the client renders is now also true in the database.
+
+create or replace function public.places_enforce_hierarchy()
+returns trigger language plpgsql
+set search_path = public
+as $$
+begin
+  if new.parent_place_id is not null then
+    -- Same trip is already guaranteed by places_parent_in_trip; this is about
+    -- what the parent IS. A locked read, because the row being pointed at can
+    -- be changing in a concurrent transaction — an unlocked check would let
+    -- two sessions each validate against a parent the other is demoting.
+    if not exists (
+      select 1 from public.places p
+      where p.id = new.parent_place_id
+        and p.kind = 'stop'
+        and p.parent_place_id is null
+      for share
+    ) then
+      raise exception 'A place can only sit inside a top-level stop'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
+  -- Nothing with places inside it may itself go inside something, in either
+  -- direction it can be expressed: gaining a parent, or being demoted to a
+  -- spot. Both would orphan whatever it holds, since only a stop can be
+  -- a parent.
+  if (new.parent_place_id is not null or new.kind = 'spot')
+     and exists (select 1 from public.places c where c.parent_place_id = new.id) then
+    raise exception 'Move the places inside this one out first'
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+-- Scoped to the two columns that can break the rule, so ordinary edits — a
+-- rename, a photo, marking somewhere visited, a reorder — do not pay for a
+-- lookup they cannot invalidate.
+--
+-- This also fires for the FK's own `on delete set null (parent_place_id)`
+-- write, which is fine: that write clears the pointer, and clearing is always
+-- legal.
+create trigger places_hierarchy_guard
+  before insert or update of kind, parent_place_id on public.places
+  for each row execute function public.places_enforce_hierarchy();
 
 create table public.place_tags (
   place_id uuid not null references public.places(id) on delete cascade,
@@ -138,6 +261,29 @@ create trigger trip_created after insert on public.trips
 -- HELPERS
 -- ============================================================
 
+-- Defined first: can_read_place and can_write_place below call it, and this
+-- file is meant to be run top to bottom on a fresh project. It used to sit
+-- after them, which Postgres accepts for a plpgsql body but not for a SQL one
+-- — a SQL function is parsed and its calls resolved at creation time, so
+-- can_read_place failed with "function public.auth_uid() does not exist" and
+-- the run stopped there, roughly a third of the way in. Every table existed
+-- and most policies did not, which is the worst place for it to stop: not
+-- obviously broken, just missing its access rules.
+-- Modern PostgreSQL restricts non-superuser roles from reading the custom GUC
+-- parameters PostgREST sets (request.jwt.*). Inline the JWT parse inside a
+-- SECURITY DEFINER function so it runs as postgres, which can read them.
+create or replace function public.auth_uid()
+returns uuid language sql security definer stable
+set search_path = extensions, public, auth
+as $$
+  select coalesce(
+    nullif(current_setting('request.jwt.claim.sub', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::json->>'sub'
+  )::uuid
+$$;
+
+grant execute on function public.auth_uid() to anon, authenticated;
+
 create or replace function public.is_trip_member(trip uuid, usr uuid)
 returns boolean language sql security definer stable
 set search_path = public
@@ -181,21 +327,6 @@ as $$
     where p.id = place and public.is_trip_editor(p.trip_id, public.auth_uid())
   );
 $$;
-
--- Modern PostgreSQL restricts non-superuser roles from reading the custom GUC
--- parameters PostgREST sets (request.jwt.*). Inline the JWT parse inside a
--- SECURITY DEFINER function so it runs as postgres, which can read them.
-create or replace function public.auth_uid()
-returns uuid language sql security definer stable
-set search_path = extensions, public, auth
-as $$
-  select coalesce(
-    nullif(current_setting('request.jwt.claim.sub', true), ''),
-    nullif(current_setting('request.jwt.claims', true), '')::json->>'sub'
-  )::uuid
-$$;
-
-grant execute on function public.auth_uid() to anon, authenticated;
 
 -- SECURITY DEFINER RPC for trip creation — bypasses RLS INSERT evaluation
 -- entirely. auth.uid() runs in SECURITY DEFINER context where request.jwt.claims

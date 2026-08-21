@@ -1336,6 +1336,26 @@ select.input {
   from { opacity: 0; transform: translateY(8px); }
 }
 
+/* A spot sits indented under its stop. Indent only, for the same reason an
+   anchored place on the notes page has no line: it is the stop's own content,
+   not something nested inside a bullet. Drawing it here and not there would
+   just move the inconsistency to a different screen.
+
+   The indent is PADDING, not a margin. The row is width:100% with border-box
+   sizing, so a margin is added outside a box that already fills the container
+   — a nested row came out exactly one indent wider than the screen, and
+   .place-list scrolled sideways to show it. (Its overflow-y:auto makes
+   overflow-x compute to auto, so the excess became a scrollbar rather than
+   being clipped.) Padding is inside the box: the row stays exactly the
+   container's width and the content insets instead.
+
+   Doing it this way rather than with overflow-x:hidden also keeps a row
+   dragged sideways visible — clipping the container would cut off the very
+   gesture the indent exists for. The trade is that a drag in progress does
+   widen the scroll range, since its transform is not padding; that lasts as
+   long as the finger is down, and touch-action:none on the grip means it
+   cannot be panned to. Only the resting layout is guaranteed overflow-free,
+   which is the one that has to be. */
 .place-list-item {
   width: 100%;
   display: flex; align-items: stretch;
@@ -1343,19 +1363,100 @@ select.input {
   min-height: 64px;
   border-bottom: 1px solid var(--color-border);
   position: relative;
+  padding-left: calc(var(--place-depth, 0) * var(--place-indent, 36px));
   transition: transform 0.2s var(--glide);
 }
 .place-list-item--dragging {
   z-index: 5;
   box-shadow: 0 6px 20px rgba(0,0,0,0.18);
 }
+
+/* While a row is being dragged past the indent threshold it picks up the
+   accent, so the level it would land at is visible before the finger lifts —
+   the whole point of following the drag sideways. */
+.place-list-item--renesting { z-index: 3; }
+.place-list-item--renesting .place-list-item-content {
+  box-shadow: inset 0 0 0 1.5px var(--color-primary);
+  border-radius: var(--radius-sm);
+}
+
+/* Right-aligned, matching .note-fold and .notes-fold — one control for "there
+   is more under this" everywhere it appears. */
+.place-list-fold {
+  flex-shrink: 0;
+  align-self: center;
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px;
+  margin-right: 4px;
+  border-radius: 50%;
+  color: var(--color-muted);
+}
+.place-list-fold:active { background: var(--color-bg); color: var(--color-text); }
+
+.place-list-folded-count {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: var(--color-bg);
+  color: var(--color-muted);
+  font-size: 11px; font-weight: 600;
+}
+
+/* Floats over the map rather than living in the top bar: these are map
+   controls, and they belong where the thing they change is. */
+.map-kind-toggles {
+  position: absolute;
+  top: 12px; left: 12px;
+  z-index: 5;
+  display: flex; gap: 6px;
+}
+.map-kind-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px 7px 10px;
+  border-radius: 99px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sheet, 0 2px 10px rgba(0,0,0,0.15));
+  color: var(--color-text);
+  font-size: 12.5px; font-weight: 600;
+}
+/* Off is muted rather than hidden or struck through: the control still has to
+   read as available, since it is the only way back. */
+.map-kind-toggle--off { color: var(--color-muted); }
+.map-kind-toggle:active { background: var(--color-bg); }
+
+/* How many pins this switch would bring back. */
+.map-kind-count {
+  padding: 0 6px;
+  border-radius: 99px;
+  background: var(--color-bg);
+  color: var(--color-muted);
+  font-size: 11px; font-weight: 700;
+}
 /* Suppressed for exactly one frame when the array reorders, so the DOM
    reflow and the transform reset happen together with no visible jump */
 .place-list--reordering .place-list-item { transition: none; }
 
+/* Nudged clear of the screen edge, because the OS owns that strip. iOS
+   reserves roughly the leftmost 20px for its back-swipe and handles it before
+   any touch event reaches the page, so the only fix available to us is not to
+   start a gesture there — the grip used to sit at x=0-34, which put "drag
+   right to nest" inside the system gesture.
+
+   What has to clear the strip is where a finger LANDS, not the whole control.
+   A first attempt pushed the entire grip past 20px, which cost 22px of the
+   text column and read as the whole list having been shoved right. Centring
+   the grip just past the boundary instead costs a third of that: the grip
+   spans 12-44 with its centre at 28, so an ordinary press is clear while the
+   row keeps its width. A press deliberately aimed at the grip's leftmost few
+   pixels still belongs to iOS, and nothing in a web page can take it back.
+
+   Only at the outer level — a nested row is already indented past the strip,
+   so max() gives it no gutter at all. */
 .place-list-drag-handle {
   flex-shrink: 0;
-  width: 34px;
+  margin-left: max(0px, calc(12px - var(--place-depth, 0) * var(--place-indent, 36px)));
+  width: 32px;
   display: flex; align-items: center; justify-content: center;
   color: var(--color-muted);
   touch-action: none;
@@ -1363,11 +1464,15 @@ select.input {
   cursor: grab;
 }
 .place-list-drag-handle:active { cursor: grabbing; color: var(--color-text); }
+/* Holds the column open on a row with no grip, so content stays on one axis. */
+.place-list-drag-handle--empty { pointer-events: none; }
 
 .place-list-item-content {
   flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 16px 12px 6px;
+  /* No left padding: the grip's own width is the separation, and on a 390px
+     screen this column is the one that pays for everything to its left. */
+  padding: 12px 16px 12px 0;
   text-align: left;
   transition: background 0.12s;
 }
@@ -1915,7 +2020,7 @@ body:has(.note-toolbar) .toast-stack {
 }
 
 /* A top-level place and everything inside it is one group. The breathing room
-   goes between groups; inside one, a parent, its notes and its locations are a
+   goes between groups; inside one, a parent, its notes and its spots are a
    single list and sit at bullet spacing.
    Previously each block carried its own margin, which meant the gap after a
    nested place was the nested place's margin — zero — so the next top-level
@@ -1960,7 +2065,7 @@ textarea.mention-input {
      lines further down next to its first user. */
   --note-step: calc(var(--note-gutter) + 8px);
   /* One nesting level for a bullet — the same step a heading uses, so a
-     nested bullet and a heading's own notes land on the same axis. These were
+     nested bullet and an anchored place land on the same axis. These were
      20px and 30px, which is exactly the drift --note-step exists to prevent.
      MAX_DEPTH caps the total, which is what keeps a readable text column on a
      390px screen. */
@@ -2279,22 +2384,59 @@ textarea.mention-input {
    their own idea of an indent. */
 .notes-heading-dot { flex-shrink: 0; margin-right: 6px; }
 
-/* A section's own depth: a heading sits at it, and the notes under that
-   heading sit one step further in because they are its children. Every
-   section is at the outer level here — the hook is kept because the rule it
-   expresses is what the two rules below are derived from. */
+/* A section's own depth. A heading sits at it; the notes under that heading
+   sit one step further in, because they are its children. An anchored place is
+   one step in from its parent — which puts it on exactly the same axis as its
+   parent's notes, since it is their sibling. */
 .notes-block { --block-indent: 0px; }
+.notes-block--anchored { --block-indent: var(--note-step); }
 .notes-heading { padding-left: var(--block-indent); }
 .notes-block > .note-list { padding-left: calc(var(--block-indent) + var(--note-step)); }
 
-/* Hangs off the text column of the section it belongs to, so it lines up with
-   the notes rather than with the heading's bullet. */
-.notes-block > .notes-folded-hint { margin-left: calc(var(--block-indent) + var(--note-step)); }
+/* Both hang off the text column of the section they belong to, so they line up
+   with the notes rather than with the heading's bullet. */
+.notes-block > .notes-folded-hint,
+.notes-block > .anchor-hint { margin-left: calc(var(--block-indent) + var(--note-step)); }
+
+/* "Looks like it's in Bangkok." Deliberately quiet — it is a guess, sitting
+   under a heading the user may have placed deliberately, so it reads as an
+   aside rather than as a warning that something is wrong. */
+.anchor-hint {
+  display: flex; align-items: center; gap: 8px;
+  margin: 2px 0 8px 0;
+  padding: 6px 8px 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 12.5px;
+  color: var(--color-text-secondary, var(--color-muted));
+}
+.anchor-hint-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anchor-hint-text strong { color: var(--color-text); font-weight: 700; }
+
+.anchor-hint-accept {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  color: var(--color-primary);
+  font-size: 12.5px; font-weight: 600;
+}
+.anchor-hint-accept:active { border-color: var(--color-primary); }
+
+.anchor-hint-dismiss {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  color: var(--color-muted);
+}
+.anchor-hint-dismiss:active { background: var(--color-surface); color: var(--color-text); }
 
 
 /* What a folded section is hiding. A collapsed heading with nothing under it
-   is indistinguishable from an empty one, and a note count is the difference
-   between folded and forgotten. */
+   is indistinguishable from an empty one, and "3 notes · 1 place" is the
+   difference between folded and forgotten. */
 .notes-folded-hint {
   display: block;
   width: 100%;

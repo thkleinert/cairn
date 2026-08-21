@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { insertOnce, applyOrder } from '../lib/rows';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
+import { kindFor } from '../lib/anchor';
 import { removeStorageUrls } from '../lib/storage';
 import type { Place, PlaceImage } from '../types';
 
@@ -124,18 +125,40 @@ export function usePlaces(tripId: string | undefined) {
     google_place_id?: string;
     image_url?: string;
     notes?: string;
+    /**
+     * Google's own classification, when the caller has it. A hint for kindFor
+     * only — there is no such column, so it is destructured out below rather
+     * than spread into the insert, which would fail the whole write.
+     */
+    types?: string[];
+    /** Same: a hint for kindFor, not a column. */
+    spanKm?: number;
   }) => {
     if (!tripId) return null;
     // max+1, not length: after any delete the positions have gaps, and
     // length would collide with an existing position.
     const nextPosition = places.reduce((max, p) => Math.max(max, p.position), -1) + 1;
 
+    // Decide what this place is, and what it sits inside, from the trip it is
+    // joining. Done here, in the insert, rather than as a follow-up write: it
+    // costs nothing extra and the place is never briefly misfiled.
+    //
+    // Only on creation. There is nothing to disturb at this moment and both
+    // can be changed on the place sheet, whereas silently re-filing a place
+    // someone already put somewhere is not ours to do — existing places get an
+    // offer on the notes page instead.
+    const { kind, parentId } = kindFor(place, places);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { types, spanKm, ...row } = place;
+
     const { data, error } = await supabase
       .from('places')
       .insert({
-        ...place,
+        ...row,
         trip_id: tripId,
         position: nextPosition,
+        kind,
+        parent_place_id: parentId,
       })
       .select()
       .single();
@@ -195,6 +218,7 @@ export function usePlaces(tripId: string | undefined) {
   const deletePlace = async (id: string) => {
     const place = places.find(p => p.id === id);
 
+
     const { error } = await supabase.from('places').delete().eq('id', id);
     if (error) {
       toast('Could not delete place');
@@ -202,6 +226,33 @@ export function usePlaces(tripId: string | undefined) {
     }
     placeIdsRef.current.delete(id);
     setPlaces(prev => prev.filter(p => p.id !== id));
+
+    // Only now, and only because the delete succeeded. The composite FK is
+    // `on delete set null (parent_place_id)`, so the database has already
+    // released whatever was inside — but it cannot touch `kind`, and a
+    // spot belonging to nothing is a state the rest of the app has to keep
+    // special-casing.
+    //
+    // Written as a condition rather than a list of ids. The list was read from
+    // this client's snapshot BEFORE the delete, which made it wrong in both
+    // directions: a café a collaborator had already moved into another stop was
+    // still in the list and got yanked out of it by a delete that had nothing
+    // to do with it, and a café moved IN while the delete was in flight was
+    // missing from the list and stayed orphaned. A statement that names the
+    // condition instead of the rows cannot be stale, and repairs any orphan
+    // left by an earlier failure at the same time.
+    setPlaces(prev => prev.map(p => p.parent_place_id === id
+      ? { ...p, parent_place_id: null, kind: 'stop' as const } : p));
+    const { error: releaseError } = await supabase
+      .from('places')
+      .update({ kind: 'stop' })
+      .eq('trip_id', tripId)
+      .eq('kind', 'spot')
+      .is('parent_place_id', null);
+    // Not fatal: the places are already top-level and visible in the list.
+    // Only the map filter would still hide them, and a refetch will show
+    // whatever the database really holds.
+    if (releaseError) fetchPlaces();
 
     // The bucket is public — remove the actual files, not just the rows.
     if (place) {
@@ -312,9 +363,49 @@ export function usePlaces(tripId: string | undefined) {
     if (image) removeStorageUrls([image.url]);
   };
 
+  /**
+   * Anchor a place inside another, or release it with null.
+   *
+   * Its own function rather than a general updatePlace call for the reason the
+   * others are: the caller says what it means, and the set of columns anything
+   * outside this hook can write stays enumerable. Cycles are refused here as
+   * well as one level down — the database can only stop a place being its own
+   * parent, so a→b→a is caught by the one check that can see both ends.
+   */
+  const setPlaceParent = async (id: string, parentId: string | null) => {
+    if (parentId === id) return null;
+    const parent = parentId ? places.find(p => p.id === parentId) : null;
+    if (parent?.parent_place_id === id) {
+      toast('Those two places would be inside each other');
+      return null;
+    }
+    // Refused rather than cascaded. Only a stop can hold spots, so filing a
+    // place inside another makes it a spot and everything anchored to it
+    // instantly has a parent that cannot be one — groupPlaces stops nesting
+    // them and they pop to the top level, still marked as spots, so the
+    // map's Spots toggle hides rows that now look like ordinary stops.
+    // The database cannot catch it: places_anchored_is_spot only inspects
+    // the row being written.
+    //
+    // Moving the children too would be a second, invisible decision about
+    // somebody else's data, so this asks instead.
+    if (parentId && places.some(p => p.parent_place_id === id)) {
+      toast('Move the places inside it out first');
+      return null;
+    }
+    // Kind moves with the parent, because the two are one decision: being
+    // inside a stop is what makes something a spot, and the database
+    // refuses anything anchored that is not one. Setting them separately would
+    // mean a moment where the row cannot be written at all.
+    return updatePlace(id, {
+      parent_place_id: parentId,
+      kind: parentId ? 'spot' : 'stop',
+    });
+  };
+
   // updatePlace is deliberately not exported: since sources folded into notes
   // nothing outside this hook writes an arbitrary column on a place, and every
   // edit that remains has its own narrower function above. It stays as the
   // shared implementation those are built on.
-  return { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
+  return { places, loading, addPlace, deletePlace, toggleVisited, setPlaceTags, setPlaceParent, addPlaceImage, uploadPlaceImage, removePlaceImage, reorderPlaces };
 }

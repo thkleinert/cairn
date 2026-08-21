@@ -30,6 +30,8 @@ type Place = {
   latitude: number;
   longitude: number;
   visited_at: string;
+  kind: 'stop' | 'spot';
+  parent_place_id: string | null;
 };
 
 // Road snapping via Mapbox directions. Set a MAPBOX_TOKEN secret on the
@@ -110,7 +112,7 @@ Deno.serve(async (req: Request) => {
   // Visited places only, in the order they were actually visited.
   const { data: placesData, error: placesErr } = await supabase
     .from('places')
-    .select('name, latitude, longitude, visited_at')
+    .select('name, latitude, longitude, visited_at, kind, parent_place_id')
     .eq('trip_id', trip.id)
     .eq('status', 'visited')
     .not('visited_at', 'is', null)
@@ -121,7 +123,12 @@ Deno.serve(async (req: Request) => {
 
   // Serve a still-fresh cached export: the visit list is the cache key, so
   // any change to the visited places invalidates it naturally.
-  const cacheKey = trip.id + '|' + places.map((p) => `${p.latitude},${p.longitude},${p.visited_at}`).join(';');
+  // kind and parent are in the key because they now decide what the track
+  // connects: anchoring a visited café changes the exported LineString without
+  // touching a coordinate or a date, and a key that ignored them would serve
+  // the old route for the whole TTL.
+  const cacheKey = trip.id + '|' +
+    places.map((p) => `${p.latitude},${p.longitude},${p.visited_at},${p.kind},${p.parent_place_id ?? ''}`).join(';');
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
     return new Response(hit.body, {
@@ -130,18 +137,38 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // The track follows stops; a café inside a city is somewhere you were, not
+  // somewhere you travelled to. Routing through them spent legs of the Mapbox
+  // budget on sub-kilometre hops within one city and reported a two-city trip
+  // as five stops. They keep their markers below — this only decides what the
+  // line connects.
+  //
+  // Same predicate as the map's Spots filter: anchored spots only, so
+  // one whose stop was deleted still counts rather than silently vanishing
+  // from the track.
+  const routed = places.filter((p) => !(p.kind === 'spot' && p.parent_place_id));
+  // The fallback is for a trip recorded ENTIRELY as spots, which would
+  // otherwise export markers and no track at all. It was written `>= 2`, which
+  // also swallowed the ordinary one-stop trip: a city with four cafés in it
+  // fell through to routing all five, spending four Mapbox calls on
+  // sub-kilometre hops inside that city and reporting stopCount 5 — verbatim
+  // the failure this filter exists to remove. One stop is a track of one
+  // point, and a track of one point is no legs, which the loop below already
+  // handles.
+  const legs = routed.length > 0 ? routed : places;
+
   const features: unknown[] = [];
 
   // Routed legs between consecutive stops. A leg with no drivable route (or
   // when Mapbox isn't configured, or past the routing cap) degrades to a
   // straight line rather than a gap, so the track always stays connected.
-  for (let i = 0; i < places.length - 1; i++) {
-    const from: [number, number] = [places[i].longitude, places[i].latitude];
-    const to: [number, number] = [places[i + 1].longitude, places[i + 1].latitude];
+  for (let i = 0; i < legs.length - 1; i++) {
+    const from: [number, number] = [legs[i].longitude, legs[i].latitude];
+    const to: [number, number] = [legs[i + 1].longitude, legs[i + 1].latitude];
     const road = i < MAX_ROUTED_LEGS ? await roadLeg(from, to) : null;
     features.push({
       type: 'Feature',
-      properties: { name: `${places[i].name} → ${places[i + 1].name}`, road: !!road },
+      properties: { name: `${legs[i].name} → ${legs[i + 1].name}`, road: !!road },
       geometry: { type: 'LineString', coordinates: road ?? [from, to] },
     });
   }
@@ -173,7 +200,7 @@ Deno.serve(async (req: Request) => {
       dateStart: trip.start_date,
       dateEnd: trip.end_date,
       destCoords: center,
-      stopCount: places.length,
+      stopCount: legs.length,
     },
   });
 

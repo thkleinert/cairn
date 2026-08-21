@@ -2,8 +2,10 @@ import type { TripNote } from '../types';
 
 // Outline shape rules for a flat, ordered bullet list carrying a `depth`.
 //
-// Bullets only, deliberately. Anything about how PLACES relate to each other
-// belongs somewhere else — this file is one tree with one set of rules.
+// Bullets only. How places contain other places lives in placeTree.ts — it is
+// a different tree with different rules (one level, parent must be a stop),
+// and keeping the two in one file is how groupPlaces ended up here in the
+// first place.
 //
 // There is no parent_id: a bullet's parent is the nearest bullet above it with
 // a smaller depth, and its children are the unbroken run below it that are
