@@ -2,7 +2,7 @@ import { useRef, useMemo } from 'react';
 import { CheckCircle, Circle, MapPin, GripVertical, Plus, Minus } from 'lucide-react';
 import type { Place, Tag } from '../types';
 import { useDragReorder } from '../hooks/useDragReorder';
-import { flattenPlaces, resolveDrop, withHiddenChildren, locationStaysWithParent, INDENT_PX } from '../lib/placeTree';
+import { flattenPlaces, resolveDrop, withHiddenChildren, spotStaysWithParent, INDENT_PX } from '../lib/placeTree';
 
 interface Props {
   places: Place[];
@@ -29,7 +29,7 @@ export function PlaceListView({
   const canReorder = activeTags.length === 0;
   const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
 
-  // Stops with their locations under them, folded ones collapsed away. The
+  // Stops with their spots under them, folded ones collapsed away. The
   // drag operates on exactly this list, so what you grab and what moves are
   // the same thing even when half the trip is folded shut.
   const rows = useMemo(
@@ -39,17 +39,17 @@ export function PlaceListView({
   const rowPlaces = useMemo(() => rows.map(r => r.place), [rows]);
 
   // Dragging moves one row, never a subtree. A FOLDED stop is fine —
-  // withHiddenChildren re-attaches its locations to wherever it landed — but
+  // withHiddenChildren re-attaches its spots to wherever it landed — but
   // an EXPANDED one is not: the drop writes an order with the stop moved and
   // its children left behind, and groupPlaces re-derives them straight back
   // underneath it, so the drag silently does nothing.
   //
   // Per row, not per list. Written as a list-wide flag this said "no row is
-  // draggable if ANY expanded stop has children" — and since a location is
+  // draggable if ANY expanded stop has children" — and since a spot is
   // only ever a row at all when its parent is expanded, that meant the first
   // time you opened a stop to look inside it, every grip on the screen
   // disappeared: you could not reorder the cities below it, and you could
-  // never drag a location at all, which made the drag-left-to-release half of
+  // never drag a spot at all, which made the drag-left-to-release half of
   // the gesture unreachable. Opening a stop is how you look at it, not a mode
   // that suspends the list.
   //
@@ -72,7 +72,7 @@ export function PlaceListView({
     items: rowPlaces,
     getId: p => p.id,
     // Dragging moves one row, never a subtree. A FOLDED stop is fine —
-    // withHiddenChildren re-attaches its locations to wherever it landed — but
+    // withHiddenChildren re-attaches its spots to wherever it landed — but
     // an expanded one is not: the drop writes an order with the stop moved and
     // its children left behind, and groupPlaces then re-derives them straight
     // back underneath it, so the drag silently does nothing. NoteList refuses
@@ -106,12 +106,12 @@ export function PlaceListView({
       const before = places.map(p => p.id);
       const orderChanged =
         full.length !== before.length || full.some((id, i) => id !== before[i]);
-      // A location dragged out of its own stop's run, without the sideways
+      // A spot dragged out of its own stop's run, without the sideways
       // travel that would re-nest it, is a move the next render undoes. Writing
       // it anyway cost a round trip, a broadcast to every collaborator, and a
       // stored order with one stop's children interleaved into another's.
       const keepsItsSlot = drop.changed || !dragId ||
-        locationStaysWithParent(full, dragId, places);
+        spotStaysWithParent(full, dragId, places);
       if (orderChanged && keepsItsSlot) onReorder(full);
 
       if (drop.changed && dragId) {
@@ -136,7 +136,7 @@ export function PlaceListView({
   // What letting go right now would actually do. Derived from resolveDrop
   // rather than from the sideways distance alone, because the two disagree in
   // exactly the cases a user is most likely to try: dragging a stop that holds
-  // locations (it cannot become a location itself), and dragging the top row
+  // spots (it cannot become a spot itself), and dragging the top row
   // right (there is nothing above to go into). Both were drawn with the accent
   // outline and the indent, promising a nest, and both then did nothing at all
   // on release — no movement, no toast, no reason given.

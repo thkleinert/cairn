@@ -80,16 +80,16 @@ export function PlaceDetailSheet({
   const parentOptions = allPlaces.filter(
     p => p.id !== place.id && p.kind === 'stop' && !p.parent_place_id,
   );
-  // A place holding locations cannot be moved into one — it would have to
-  // become a location while still holding them, which setPlaceParent refuses.
+  // A place holding spots cannot be moved into one — it would have to
+  // become a spot while still holding them, which setPlaceParent refuses.
   const hasChildren = allPlaces.some(p => p.parent_place_id === place.id);
-  // A location whose stop was deleted while the follow-up write was in flight,
+  // A spot whose stop was deleted while the follow-up write was in flight,
   // or one a collaborator orphaned. It behaves as top-level everywhere that
   // reads the tree, but its `kind` still says otherwise, which quietly bars it
-  // from being a parent and from the map's Locations filter. The select cannot
+  // from being a parent and from the map's Spots filter. The select cannot
   // repair it — its value already matches "Nowhere in particular", so choosing
   // that fires no change — so this is the one control that can.
-  const isOrphanLocation = place.kind === 'location' && !place.parent_place_id;
+  const isOrphanSpot = place.kind === 'spot' && !place.parent_place_id;
 
   const handleAddComment = async () => {
     const body = commentDraft.trim();
@@ -264,17 +264,17 @@ export function PlaceDetailSheet({
             parent row — so this select is where it is enforced, and
             groupPlaces declines to nest under anything else if it ever isn't.
 
-            Choosing a stop also makes this place a location: the two are one
+            Choosing a stop also makes this place a spot: the two are one
             decision, and the database refuses anything anchored that is not
             one. Choosing "Nowhere in particular" turns it back into a stop.
 
             A place that holds other places cannot be moved into one — it would
-            have to become a location while still holding locations. The select
+            have to become a spot while still holding spots. The select
             is disabled rather than hidden: this is the screen someone comes to
             in order to file a place, and a control that has quietly vanished
             explains nothing. The list view hides its drag grip in the same
             situation because there is nowhere on a row to say why. */}
-        {!readOnly && onSetParent && (parentOptions.length > 0 || isOrphanLocation) && (
+        {!readOnly && onSetParent && (parentOptions.length > 0 || isOrphanSpot) && (
           <div className="detail-section">
             <label className="detail-label" htmlFor="place-parent">Part of</label>
             <select
@@ -294,7 +294,7 @@ export function PlaceDetailSheet({
                 Move the places inside this one out first.
               </p>
             )}
-            {isOrphanLocation && !hasChildren && (
+            {isOrphanSpot && !hasChildren && (
               <button
                 type="button"
                 className="btn-secondary"

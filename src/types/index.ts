@@ -63,7 +63,7 @@ export interface TripNote {
   updated_at: string;
 }
 
-export type PlaceKind = 'stop' | 'location';
+export type PlaceKind = 'stop' | 'spot';
 
 export interface Place {
   id: string;
@@ -82,9 +82,9 @@ export interface Place {
   parent_place_id?: string | null;
   /**
    * What this place is: somewhere you go ('stop' — a city, an island, a park)
-   * or somewhere inside one ('location' — a café, a hotel, a viewpoint).
-   * Only stops can be parents, and only locations can have one. The list view
-   * nests by it and the map can hide locations entirely.
+   * or somewhere inside one ('spot' — a café, a hotel, a viewpoint).
+   * Only stops can be parents, and only spots can have one. The list view
+   * nests by it and the map can hide spots entirely.
    */
   kind: PlaceKind;
   status: PlaceStatus;
@@ -129,7 +129,7 @@ export interface NearbyPlace {
   /** Metres from the picked point. */
   distance: number;
   image_url?: string;
-  /** Google's classification, used once to decide stop vs location. */
+  /** Google's classification, used once to decide stop vs spot. */
   types?: string[];
   /** How many km the place's recommended viewport spans, when Google gave one. */
   spanKm?: number;

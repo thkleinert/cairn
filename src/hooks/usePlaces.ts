@@ -230,7 +230,7 @@ export function usePlaces(tripId: string | undefined) {
     // Only now, and only because the delete succeeded. The composite FK is
     // `on delete set null (parent_place_id)`, so the database has already
     // released whatever was inside — but it cannot touch `kind`, and a
-    // location belonging to nothing is a state the rest of the app has to keep
+    // spot belonging to nothing is a state the rest of the app has to keep
     // special-casing.
     //
     // Written as a condition rather than a list of ids. The list was read from
@@ -247,7 +247,7 @@ export function usePlaces(tripId: string | undefined) {
       .from('places')
       .update({ kind: 'stop' })
       .eq('trip_id', tripId)
-      .eq('kind', 'location')
+      .eq('kind', 'spot')
       .is('parent_place_id', null);
     // Not fatal: the places are already top-level and visible in the list.
     // Only the map filter would still hide them, and a refetch will show
@@ -379,12 +379,12 @@ export function usePlaces(tripId: string | undefined) {
       toast('Those two places would be inside each other');
       return null;
     }
-    // Refused rather than cascaded. Only a stop can hold locations, so filing a
-    // place inside another makes it a location and everything anchored to it
+    // Refused rather than cascaded. Only a stop can hold spots, so filing a
+    // place inside another makes it a spot and everything anchored to it
     // instantly has a parent that cannot be one — groupPlaces stops nesting
-    // them and they pop to the top level, still marked as locations, so the
-    // map's Locations toggle hides rows that now look like ordinary stops.
-    // The database cannot catch it: places_anchored_is_location only inspects
+    // them and they pop to the top level, still marked as spots, so the
+    // map's Spots toggle hides rows that now look like ordinary stops.
+    // The database cannot catch it: places_anchored_is_spot only inspects
     // the row being written.
     //
     // Moving the children too would be a second, invisible decision about
@@ -394,12 +394,12 @@ export function usePlaces(tripId: string | undefined) {
       return null;
     }
     // Kind moves with the parent, because the two are one decision: being
-    // inside a stop is what makes something a location, and the database
+    // inside a stop is what makes something a spot, and the database
     // refuses anything anchored that is not one. Setting them separately would
     // mean a moment where the row cannot be written at all.
     return updatePlace(id, {
       parent_place_id: parentId,
-      kind: parentId ? 'location' : 'stop',
+      kind: parentId ? 'spot' : 'stop',
     });
   };
 

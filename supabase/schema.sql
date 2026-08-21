@@ -69,8 +69,8 @@ create table public.places (
   -- its cafés rather than deleting them.
   parent_place_id uuid,
   -- What this place IS: somewhere you go, or somewhere inside one of those.
-  -- A stop is a city, an island, a park; a location is a café, a hotel, a
-  -- viewpoint. The list view nests locations under their stop, and the map can
+  -- A stop is a city, an island, a park; a spot is a café, a hotel, a
+  -- viewpoint. The list view nests spots under their stop, and the map can
   -- hide them. Recorded once at creation rather than re-derived on every read:
   -- the guess comes from Google's own place types, and the row is what the
   -- user may then have corrected.
@@ -91,7 +91,7 @@ create table public.places (
   -- built from this file and then replayed through supabase/migrations/ picked
   -- up a second, redundant copy of the same check, and a rejected value
   -- reported a different constraint name than production does.
-  constraint places_kind_valid check (kind in ('stop','location')),
+  constraint places_kind_valid check (kind in ('stop','spot')),
   -- A visited place must carry its visit time — the GeoJSON export filters on
   -- both and orders by visited_at, so a desynced row would silently vanish.
   constraint places_visited_at_coherent check (status <> 'visited' or visited_at is not null),
@@ -124,32 +124,32 @@ alter table public.places
   add constraint places_parent_not_self
   check (parent_place_id is null or parent_place_id <> id);
 
--- Only a location sits inside something — the half of the stop/location model
+-- Only a spot sits inside something — the half of the stop/spot model
 -- a check constraint can see, and the important half: it guarantees stops are
 -- always top level. That a parent is itself a stop is enforced by the client
 -- (only stops are offered) and degraded gracefully by groupPlaces, which
 -- ignores a parent that is not one.
 alter table public.places
-  add constraint places_anchored_is_location
-  check (parent_place_id is null or kind = 'location');
+  add constraint places_anchored_is_spot
+  check (parent_place_id is null or kind = 'spot');
 
 create index places_kind_idx on public.places(trip_id, kind);
 
 create index places_parent_idx
   on public.places(parent_place_id) where parent_place_id is not null;
 
--- The half of the stop/location model a CHECK constraint cannot see.
+-- The half of the stop/spot model a CHECK constraint cannot see.
 --
 -- A check can only read the row being written, so three rules were left to the
 -- client: that a parent is itself a stop, that a parent is not itself anchored,
--- and that a place holding locations cannot move inside one. Every one of those
+-- and that a place holding spots cannot move inside one. Every one of those
 -- reads the writer's local snapshot of the trip, which is exactly what two
 -- collaborators do not share.
 --
 -- Concretely: A files X inside Y while B, whose realtime channel has not yet
 -- delivered A's write, files Y inside X. Both snapshots say the other place is
 -- an unanchored stop with nothing in it, so both guards pass and both writes
--- satisfy places_anchored_is_location. The result is a cycle that no screen can
+-- satisfy places_anchored_is_spot. The result is a cycle that no screen can
 -- show and almost no gesture can undo — groupPlaces refuses to nest either one
 -- so both render as ordinary top-level rows, while the detail sheet disables
 -- its picker on both and every plain reorder of them is silently discarded.
@@ -183,9 +183,9 @@ begin
 
   -- Nothing with places inside it may itself go inside something, in either
   -- direction it can be expressed: gaining a parent, or being demoted to a
-  -- location. Both would orphan whatever it holds, since only a stop can be
+  -- spot. Both would orphan whatever it holds, since only a stop can be
   -- a parent.
-  if (new.parent_place_id is not null or new.kind = 'location')
+  if (new.parent_place_id is not null or new.kind = 'spot')
      and exists (select 1 from public.places c where c.parent_place_id = new.id) then
     raise exception 'Move the places inside this one out first'
       using errcode = 'check_violation';

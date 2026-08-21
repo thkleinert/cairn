@@ -116,7 +116,7 @@ export function TripNotesPage({
     const collapsed = foldable && isCollapsed(place.id);
     // Only for places still at the top level, only until waved away — and
     // never for a place that holds other places. setPlaceParent refuses that
-    // move (a stop cannot become a location while it still has locations in
+    // move (a stop cannot become a spot while it still has spots in
     // it), so offering it puts up a button whose only possible outcome is a
     // toast saying no. The list view already declines to draw the drag grip
     // for the same reason; this is the same rule on the other screen.

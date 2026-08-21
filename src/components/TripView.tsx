@@ -75,11 +75,16 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // that the place detail sheet opens *over*, so the two are shown at once.
   const [showNotes, setShowNotes] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('map');
-  // Whether the map shows the places *inside* stops. A trip with a city and a
-  // dozen cafés in it is a cluster of pins on top of each other at any zoom
-  // that shows the whole route; hiding locations gives back the shape of the
-  // trip. On by default — nothing disappears until asked.
-  const [showLocations, setShowLocations] = useState(true);
+  // What the map draws, as two independent switches rather than one.
+  //
+  // Spots start HIDDEN. A city with a dozen cafés in it is a pile of pins on
+  // top of each other at any zoom that shows the whole route, so the useful
+  // first look at a trip is its shape — the stops — with the detail available
+  // on request. That is the opposite of the usual "nothing disappears until
+  // asked" default, and it is safe here only because both switches are always
+  // on screen together and anything you open is revealed automatically.
+  const [showStops, setShowStops] = useState(true);
+  const [showSpots, setShowSpots] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   // The map point being turned into a place (long-press), if any.
   const [pickedPoint, setPickedPoint] = useState<PickedPoint | null>(null);
@@ -95,19 +100,26 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // Filtered here rather than inside the map so the route line and the initial
   // fit follow the same rule as the pins — a route drawn through places you
   // cannot see would be the odd one out.
-  // Only places actually inside a stop are hidden. A location with no parent
+  // Only places actually inside a stop are hidden. A spot with no parent
   // — one whose stop was deleted before deletePlace learned to release its
   // children, or one a collaborator orphaned — behaves as a stop everywhere
   // else, and hiding it here made it unreachable rather than tidy.
-  const isAnchoredLocation = (p: Place) => p.kind === 'location' && !!p.parent_place_id;
-  const mapPlaces = showLocations ? places : places.filter(p => !isAnchoredLocation(p));
+  const isAnchoredSpot = (p: Place) => p.kind === 'spot' && !!p.parent_place_id;
+  const mapPlaces = places.filter(p => (isAnchoredSpot(p) ? showSpots : showStops));
   // Counted after the tag filter, because that is what the map is actually
-  // showing. Counting every anchored location instead made the pill claim "12
+  // showing. Counting every anchored spot instead made the pill claim "12
   // hidden" while filtering by a tag only two of them carried — a number the
   // map could not be read to confirm. Same predicate as MapView's own filter.
   const passesTagFilter = (p: Place) =>
     activeTags.length === 0 || (p.tags ?? []).some(t => activeTags.includes(t.id));
-  const hiddenLocationCount = places.filter(p => isAnchoredLocation(p) && passesTagFilter(p)).length;
+  // Counted after the tag filter, because that is what the map is actually
+  // showing. Counting every spot instead made a pill claim "12 hidden" while
+  // filtering by a tag only two of them carried — a number the map could not
+  // be read to confirm.
+  const hiddenSpotCount = showSpots ? 0
+    : places.filter(p => isAnchoredSpot(p) && passesTagFilter(p)).length;
+  const hiddenStopCount = showStops ? 0
+    : places.filter(p => !isAnchoredSpot(p) && passesTagFilter(p)).length;
   const isOwner = trip.owner_id === userId;
   // The map is mounted behind the list view and the outliner, so being the
   // current view is necessary but not sufficient for being the thing on screen.
@@ -121,7 +133,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     setJumpToComments(!!initialOpenComments);
   }, [openNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Opening a place the map is currently hiding turns locations back on,
+  // Opening a place the map is currently hiding turns spots back on,
   // rather than flying to a coordinate with no marker on it and leaving the
   // map parked on empty ground when the sheet closes.
   //
@@ -132,7 +144,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // back on. The map is also still MOUNTED behind both, so "not rendered" was
   // never the reason this was safe — MapView takes `visible` for that.
   // Keyed on the id, not the place object. Filing the OPEN place inside a stop
-  // from the sheet's "Part of" picker makes it an anchored location while it is
+  // from the sheet's "Part of" picker makes it an anchored spot while it is
   // still selected — and an effect watching the object then read that as
   // "a hidden place was opened" and switched the filter back on, undoing the
   // user's hide from a sheet they were using for something else entirely.
@@ -144,16 +156,12 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     if (!mapIsShowing || !selectedPlace) return;
     if (revealedFor.current === selectedPlaceId) return;
     revealedFor.current = selectedPlaceId;
-    if (isAnchoredLocation(selectedPlace) && !showLocations) setShowLocations(true);
-  }, [mapIsShowing, selectedPlaceId, selectedPlace, showLocations]);
-
-  // Nothing left to hide means nothing left to un-hide, and the control that
-  // would do it has just unmounted. Without this the flag survived — delete the
-  // last café while locations are hidden, add another, and it is invisible
-  // behind a pill that reappears reading "1 hidden".
-  useEffect(() => {
-    if (hiddenLocationCount === 0 && !showLocations) setShowLocations(true);
-  }, [hiddenLocationCount, showLocations]);
+    // Either switch, not just the spots one: stops can be hidden now too, and
+    // flying to a place with no marker under it is the same nonsense whichever
+    // switch is responsible.
+    if (isAnchoredSpot(selectedPlace)) { if (!showSpots) setShowSpots(true); }
+    else if (!showStops) setShowStops(true);
+  }, [mapIsShowing, selectedPlaceId, selectedPlace, showSpots, showStops]);
 
   useEscapeClose(() => setShowSearch(false));
 
@@ -296,24 +304,46 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             </MapBoundary>
           </div>
         )}
-        {/* Offered on exactly what it would hide — the same count it reports.
-            Two looser gates both drew a button that hid nothing and then
-            labelled itself "0 hidden": `places.some(p => p.kind ===
-            'location')` counted orphans the filter does not touch, and
-            `places.some(isAnchoredLocation)` ignored the tag filter, so a
-            trip whose cafés were all filtered out still offered to hide
-            them. */}
-        {mapIsShowing && hiddenLocationCount > 0 && (
-          <button
-            className={`map-locations-toggle ${showLocations ? '' : 'map-locations-toggle--off'}`}
-            onClick={() => setShowLocations(v => !v)}
-            aria-pressed={showLocations}
-          >
-            {showLocations ? <Eye size={15} /> : <EyeOff size={15} />}
-            <span>
-              {showLocations ? 'Locations' : `${hiddenLocationCount} hidden`}
-            </span>
-          </button>
+        {/* Both switches, always together. A single control that only ever
+            hid one category left the other implicit, and — now that spots
+            start hidden — a user who never found the control would never learn
+            there was anything to find. Shown as a pair so the map's contents
+            are always stated rather than inferred.
+
+            Only once the trip actually has a spot: on a flat trip these are
+            two controls that can only turn things off. The count is what each
+            one would reveal, measured after the tag filter, so the label can
+            always be confirmed by looking at the map. */}
+        {mapIsShowing && places.some(isAnchoredSpot) && (
+          <div className="map-kind-toggles">
+            <button
+              className={`map-kind-toggle ${showStops ? '' : 'map-kind-toggle--off'}`}
+              onClick={() => setShowStops(v => !v)}
+              aria-pressed={showStops}
+            >
+              {showStops ? <Eye size={15} /> : <EyeOff size={15} />}
+              <span>Stops</span>
+              {hiddenStopCount > 0 && <span className="map-kind-count">{hiddenStopCount}</span>}
+            </button>
+            <button
+              className={`map-kind-toggle ${showSpots ? '' : 'map-kind-toggle--off'}`}
+              onClick={() => setShowSpots(v => !v)}
+              aria-pressed={showSpots}
+            >
+              {showSpots ? <Eye size={15} /> : <EyeOff size={15} />}
+              <span>Spots</span>
+              {hiddenSpotCount > 0 && <span className="map-kind-count">{hiddenSpotCount}</span>}
+            </button>
+          </div>
+        )}
+
+        {/* Turning both off is allowed — it is a legible thing to want, and the
+            pills say why the map is bare. This only exists so an empty map is
+            never mistaken for a broken one. */}
+        {mapIsShowing && !loading && places.length > 0 && mapPlaces.length === 0 && (
+          <div className="map-empty-hint">
+            Nothing shown — turn Stops or Spots back on
+          </div>
         )}
 
         {viewMode === 'map' && !loading && places.length === 0 && !showSearch && !pickedPoint && (

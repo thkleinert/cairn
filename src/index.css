@@ -1336,7 +1336,7 @@ select.input {
   from { opacity: 0; transform: translateY(8px); }
 }
 
-/* A location sits indented under its stop. Indent only, for the same reason an
+/* A spot sits indented under its stop. Indent only, for the same reason an
    anchored place on the notes page has no line: it is the stop's own content,
    not something nested inside a bullet. Drawing it here and not there would
    just move the inconsistency to a different screen.
@@ -1403,12 +1403,15 @@ select.input {
   font-size: 11px; font-weight: 600;
 }
 
-/* Floats over the map rather than living in the top bar: it is a map control,
-   and it belongs where the thing it changes is. */
-.map-locations-toggle {
+/* Floats over the map rather than living in the top bar: these are map
+   controls, and they belong where the thing they change is. */
+.map-kind-toggles {
   position: absolute;
   top: 12px; left: 12px;
   z-index: 5;
+  display: flex; gap: 6px;
+}
+.map-kind-toggle {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 12px 7px 10px;
   border-radius: 99px;
@@ -1417,8 +1420,19 @@ select.input {
   color: var(--color-text);
   font-size: 12.5px; font-weight: 600;
 }
-.map-locations-toggle--off { color: var(--color-muted); }
-.map-locations-toggle:active { background: var(--color-bg); }
+/* Off is muted rather than hidden or struck through: the control still has to
+   read as available, since it is the only way back. */
+.map-kind-toggle--off { color: var(--color-muted); }
+.map-kind-toggle:active { background: var(--color-bg); }
+
+/* How many pins this switch would bring back. */
+.map-kind-count {
+  padding: 0 6px;
+  border-radius: 99px;
+  background: var(--color-bg);
+  color: var(--color-muted);
+  font-size: 11px; font-weight: 700;
+}
 /* Suppressed for exactly one frame when the array reorders, so the DOM
    reflow and the transform reset happen together with no visible jump */
 .place-list--reordering .place-list-item { transition: none; }
@@ -2006,7 +2020,7 @@ body:has(.note-toolbar) .toast-stack {
 }
 
 /* A top-level place and everything inside it is one group. The breathing room
-   goes between groups; inside one, a parent, its notes and its locations are a
+   goes between groups; inside one, a parent, its notes and its spots are a
    single list and sit at bullet spacing.
    Previously each block carried its own margin, which meant the gap after a
    nested place was the nested place's margin — zero — so the next top-level

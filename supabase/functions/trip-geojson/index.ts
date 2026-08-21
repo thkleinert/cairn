@@ -30,7 +30,7 @@ type Place = {
   latitude: number;
   longitude: number;
   visited_at: string;
-  kind: 'stop' | 'location';
+  kind: 'stop' | 'spot';
   parent_place_id: string | null;
 };
 
@@ -143,11 +143,11 @@ Deno.serve(async (req: Request) => {
   // as five stops. They keep their markers below — this only decides what the
   // line connects.
   //
-  // Same predicate as the map's Locations filter: anchored locations only, so
+  // Same predicate as the map's Spots filter: anchored spots only, so
   // one whose stop was deleted still counts rather than silently vanishing
   // from the track.
-  const routed = places.filter((p) => !(p.kind === 'location' && p.parent_place_id));
-  // The fallback is for a trip recorded ENTIRELY as locations, which would
+  const routed = places.filter((p) => !(p.kind === 'spot' && p.parent_place_id));
+  // The fallback is for a trip recorded ENTIRELY as spots, which would
   // otherwise export markers and no track at all. It was written `>= 2`, which
   // also swallowed the ordinary one-stop trip: a city with four cafés in it
   // fell through to routing all five, spending four Mapbox calls on

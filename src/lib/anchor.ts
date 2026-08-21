@@ -180,7 +180,7 @@ export function distanceKm(
  * 38km that any threshold in between would separate. That was measured over
  * pairs the OLD classifier had already called venues, and it was wrong on its
  * own data: a hamlet 8.2km from a lake and a lake 10.5km from a village both
- * sit inside the supposed gap, and both were being filed as locations.
+ * sit inside the supposed gap, and both were being filed as spots.
  *
  * Distance cannot fix that, because both really are close. What fixes it is
  * not asking the distance question at all unless the thing is actually a
@@ -202,7 +202,7 @@ export function nearestParent(
   // Whether this LOOKS like a venue, from its address — never from its stored
   // kind. Preferring the stored kind killed the feature outright: the only
   // caller that passes a stored place is the "looks like it's in X" suggestion,
-  // and places_anchored_is_location guarantees every un-anchored place is a
+  // and places_anchored_is_spot guarantees every un-anchored place is a
   // 'stop', so the kind branch answered "not a venue" every single time and the
   // suggestion could not render at all.
   //
@@ -240,14 +240,14 @@ export function nearestParent(
 /**
  * What a place being created should be, and what it should sit inside.
  *
- * A place only becomes a location when there is somewhere concrete to put it.
+ * A place only becomes a spot when there is somewhere concrete to put it.
  * Neither classifier is trusted on its own: a misread would file a town as a
- * location with no parent — top-level in the list but hidden whenever the map
+ * spot with no parent — top-level in the list but hidden whenever the map
  * is showing stops only, which is a confusing thing to happen to a town you
  * just added.
  *
  * Requiring a nearby stop ties the weaker signal to the stronger one. Nothing
- * is ever created as an orphan location, so "stop" keeps meaning "visible and
+ * is ever created as an orphan spot, so "stop" keeps meaning "visible and
  * top level", exactly as every place behaves today.
  */
 export function kindFor(
@@ -259,6 +259,6 @@ export function kindFor(
 ): { kind: PlaceKind; parentId: string | null } {
   const parent = nearestParent(candidate, places);
   return parent
-    ? { kind: 'location', parentId: parent.id }
+    ? { kind: 'spot', parentId: parent.id }
     : { kind: 'stop', parentId: null };
 }

@@ -18,7 +18,7 @@ export function groupPlaces<T extends { id: string; parent_place_id?: string | n
     const parent = p.parent_place_id ? byId.get(p.parent_place_id) : undefined;
     if (!parent || parent.id === p.id) return false;
     // A parent must be a stop. The database can only guarantee that anything
-    // anchored is a location, not that what it points at is a stop, so this is
+    // anchored is a spot, not that what it points at is a stop, so this is
     // where the other half is enforced — by declining to nest, which shows up
     // as an unnested place rather than as one that renders nowhere.
     if (parent.kind !== undefined && parent.kind !== 'stop') return false;
@@ -37,7 +37,7 @@ export function groupPlaces<T extends { id: string; parent_place_id?: string | n
 }
 
 
-// Flattening a trip's stops and the locations inside them into the single
+// Flattening a trip's stops and the spots inside them into the single
 // ordered list the list view actually renders, and working out what a drop
 // means once one of those rows is dragged somewhere else.
 //
@@ -46,21 +46,21 @@ export function groupPlaces<T extends { id: string; parent_place_id?: string | n
 
 export interface FlatRow {
   place: Place;
-  /** 0 for a stop, 1 for a location inside one. */
+  /** 0 for a stop, 1 for a spot inside one. */
   depth: number;
-  /** Locations under this stop, whether or not they are currently shown. */
+  /** Spots under this stop, whether or not they are currently shown. */
   childCount: number;
 }
 
 /**
- * Stops in order, each followed by its locations.
+ * Stops in order, each followed by its spots.
  *
  * A folded stop keeps its own row and drops its children, so folding changes
  * what is on screen without changing the order anything is stored in.
  *
- * Locations whose stop was deleted come back as top-level rows. The database
+ * Spots whose stop was deleted come back as top-level rows. The database
  * nulls a child's parent when its stop goes (rather than deleting the child),
- * which leaves a location with nowhere to be — showing it at the top level is
+ * which leaves a spot with nowhere to be — showing it at the top level is
  * the only alternative to hiding a place the user never asked to lose.
  */
 export function flattenPlaces(
@@ -84,7 +84,7 @@ export function flattenPlaces(
  * Put the hidden rows back into an order taken from the screen.
  *
  * The list only renders — and so only reorders — what is visible, but a folded
- * stop's locations still have positions, and sending an order that omits them
+ * stop's spots still have positions, and sending an order that omits them
  * would leave those positions describing a list they are no longer part of.
  * Each stop's children follow it, whether they were on screen or not.
  */
@@ -144,15 +144,15 @@ export function resolveDrop(
     // deleted while the write releasing it was still in flight, or one a
     // collaborator orphaned. It reads as top-level everywhere that walks the
     // tree while its kind still says otherwise, which quietly bars it from
-    // being a parent and from the map's Locations filter. Letting the drag
+    // being a parent and from the map's Spots filter. Letting the drag
     // repair it means the gesture that visibly pulls a row out to the top
     // level actually puts it there.
-    return { parentId: null, changed: currentParent !== null || dragged.kind === 'location' };
+    return { parentId: null, changed: currentParent !== null || dragged.kind === 'spot' };
   }
 
   if (sidewaysPx >= INDENT_PX) {
-    // A row with locations under it cannot go inside anything: it would become
-    // a location itself and orphan them, since only a stop can be a parent.
+    // A row with spots under it cannot go inside anything: it would become
+    // a spot itself and orphan them, since only a stop can be a parent.
     // The row above being a valid parent is not the only question — the row
     // being dragged has to be able to become a child.
     if (places.some(p => p.parent_place_id === draggedId)) {
@@ -160,7 +160,7 @@ export function resolveDrop(
     }
     const at = orderedIds.indexOf(draggedId);
     // Walk back for something that can hold this row. A stop that is itself
-    // nested cannot, and neither can another location — one level only, which
+    // nested cannot, and neither can another spot — one level only, which
     // is what keeps a list you can still read at a glance.
     for (let i = at - 1; i >= 0; i--) {
       const above = byId.get(orderedIds[i]);
@@ -177,9 +177,9 @@ export function resolveDrop(
 }
 
 /**
- * Is this location still sitting with its own stop after a move?
+ * Is this spot still sitting with its own stop after a move?
  *
- * A location belongs to the contiguous run right after its parent. Dragging it
+ * A spot belongs to the contiguous run right after its parent. Dragging it
  * vertically out of that run — above its stop, or down past the next one —
  * cannot mean anything, because nesting is decided by the sideways gesture and
  * groupPlaces re-derives every child under its parent regardless of position.
@@ -192,7 +192,7 @@ export function resolveDrop(
  *
  * The rule is local: the row before it is either its parent or a sibling.
  */
-export function locationStaysWithParent(
+export function spotStaysWithParent(
   fullOrderIds: string[],
   placeId: string,
   places: Place[],
