@@ -304,17 +304,21 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             </MapBoundary>
           </div>
         )}
-        {/* Both switches, always together. A single control that only ever
-            hid one category left the other implicit, and — now that spots
-            start hidden — a user who never found the control would never learn
-            there was anything to find. Shown as a pair so the map's contents
-            are always stated rather than inferred.
+        {/* Both switches, always together, and always present once the trip
+            has anything on it at all.
 
-            Only once the trip actually has a spot: on a flat trip these are
-            two controls that can only turn things off. The count is what each
-            one would reveal, measured after the tag filter, so the label can
-            always be confirmed by looking at the map. */}
-        {mapIsShowing && places.some(isAnchoredSpot) && (
+            Gating the pair on the trip already HAVING a spot was wrong twice
+            over. It hid the control on every flat trip, which is exactly where
+            someone needs to learn the distinction exists — and because spots
+            now start hidden, the first spot on such a trip would arrive
+            invisible with no control on screen to explain where it went. A
+            switch that appears only once you have used the feature cannot
+            teach it.
+
+            The count is what each one would reveal, measured after the tag
+            filter, so the label can always be confirmed by looking at the
+            map. */}
+        {mapIsShowing && places.length > 0 && (
           <div className="map-kind-toggles">
             <button
               className={`map-kind-toggle ${showStops ? '' : 'map-kind-toggle--off'}`}
