@@ -86,7 +86,13 @@ function AuthedApp() {
   // trip): then the in-app back button can use real history.back() instead
   // of growing the stack with duplicate '/' entries.
   const pushedTripRef = useRef(false);
+  // Read by the popstate handler below, which is registered once and would
+  // otherwise close over the first render's value.
+  const activeTripRef = useRef<Trip | null>(null);
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(NEEDS_PASSWORD_SETUP);
+
+  // Mirrors activeTrip for the popstate handler, which is registered once.
+  useEffect(() => { activeTripRef.current = activeTrip; }, [activeTrip]);
 
   // Keep URL and UI in sync across browser back/forward: restore whatever
   // trip the URL now points at instead of unconditionally showing the list
@@ -98,6 +104,12 @@ function AuthedApp() {
         setActiveTrip(null);
         return;
       }
+      // Already here. Overlays inside a trip push a history entry at the SAME
+      // url so a back gesture closes the sheet rather than the trip, which
+      // means most pops within a trip do not change which trip is shown —
+      // without this every one of them cost a round trip and handed TripView a
+      // new object for the trip it was already displaying.
+      if (activeTripRef.current?.id === tripId) return;
       supabase.from('trips').select(TRIP_COLUMNS).eq('id', tripId).single().then(({ data }) => {
         // Only apply if the URL still points at this trip by the time the
         // response lands (rapid back-forward).

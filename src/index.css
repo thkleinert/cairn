@@ -1423,8 +1423,19 @@ select.input {
    reflow and the transform reset happen together with no visible jump */
 .place-list--reordering .place-list-item { transition: none; }
 
+/* Held clear of the screen edge, because the OS owns that strip.
+   iOS reserves roughly the leftmost 20px for its back-swipe and handles it
+   before any touch event reaches the page — preventDefault and touch-action
+   cannot reach it, so the only fix available to us is not to start a gesture
+   there. The grip used to sit at x=0-34, which put "drag right to nest" inside
+   the system gesture: the row would not move and the app would navigate back.
+
+   Only at the outer level. A nested row is already indented past the strip, so
+   max() gives it no gutter at all and the extra offset costs nothing on the
+   rows that can least afford it. 22px clears the strip with 2px to spare. */
 .place-list-drag-handle {
   flex-shrink: 0;
+  margin-left: max(0px, calc(22px - var(--place-depth, 0) * var(--place-indent, 36px)));
   width: 34px;
   display: flex; align-items: center; justify-content: center;
   color: var(--color-muted);

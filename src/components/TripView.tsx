@@ -9,6 +9,7 @@ import { useFoldState } from '../hooks/useFoldState';
 import { usePersistentSet } from '../hooks/usePersistentSet';
 import { updateTrip, deleteTrip, uploadTripCover } from '../lib/trips';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useHistoryLayer } from '../hooks/useHistoryLayer';
 // Lazy: mapbox-gl is ~90% of the bundle; splitting it means the auth screen,
 // trip list, and invite/share landings load without it. The map chunk starts
 // fetching the moment a trip opens.
@@ -155,6 +156,31 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   }, [hiddenLocationCount, showLocations]);
 
   useEscapeClose(() => setShowSearch(false));
+
+  // Which overlay a back gesture should close. Ordered frontmost-first, and it
+  // has to match what is actually painted on top rather than what feels
+  // primary: the pick sheet and the search field sit above the place sheet, and
+  // the place sheet opens OVER the outliner rather than replacing it.
+  const topLayer =
+    pickedPoint ? 'pick'
+    : showSearch ? 'search'
+    : selectedPlaceId ? 'place'
+    : openSheet !== 'none' ? 'sheet'
+    : showNotes ? 'notes'
+    : null;
+
+  // Exactly one layer per press, matching what the header's own back arrow
+  // does. Each branch mirrors that overlay's onClose below; a layer whose
+  // close does more than flip one flag (the place sheet also drops the
+  // jump-to-comments intent) has to do the same here or a back gesture would
+  // leave it armed for the next place opened.
+  useHistoryLayer(topLayer, () => {
+    if (pickedPoint) setPickedPoint(null);
+    else if (showSearch) setShowSearch(false);
+    else if (selectedPlaceId) { setSelectedPlaceId(null); setJumpToComments(false); }
+    else if (openSheet !== 'none') setOpenSheet('none');
+    else if (showNotes) setShowNotes(false);
+  });
 
   // Shared by both entry points — the search field and a long-press on the
   // map — so a place added either way lands identically and opens its sheet.
