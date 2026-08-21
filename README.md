@@ -84,6 +84,12 @@ a dashed straight-line fallback wherever there is no drivable route (island
 hops, ferry crossings). The trip slowly turns into a travel diary while
 you're still on the road.
 
+Two switches sit over the map — **Stops** and **Spots** — each showing how
+many pins it would bring back. Spots start hidden, because a city with a
+dozen cafés in it is a pile of markers on top of each other at any zoom that
+shows the whole route. The first look at a trip is its shape; the detail is
+one tap away.
+
 - Tap a marker to open the place
 - Filter markers by tag
 - One-tap locate-me and compass controls
@@ -98,10 +104,33 @@ The same places as a scrollable list — photo thumbnail, address, tag chips,
 and a check for the ones you've already been to.
 
 Drag the handle to reorder; the order is shared, so the list doubles as your
-rough itinerary. Map and list are two views over the same trip, and the pill
-at the bottom flips between them.
+rough itinerary. Drag a row **sideways** to change what it belongs to — right
+to tuck a café under the city it's in, left to pull it back out — and the row
+shows the level it will land at before you let go.
+
+A stop with places inside it folds shut, with a count of what it's hiding, so
+a long trip stays readable. Map and list are two views over the same trip, and
+the pill at the bottom flips between them.
 
 <br clear="right" />
+
+### 🏔️ Stops and Spots
+
+A trip has two kinds of place. A **stop** is somewhere you go — a city, an
+island, a lake, a mountain pass. A **spot** is somewhere inside one — a café,
+a hotel, a viewpoint, a trailhead. Spots nest under their stop everywhere it
+matters: indented on the list, folded away with it, filed under its heading in
+the outliner, and hideable on the map.
+
+Cairn guesses which is which when a place is created, from the size of the
+area Google recommends showing for it. A national park's is tens of kilometres
+across; a café's is a couple of hundred metres. Where that is unavailable it
+falls back to Google's place types, then to the shape of the address.
+
+The guess is only ever made **once, at creation**. A place you have already
+filed somewhere is never moved silently — the outliner offers "looks like it's
+in Bangkok" instead, and remembers a no. You can also set it by hand from the
+place sheet, or by dragging a row sideways on the list.
 
 ### 📍 Every Place Carries Its Story
 
@@ -120,6 +149,25 @@ Tapping a place opens its detail sheet:
 - **Visited toggle** — flip it when you get there; the map route updates.
 
 <br clear="left" />
+
+### 📝 The Whole Trip as One Outline
+
+Everything written about a trip, on one screen. Each stop is a heading with
+its notes as bullets underneath, spots nested under the stop they belong to,
+and a **General** section for anything that isn't about one place.
+
+It behaves like an outliner, not a form:
+
+- **Enter** at the end of a bullet starts the next one
+- **Tab-style indent and outdent** from a toolbar that sits above the
+  keyboard, with arrows to move a bullet and its children up or down
+- **Swipe a bullet left** to delete it, with an undo in the toast
+- **Fold** any heading or bullet that has something under it
+- **`@`-mention a place** to link to it; tap the chip to jump there
+- Links render as their site name, so a bullet stays readable
+
+Folding is remembered on your own device rather than shared, so collapsing a
+section to think doesn't collapse it under a collaborator who is reading it.
 
 ### 💬 Talk It Through, Right on the Place
 
@@ -277,8 +325,9 @@ npm install
    fresh project — it uses plain `create table` / `create policy`, so a second
    run fails on objects that already exist. This single file creates
    everything:
-   - all tables (`trips`, `trip_members`, `places`, `tags`, `place_tags`,
-     `place_images`, `trip_invites`, `place_comments`, `activity`, …),
+   - all tables (`trips`, `trip_members`, `places`, `trip_notes`, `tags`,
+     `place_tags`, `place_images`, `trip_invites`, `place_comments`,
+     `activity`, …),
    - every Row Level Security policy (all data is scoped to trip membership),
    - the RPCs the app calls (trip creation, invites, share links, comments,
      activity feed, atomic reorder),
@@ -604,11 +653,17 @@ There is no test suite yet; `npm run build` is the type-safety gate. CI runs
 ```
 src/
   components/     Screens & sheets — TripList, TripView, MapView,
-                  PlaceDetailSheet, TripSettingsSheet, SharedTripView, …
-  hooks/          Data hooks wrapping Supabase — usePlaces, useTrips, useTags,
-                  useComments, useNotifications, useCollaborators, useAuth
+                  PlaceListView, PlaceDetailSheet, TripNotesPage, NoteList,
+                  NoteEditToolbar, TripSettingsSheet, SharedTripView, …
+  hooks/          Data hooks wrapping Supabase — usePlaces, useTripNotes,
+                  useTrips, useTags, useComments, useNotifications,
+                  useCollaborators, useAuth; plus the interaction hooks
+                  useDragReorder, useSwipeToDelete, useFoldState,
+                  usePersistentSet, useHistoryLayer
   lib/            Supabase client, Mapbox routing, Google photo helpers,
-                  storage cleanup, toasts
+                  storage cleanup, toasts; and the pure rules — outline.ts
+                  (bullet depth), placeTree.ts (stops and spots),
+                  anchor.ts (which kind a new place is), mentions.ts
   types/          Shared TypeScript types
 supabase/
   schema.sql      The entire backend: tables, RLS, RPCs, storage bucket,
