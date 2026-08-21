@@ -147,10 +147,15 @@ Deno.serve(async (req: Request) => {
   // one whose stop was deleted still counts rather than silently vanishing
   // from the track.
   const routed = places.filter((p) => !(p.kind === 'location' && p.parent_place_id));
-  // A trip recorded entirely as locations would otherwise export markers and
-  // no track at all. Falling back to everything keeps the line connected,
-  // which is the property the straight-line degradation below also protects.
-  const legs = routed.length >= 2 ? routed : places;
+  // The fallback is for a trip recorded ENTIRELY as locations, which would
+  // otherwise export markers and no track at all. It was written `>= 2`, which
+  // also swallowed the ordinary one-stop trip: a city with four cafés in it
+  // fell through to routing all five, spending four Mapbox calls on
+  // sub-kilometre hops inside that city and reporting stopCount 5 — verbatim
+  // the failure this filter exists to remove. One stop is a track of one
+  // point, and a track of one point is no legs, which the loop below already
+  // handles.
+  const legs = routed.length > 0 ? routed : places;
 
   const features: unknown[] = [];
 

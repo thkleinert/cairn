@@ -131,6 +131,8 @@ export function usePlaces(tripId: string | undefined) {
      * than spread into the insert, which would fail the whole write.
      */
     types?: string[];
+    /** Same: a hint for kindFor, not a column. */
+    spanKm?: number;
   }) => {
     if (!tripId) return null;
     // max+1, not length: after any delete the positions have gaps, and
@@ -147,7 +149,7 @@ export function usePlaces(tripId: string | undefined) {
     // offer on the notes page instead.
     const { kind, parentId } = kindFor(place, places);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { types, ...row } = place;
+    const { types, spanKm, ...row } = place;
 
     const { data, error } = await supabase
       .from('places')
@@ -216,9 +218,6 @@ export function usePlaces(tripId: string | undefined) {
   const deletePlace = async (id: string) => {
     const place = places.find(p => p.id === id);
 
-    // Noted before the delete, because the foreign key nulls their parent as
-    // part of it and they become unfindable this way afterwards.
-    const childIds = places.filter(p => p.parent_place_id === id).map(p => p.id);
 
     const { error } = await supabase.from('places').delete().eq('id', id);
     if (error) {
@@ -230,23 +229,31 @@ export function usePlaces(tripId: string | undefined) {
 
     // Only now, and only because the delete succeeded. The composite FK is
     // `on delete set null (parent_place_id)`, so the database has already
-    // released these — but it cannot touch their `kind`, and a location
-    // belonging to nothing is hidden by the map's Locations filter with no way
-    // back through the place sheet. Doing this BEFORE the delete, as this
-    // first did, meant a delete that then failed had silently moved a city's
-    // cafés out and turned them into stops, with the city still sitting there.
-    if (childIds.length > 0) {
-      setPlaces(prev => prev.map(p => childIds.includes(p.id)
-        ? { ...p, parent_place_id: null, kind: 'stop' as const } : p));
-      const { error: releaseError } = await supabase
-        .from('places')
-        .update({ parent_place_id: null, kind: 'stop' })
-        .in('id', childIds);
-      // Not fatal: the places are already top-level and visible in the list.
-      // Only the map filter would still hide them, and a refetch will show
-      // whatever the database really holds.
-      if (releaseError) fetchPlaces();
-    }
+    // released whatever was inside — but it cannot touch `kind`, and a
+    // location belonging to nothing is a state the rest of the app has to keep
+    // special-casing.
+    //
+    // Written as a condition rather than a list of ids. The list was read from
+    // this client's snapshot BEFORE the delete, which made it wrong in both
+    // directions: a café a collaborator had already moved into another stop was
+    // still in the list and got yanked out of it by a delete that had nothing
+    // to do with it, and a café moved IN while the delete was in flight was
+    // missing from the list and stayed orphaned. A statement that names the
+    // condition instead of the rows cannot be stale, and repairs any orphan
+    // left by an earlier failure at the same time.
+    setPlaces(prev => prev.map(p => p.parent_place_id === id
+      ? { ...p, parent_place_id: null, kind: 'stop' as const } : p));
+    const { error: releaseError } = await supabase
+      .from('places')
+      .update({ kind: 'stop' })
+      .eq('trip_id', tripId)
+      .eq('kind', 'location')
+      .is('parent_place_id', null);
+    // Not fatal: the places are already top-level and visible in the list.
+    // Only the map filter would still hide them, and a refetch will show
+    // whatever the database really holds.
+    if (releaseError) fetchPlaces();
+
     // The bucket is public — remove the actual files, not just the rows.
     if (place) {
       removeStorageUrls([place.image_url, ...(place.images ?? []).map(i => i.url)]);

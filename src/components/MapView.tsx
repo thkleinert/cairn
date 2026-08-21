@@ -358,14 +358,23 @@ export function MapView({ places, selectedPlace, activeTags, allTags, onSelectPl
   const selLng = selectedPlace?.longitude;
   const selLat = selectedPlace?.latitude;
   //
-  // Gated on visibility, and re-run when it returns. Opening a place from the
-  // list view or the outliner used to fly the hidden map anyway: you closed
+  // Gated on visibility, and deferred rather than dropped: opening a place from
+  // the list or the outliner used to fly the hidden map anyway, so you closed
   // the sheet, switched back, and found yourself parked on a coordinate with
-  // nothing under it. Deferring the fly until the map is actually on screen
-  // means the same tap lands you there with the pin drawn.
+  // nothing under it. Now the same tap lands you there when the map returns.
+  //
+  // Once per place, though. `visible` is in the deps so a deferred fly can
+  // happen at all, and without this ref every return to the map re-flew and
+  // re-zoomed to whatever was still selected — panning away to look at the
+  // area, glancing at the outliner and coming back would snap the viewport
+  // straight back to the pin. A pan is a deliberate act; the fly is a
+  // courtesy, and the courtesy should not keep overruling it.
+  const flownFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!visible) return;
-    if (!selId || selLng === undefined || selLat === undefined || !mapRef.current) return;
+    if (!selId) { flownFor.current = null; return; }
+    if (!visible || selLng === undefined || selLat === undefined || !mapRef.current) return;
+    if (flownFor.current === selId) return;
+    flownFor.current = selId;
     mapRef.current.flyTo({
       center: [selLng, selLat],
       zoom: Math.max(mapRef.current.getZoom(), 13),

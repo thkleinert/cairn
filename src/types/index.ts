@@ -131,6 +131,8 @@ export interface NearbyPlace {
   image_url?: string;
   /** Google's classification, used once to decide stop vs location. */
   types?: string[];
+  /** How many km the place's recommended viewport spans, when Google gave one. */
+  spanKm?: number;
 }
 
 export interface PointLookup {

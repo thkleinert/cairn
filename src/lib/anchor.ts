@@ -37,14 +37,42 @@ const BROAD_TYPES = new Set([
   // Things you go to and move around inside, which this app calls stops even
   // though Google files them as establishments: an island, a lake, a massif.
   //
-  // 'park' is deliberately NOT here. Google types a national park and a
-  // four-acre midtown square identically, so it cannot separate them — and
-  // treating both as broad made Bryant Park a stop of its own beside New York.
-  // Left out, a park anchors only when a marked stop is actually within
-  // ANCHOR_MAX_KM, which is the question that does distinguish them: a city
-  // park has its city nearby, and Khao Sok has nothing within 90km.
+  // 'park' is deliberately NOT here, because Google types a national park and
+  // a four-acre midtown square identically. What separates those two is how
+  // big they are, which `spanKm` below asks directly — distance to a marked
+  // stop does not: Springdale sits 12km from Zion and Tusayan 9km from the
+  // Grand Canyon, well inside ANCHOR_MAX_KM, so a threshold-based answer
+  // files a national park inside the village at its gate.
   'natural_feature', 'archipelago',
 ]);
+
+/**
+ * How wide is the area Google recommends showing this place at?
+ *
+ * A national park's viewport spans tens of kilometres; a café's spans a
+ * couple of hundred metres. That is the one signal that separates things you
+ * move around INSIDE from things you stand in front of, and unlike the type
+ * list it does not need a taxonomy to be complete. It rides along with the
+ * `geometry` field the Place Details call already requests, so it is free.
+ *
+ * Three kilometres is comfortably above a large city park (Central Park's
+ * long axis is 4km, and it is a genuine edge case either way) and far below
+ * any national park, island or massif.
+ */
+export const BROAD_SPAN_KM = 3;
+
+export function spanFromViewport(
+  viewport: { getNorthEast(): { lat(): number; lng(): number };
+              getSouthWest(): { lat(): number; lng(): number } } | null | undefined,
+): number | undefined {
+  if (!viewport) return undefined;
+  const ne = viewport.getNorthEast();
+  const sw = viewport.getSouthWest();
+  return distanceKm(
+    { latitude: ne.lat(), longitude: ne.lng() },
+    { latitude: sw.lat(), longitude: sw.lng() },
+  );
+}
 
 export function specificFromTypes(types: string[] | undefined): boolean | null {
   if (!types || types.length === 0) return null;
@@ -81,9 +109,21 @@ export function specificFromTypes(types: string[] | undefined): boolean | null {
  * on its own: "73480 Bessans" is a town wearing a postcode and "1600
  * Amphitheatre Pkwy" is a front door, and they are the same shape. What
  * separates them is the street suffix, so it is checked before the digits are
- * stripped. Measured over the 24 real rows plus a spread of North American,
- * Irish and Italian addresses: 15 of 16, and the miss ("Piazza del Duomo") is a
- * venue that fails to anchor rather than a town that wrongly does.
+ * stripped.
+ *
+ * It still misses venues, and an earlier version of this comment undercounted
+ * them: "Si Lom, Si Lom, Khet Bang Rak, …" is a café and reads as a
+ * settlement, as does "Piazza del Duomo" and any US address whose street type
+ * is outside the list ("1234 Sunset Cir"). Every miss is in the safe
+ * direction — no suggestion offered, rather than a town filed inside a city —
+ * and none of them affect a place being CREATED, which takes the span and
+ * type signals above. What this function is really for is the suggestion on an
+ * existing row, where it is the only signal left.
+ *
+ * Zero false positives is the property that matters, and that one held:
+ * checked against the 24 real rows and 34 settlement-shaped names, including
+ * "Ko Yao Yai", "Bury St Edmunds", "Broadway" and "Galway" — the `(^|[\s.])`
+ * prefix is what keeps the last two from matching `way`.
  */
 const STREET_SUFFIX =
   /(^|[\s.])(st|street|rd|road|ave|avenue|blvd|boulevard|ln|lane|dr|drive|way|ct|court|pl|place|pkwy|parkway|hwy|highway|sq|square|ter|terrace|cres|crescent)\.?$/i;
@@ -154,7 +194,7 @@ export function distanceKm(
 export function nearestParent(
   candidate: {
     latitude: number; longitude: number;
-    address?: string | null; id?: string; types?: string[];
+    address?: string | null; id?: string; types?: string[]; spanKm?: number;
   },
   places: Place[],
   maxKm = ANCHOR_MAX_KM,
@@ -169,9 +209,21 @@ export function nearestParent(
   // The address is the right signal here precisely because it disagrees with
   // the stored kind. A café filed as a stop is exactly the case worth offering
   // to fix; asking the row what it already is can only ever agree with itself.
-  // Google's types when the caller has them — a place being created — and the
-  // address otherwise, which is all an existing row carries.
-  const specific = specificFromTypes(candidate.types) ?? looksSpecific(candidate.address);
+  // Three signals, strongest first, each answering only when it can.
+  //
+  // Size settles what the type list cannot: 'park' covers both Zion and a
+  // midtown square, and 'establishment' covers both a café and a whole
+  // archipelago's ferry terminal. Something several kilometres across is not
+  // inside anything, whatever it is called.
+  //
+  // Then Google's types, which the caller has when a place is being created.
+  // Then the address, which is all an existing row carries — and which the
+  // "looks like it's in X" suggestion therefore always falls through to.
+  const specific = (candidate.spanKm !== undefined && candidate.spanKm > BROAD_SPAN_KM
+    ? false
+    : undefined)
+    ?? specificFromTypes(candidate.types)
+    ?? looksSpecific(candidate.address);
   if (!specific) return null;
 
   let best: Place | null = null;
@@ -201,7 +253,7 @@ export function nearestParent(
 export function kindFor(
   candidate: {
     latitude: number; longitude: number;
-    address?: string | null; types?: string[];
+    address?: string | null; types?: string[]; spanKm?: number;
   },
   places: Place[],
 ): { kind: PlaceKind; parentId: string | null } {

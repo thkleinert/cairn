@@ -160,7 +160,15 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
     const info = dragInfo.current;
     const el = draggedElRef.current;
     if (!info || dragId === null || !el) return;
-    const finalIndex = overIndex ?? info.startIndex;
+    // Re-derived rather than read from `info`. A commit is deferred while the
+    // row glides home, and grabbing a second row inside that window flushes
+    // the pending one — which reorders `order` AFTER handlePointerDown
+    // recorded this row's index against the pre-flush list. The stale index
+    // then moved whichever row had landed in that slot, while the row under
+    // the finger sat still.
+    const liveStart = order.findIndex(i => getId(i) === dragId);
+    const startIndex = liveStart === -1 ? info.startIndex : liveStart;
+    const finalIndex = overIndex ?? startIndex;
     const droppedDx = trackSideways ? dragDxRef.current : 0;
     const settledOffset = travelPx(info.startIndex, finalIndex, info.heights);
 
@@ -176,8 +184,8 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
       // A sideways drag is a real change even when the row did not move up or
       // down, so the commit can't be skipped on index alone any more.
       const movedSideways = trackSideways && Math.abs(droppedDx) > 0;
-      if (finalIndex !== info.startIndex || movedSideways) {
-        const next = moveWithin(order, info.startIndex, finalIndex);
+      if (finalIndex !== startIndex || movedSideways) {
+        const next = moveWithin(order, startIndex, finalIndex);
         setOrder(next);
         onReorder(next.map(getId), droppedDx);
       }
@@ -227,10 +235,12 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
   // dragging the top row down and right showed no nest and then nested, and
   // dragging the bottom row up and right showed a nest and then did nothing.
   const projectedOrder = useMemo(() => {
-    const info = dragInfo.current;
-    if (dragId === null || overIndex === null || !info) return order;
-    return moveWithin(order, info.startIndex, overIndex);
-  }, [dragId, overIndex, order]);
+    if (dragId === null || overIndex === null) return order;
+    // Same re-derivation as commit, for the same reason.
+    const start = order.findIndex(i => getId(i) === dragId);
+    if (start === -1) return order;
+    return moveWithin(order, start, overIndex);
+  }, [dragId, overIndex, order, getId]);
 
   return { order, projectedOrder, dragId, dragLevel, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
 }

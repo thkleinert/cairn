@@ -100,6 +100,12 @@ export function TripNotesPage({
   const renderPlace = (place: Place, anchored: boolean) => {
     const notes = notesByPlace.get(place.id) ?? [];
     const childCount = (childrenOf.get(place.id) ?? []).length;
+    // The RAW pointer, not the derived count above. setPlaceParent refuses to
+    // move anything that holds places, and it asks the pointer — so a place
+    // whose child groupPlaces declines to nest (an invalid parent chain) has
+    // childCount 0 here and a child there, and the suggestion below would
+    // offer a move whose only possible outcome is a toast saying no.
+    const holdsPlaces = places.some(p => p.parent_place_id === place.id);
     // Nothing under it, nothing to fold — a control that can only toggle
     // emptiness is furniture. Bullets and list rows already worked this way;
     // headings were the odd one out.
@@ -114,7 +120,7 @@ export function TripNotesPage({
     // it), so offering it puts up a button whose only possible outcome is a
     // toast saying no. The list view already declines to draw the drag grip
     // for the same reason; this is the same rule on the other screen.
-    const suggestion = anchored || childCount > 0 || isAnchorDismissed(place.id)
+    const suggestion = anchored || holdsPlaces || isAnchorDismissed(place.id)
       ? null
       : nearestParent(place, places);
 

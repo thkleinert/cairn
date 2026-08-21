@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy } from 'react';
+import { useState, useEffect, useRef, lazy } from 'react';
 import { MapBoundary } from './MapBoundary';
 import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen, Eye, EyeOff } from 'lucide-react';
 import type { PickedPoint, Place, Trip } from '../types';
@@ -130,10 +130,29 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // tapping a café's heading in the outline still silently turned the filter
   // back on. The map is also still MOUNTED behind both, so "not rendered" was
   // never the reason this was safe — MapView takes `visible` for that.
+  // Keyed on the id, not the place object. Filing the OPEN place inside a stop
+  // from the sheet's "Part of" picker makes it an anchored location while it is
+  // still selected — and an effect watching the object then read that as
+  // "a hidden place was opened" and switched the filter back on, undoing the
+  // user's hide from a sheet they were using for something else entirely.
+  // Revealing is for the moment a hidden place is REACHED, which is a change
+  // of selection.
+  const revealedFor = useRef<string | null>(null);
   useEffect(() => {
+    if (!selectedPlaceId) { revealedFor.current = null; return; }
     if (!mapIsShowing || !selectedPlace) return;
+    if (revealedFor.current === selectedPlaceId) return;
+    revealedFor.current = selectedPlaceId;
     if (isAnchoredLocation(selectedPlace) && !showLocations) setShowLocations(true);
-  }, [mapIsShowing, selectedPlace, showLocations]);
+  }, [mapIsShowing, selectedPlaceId, selectedPlace, showLocations]);
+
+  // Nothing left to hide means nothing left to un-hide, and the control that
+  // would do it has just unmounted. Without this the flag survived — delete the
+  // last café while locations are hidden, add another, and it is invisible
+  // behind a pill that reappears reading "1 hidden".
+  useEffect(() => {
+    if (hiddenLocationCount === 0 && !showLocations) setShowLocations(true);
+  }, [hiddenLocationCount, showLocations]);
 
   useEscapeClose(() => setShowSearch(false));
 
@@ -144,6 +163,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     name: string; address?: string; latitude: number;
     longitude: number; google_place_id?: string; image_url?: string; notes?: string;
     types?: string[];
+    spanKm?: number;
   }) => {
     setShowSearch(false);
     const newPlace = await addPlace(placeData);

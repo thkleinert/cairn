@@ -1,4 +1,5 @@
 import type { NearbyPlace, PointLookup } from '../types';
+import { spanFromViewport } from './anchor';
 
 // "What's here?" for an arbitrary map point: the street address at that spot
 // plus the POIs immediately around it.
@@ -137,6 +138,9 @@ function nearbySearch(point: { lat: number; lng: number }): Promise<NearbyPlace[
               // a café picked off the map used to arrive as a stop of its own
               // while the same café from the search field nested correctly.
               types: r.types,
+              // Documented as getDetails-only, so usually absent here; read
+              // when present rather than assumed missing.
+              spanKm: spanFromViewport(r.geometry?.viewport),
             }];
           });
           mapped.sort((a, b) => a.distance - b.distance);
