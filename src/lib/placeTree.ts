@@ -175,3 +175,33 @@ export function resolveDrop(
 
   return { parentId: currentParent, changed: false };
 }
+
+/**
+ * Is this location still sitting with its own stop after a move?
+ *
+ * A location belongs to the contiguous run right after its parent. Dragging it
+ * vertically out of that run — above its stop, or down past the next one —
+ * cannot mean anything, because nesting is decided by the sideways gesture and
+ * groupPlaces re-derives every child under its parent regardless of position.
+ * The row therefore springs straight back on the next render.
+ *
+ * Left unchecked that spring-back was not free: the order still differed from
+ * what was stored, so it wrote a reorder RPC and broadcast it to every
+ * collaborator, and the positions it stored interleaved one stop's children
+ * with another's. A move that cannot survive a render should not be written.
+ *
+ * The rule is local: the row before it is either its parent or a sibling.
+ */
+export function locationStaysWithParent(
+  fullOrderIds: string[],
+  placeId: string,
+  places: Place[],
+): boolean {
+  const byId = new Map(places.map(p => [p.id, p]));
+  const parentId = byId.get(placeId)?.parent_place_id;
+  if (!parentId) return true;
+  const at = fullOrderIds.indexOf(placeId);
+  if (at <= 0) return false;
+  const before = byId.get(fullOrderIds[at - 1]);
+  return before?.id === parentId || before?.parent_place_id === parentId;
+}

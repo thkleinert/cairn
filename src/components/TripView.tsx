@@ -108,6 +108,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     activeTags.length === 0 || (p.tags ?? []).some(t => activeTags.includes(t.id));
   const hiddenLocationCount = places.filter(p => isAnchoredLocation(p) && passesTagFilter(p)).length;
   const isOwner = trip.owner_id === userId;
+  // The map is mounted behind the list view and the outliner, so being the
+  // current view is necessary but not sufficient for being the thing on screen.
+  const mapIsShowing = viewMode === 'map' && !showNotes;
 
   // Re-open the deep-linked place whenever a new jump target arrives (nonce
   // changes even if the id repeats), without fighting a manual close.
@@ -121,15 +124,16 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
   // rather than flying to a coordinate with no marker on it and leaving the
   // map parked on empty ground when the sheet closes.
   //
-  // Only while the map is the view being looked at. Opening a café from the
-  // list or the outliner flies nothing anywhere — the map is not even
-  // rendered — so undoing the filter there just silently discarded a choice
-  // the user made, and anyone who works from the list had to re-hide
-  // locations after every place they opened.
+  // Only while the map is the surface being looked at, which is not the same
+  // as viewMode being 'map': the outliner is a full-screen layer that leaves
+  // viewMode alone, so gating on that name only excluded the list view and
+  // tapping a café's heading in the outline still silently turned the filter
+  // back on. The map is also still MOUNTED behind both, so "not rendered" was
+  // never the reason this was safe — MapView takes `visible` for that.
   useEffect(() => {
-    if (viewMode !== 'map' || !selectedPlace) return;
+    if (!mapIsShowing || !selectedPlace) return;
     if (isAnchoredLocation(selectedPlace) && !showLocations) setShowLocations(true);
-  }, [viewMode, selectedPlace, showLocations]);
+  }, [mapIsShowing, selectedPlace, showLocations]);
 
   useEscapeClose(() => setShowSearch(false));
 
@@ -234,6 +238,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           <div style={{ display: viewMode === 'map' ? 'contents' : 'none' }}>
             <MapBoundary>
               <MapView
+                visible={mapIsShowing}
                 places={mapPlaces}
                 selectedPlace={selectedPlace}
                 activeTags={activeTags}
@@ -245,12 +250,14 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             </MapBoundary>
           </div>
         )}
-        {/* Offered on exactly the condition the filter acts on, not the looser
-            "has any location". A stop deleted while its cafés were being
-            released can leave locations with no parent, and those are not
-            hidden by anything — gating on `kind === 'location'` alone drew a
-            button that hid nothing and then labelled itself "0 hidden". */}
-        {viewMode === 'map' && places.some(isAnchoredLocation) && (
+        {/* Offered on exactly what it would hide — the same count it reports.
+            Two looser gates both drew a button that hid nothing and then
+            labelled itself "0 hidden": `places.some(p => p.kind ===
+            'location')` counted orphans the filter does not touch, and
+            `places.some(isAnchoredLocation)` ignored the tag filter, so a
+            trip whose cafés were all filtered out still offered to hide
+            them. */}
+        {mapIsShowing && hiddenLocationCount > 0 && (
           <button
             className={`map-locations-toggle ${showLocations ? '' : 'map-locations-toggle--off'}`}
             onClick={() => setShowLocations(v => !v)}

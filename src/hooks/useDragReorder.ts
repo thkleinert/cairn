@@ -1,4 +1,13 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+
+/** Move one element, returning a new array. Shared so a previewed drop and the
+ *  real one cannot drift apart. */
+function moveWithin<T>(items: T[], from: number, to: number): T[] {
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
 
 interface Options<T> {
   items: T[];
@@ -168,9 +177,7 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
       // down, so the commit can't be skipped on index alone any more.
       const movedSideways = trackSideways && Math.abs(droppedDx) > 0;
       if (finalIndex !== info.startIndex || movedSideways) {
-        const next = [...order];
-        const [moved] = next.splice(info.startIndex, 1);
-        next.splice(finalIndex, 0, moved);
+        const next = moveWithin(order, info.startIndex, finalIndex);
         setOrder(next);
         onReorder(next.map(getId), droppedDx);
       }
@@ -210,5 +217,20 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
     return 0;
   }, [dragId, overIndex, order, getId]);
 
-  return { order, dragId, dragLevel, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
+  // The order a drop RIGHT NOW would produce. commit builds its array with the
+  // same helper from the same two indices, so a caller previewing the drop is
+  // reading exactly what the drop will act on.
+  //
+  // Without this a preview had to guess from `order`, which does not move
+  // during a drag — only `overIndex` does. Any drag with both a vertical and a
+  // sideways component then previewed against the row's ORIGINAL neighbours:
+  // dragging the top row down and right showed no nest and then nested, and
+  // dragging the bottom row up and right showed a nest and then did nothing.
+  const projectedOrder = useMemo(() => {
+    const info = dragInfo.current;
+    if (dragId === null || overIndex === null || !info) return order;
+    return moveWithin(order, info.startIndex, overIndex);
+  }, [dragId, overIndex, order]);
+
+  return { order, projectedOrder, dragId, dragLevel, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx };
 }

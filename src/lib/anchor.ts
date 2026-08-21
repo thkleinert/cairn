@@ -35,9 +35,15 @@ const BROAD_TYPES = new Set([
   'administrative_area_level_5',
   'country', 'continent', 'colloquial_area', 'postal_town', 'political',
   // Things you go to and move around inside, which this app calls stops even
-  // though Google files them as establishments: an island, a lake, a massif,
-  // a national park.
-  'natural_feature', 'archipelago', 'park',
+  // though Google files them as establishments: an island, a lake, a massif.
+  //
+  // 'park' is deliberately NOT here. Google types a national park and a
+  // four-acre midtown square identically, so it cannot separate them — and
+  // treating both as broad made Bryant Park a stop of its own beside New York.
+  // Left out, a park anchors only when a marked stop is actually within
+  // ANCHOR_MAX_KM, which is the question that does distinguish them: a city
+  // park has its city nearby, and Khao Sok has nothing within 90km.
+  'natural_feature', 'archipelago',
 ]);
 
 export function specificFromTypes(types: string[] | undefined): boolean | null {
@@ -67,14 +73,31 @@ export function specificFromTypes(types: string[] | undefined): boolean | null {
  *     Ko Lanta, Ko Lanta District, Krabi 81150, Thailand    — an island
  *
  * All four are real rows in a real trip, and the first two sit close enough to
- * a marked stop to have been silently filed inside one. The old rule also
- * counted commas — three or more parts meant a venue — which by itself made a
- * venue of "Cambridge, MA, USA" and of every city Google writes with a region.
- * Both tests are gone; what remains is a house number in the name part.
+ * a marked stop to have been silently filed inside one. An older rule counted
+ * commas — three or more parts meant a venue — which by itself made a venue of
+ * "Cambridge, MA, USA" and of every city Google writes with a region.
+ *
+ * Two tests, because one is not enough. A leading group of digits is ambiguous
+ * on its own: "73480 Bessans" is a town wearing a postcode and "1600
+ * Amphitheatre Pkwy" is a front door, and they are the same shape. What
+ * separates them is the street suffix, so it is checked before the digits are
+ * stripped. Measured over the 24 real rows plus a spread of North American,
+ * Irish and Italian addresses: 15 of 16, and the miss ("Piazza del Duomo") is a
+ * venue that fails to anchor rather than a town that wrongly does.
  */
+const STREET_SUFFIX =
+  /(^|[\s.])(st|street|rd|road|ave|avenue|blvd|boulevard|ln|lane|dr|drive|way|ct|court|pl|place|pkwy|parkway|hwy|highway|sq|square|ter|terrace|cres|crescent)\.?$/i;
+
 export function looksSpecific(address: string | null | undefined): boolean {
   if (!address) return false;
-  const head = address.split(',')[0] ?? '';
+  const head = (address.split(',')[0] ?? '').trim();
+  // Anglophone addresses name the street type, and a town never does. This
+  // catches "1600 Amphitheatre Pkwy" — whose house number the postcode strip
+  // below would otherwise eat, since a 4-digit street number and a 4-digit
+  // postcode are indistinguishable by shape. 4- and 5-digit street numbers are
+  // ordinary across North America, so without this a whole continent's venues
+  // read as settlements.
+  if (STREET_SUFFIX.test(head)) return true;
   // A leading postcode is how a town writes itself in much of Europe —
   // "6060 Hall in Tirol" — and it is the whole address, not a number within
   // one. Dropping it is what separates that from "Salvatorstraße 37-33",

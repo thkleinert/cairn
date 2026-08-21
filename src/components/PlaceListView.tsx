@@ -2,7 +2,7 @@ import { useRef, useMemo } from 'react';
 import { CheckCircle, Circle, MapPin, GripVertical, Plus, Minus } from 'lucide-react';
 import type { Place, Tag } from '../types';
 import { useDragReorder } from '../hooks/useDragReorder';
-import { flattenPlaces, resolveDrop, withHiddenChildren, INDENT_PX } from '../lib/placeTree';
+import { flattenPlaces, resolveDrop, withHiddenChildren, locationStaysWithParent, INDENT_PX } from '../lib/placeTree';
 
 interface Props {
   places: Place[];
@@ -66,7 +66,7 @@ export function PlaceListView({
   );
 
   const {
-    order, dragId, dragLevel, suppressTransition,
+    order, projectedOrder, dragId, dragLevel, suppressTransition,
     handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx,
   } = useDragReorder({
     items: rowPlaces,
@@ -91,17 +91,28 @@ export function PlaceListView({
       // then jumping again when the write returned.
       //
       // Nothing is lost by not sequencing them: one writes `position` and the
-      // other writes `parent_place_id`, so the two cannot disagree and neither
-      // refetch can undo the other.
+      // other writes `parent_place_id`, so the two cannot disagree about a
+      // field. They can still interleave — reorderPlaces' realtime event can
+      // trigger a refetch that lands between setPlaceParent's optimistic
+      // update and its own write, briefly showing the old nesting — but that
+      // resolves itself the moment the update's response arrives, which is a
+      // flicker rather than the guaranteed round-trip-long wrong order that
+      // awaiting the re-nest first produced on every single drop.
       //
       // A purely sideways drag leaves the order untouched, and writing an
       // unchanged order is a round trip whose refetch can only undo what just
       // happened.
       const full = withHiddenChildren(orderedIds, places);
       const before = places.map(p => p.id);
-      if (full.length !== before.length || full.some((id, i) => id !== before[i])) {
-        onReorder(full);
-      }
+      const orderChanged =
+        full.length !== before.length || full.some((id, i) => id !== before[i]);
+      // A location dragged out of its own stop's run, without the sideways
+      // travel that would re-nest it, is a move the next render undoes. Writing
+      // it anyway cost a round trip, a broadcast to every collaborator, and a
+      // stored order with one stop's children interleaved into another's.
+      const keepsItsSlot = drop.changed || !dragId ||
+        locationStaysWithParent(full, dragId, places);
+      if (orderChanged && keepsItsSlot) onReorder(full);
 
       if (drop.changed && dragId) {
         void onSetParent(dragId, drop.parentId);
@@ -131,9 +142,9 @@ export function PlaceListView({
   // on release — no movement, no toast, no reason given.
   const previewDrop = useMemo(
     () => (dragId && dragLevel !== 0
-      ? resolveDrop(order.map(p => p.id), dragId, dragLevel * INDENT_PX, places)
+      ? resolveDrop(projectedOrder.map(p => p.id), dragId, dragLevel * INDENT_PX, places)
       : null),
-    [dragId, dragLevel, order, places],
+    [dragId, dragLevel, projectedOrder, places],
   );
 
   const filtered = canReorder
