@@ -13,10 +13,23 @@ import { useRef, useState, useCallback } from 'react';
 
 /** Horizontal travel before we decide this is a swipe and not a scroll. */
 const ENGAGE_PX = 12;
-/** Fraction of the row that must be crossed for release to delete. */
-const COMMIT_FRACTION = 0.35;
-/** …but never more than this, so a wide tablet row doesn't need a heroic swipe. */
-const COMMIT_MAX_PX = 140;
+/**
+ * Fraction of the row that must be crossed for release to delete.
+ *
+ * Was 0.35 with a 140px cap, which on a 358px bullet meant travelling 125px —
+ * more than a third of the row — before letting go did anything. A screen
+ * recording showed swipe after swipe of 30 to 80px springing back, and the
+ * gesture reading as broken rather than as unfinished. A bullet is a small
+ * thing to throw away and does not need a heroic swipe to do it; the undo
+ * toast is what makes a short threshold safe.
+ *
+ * A fifth of the row — about 72px on a phone — is comfortably inside an
+ * ordinary thumb flick, and still far enough past ENGAGE_PX that a hesitant
+ * scroll cannot reach it by accident.
+ */
+const COMMIT_FRACTION = 0.2;
+/** …but never more than this, so a wide tablet row doesn't need a long haul. */
+const COMMIT_MAX_PX = 80;
 
 interface Options {
   /**
@@ -55,6 +68,20 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
     start.current = null;
     engaged.current = false;
   }, []);
+
+  /**
+   * Give up this gesture — the bullet drag won it.
+   *
+   * Both gestures start leftward on the same row, and the bullet dot sits
+   * exactly where a thumb begins a left swipe, so direction cannot tell them
+   * apart. The drag claims after a short hold; when it does, whatever this had
+   * armed has to be let go of, or the row would slide and re-nest at once.
+   */
+  const cancel = useCallback(() => {
+    reset();
+    setOffset(0);
+    setSettling(false);
+  }, [reset]);
 
   const commitThreshold = useCallback((el: HTMLElement | null) => {
     const width = el?.getBoundingClientRect().width ?? 0;
@@ -129,6 +156,7 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
   }, [reset]);
 
   return {
+    cancel,
     offset,
     /**
      * True once the swipe is far enough that releasing really would delete.

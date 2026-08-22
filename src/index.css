@@ -1785,20 +1785,15 @@ select.input {
 .toast-stack {
   position: fixed;
   left: 0; right: 0;
-  /* Above the keyboard when one is up, using the same inset .note-toolbar is
-     pinned to — on iOS the layout viewport does not shrink for the keyboard,
-     so a toast placed from the bottom edge alone sits underneath it. That hid
-     the only signal that a bullet being typed had failed to save. The 52px
-     clears the edit toolbar itself; with no keyboard the inset is 0 and this
-     falls back to where it always sat. */
+  /* Above the keyboard when one is up: on iOS the layout viewport does not
+     shrink for the keyboard, so a toast placed from the bottom edge alone sits
+     underneath it — which hid the only signal that a bullet being typed had
+     failed to save. With no keyboard the inset is 0 and this falls back to
+     where it always sat. */
   bottom: calc(env(safe-area-inset-bottom) + 92px + var(--keyboard-inset, 0px));
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   z-index: 100;
   pointer-events: none;
-}
-/* Clear of the edit toolbar when that is up too. */
-body:has(.note-toolbar) .toast-stack {
-  bottom: calc(env(safe-area-inset-bottom) + 52px + var(--keyboard-inset, 0px));
 }
 .toast {
   display: flex; align-items: center; gap: 8px;
@@ -2015,6 +2010,23 @@ body:has(.note-toolbar) .toast-stack {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* This column must never move sideways, and both halves of that are needed.
+     `overflow-y: auto` alone makes overflow-x compute to `auto` too, so
+     anything a pixel too wide turns the page into a horizontal scroller — and
+     then a left swipe pans the page instead of swiping the row, which is
+     exactly what a screen recording showed: the content sliding left under a
+     horizontal scrollbar while swipe-to-delete never got the gesture at all.
+     touch-action says the same thing to the browser before any pixel is
+     measured, so the swipe is handed to us even if something does overflow.
+
+     Safe to clip here, unlike the places list: the swipe deliberately carries
+     the row off the left edge, and the bullet drag moves rows vertically with
+     a padding-based indent, so nothing needs to escape sideways. */
+  overflow-x: hidden;
+  /* pinch-zoom is spelled out because `pan-y` alone excludes it, which would
+     stop anyone magnifying their own notes. Only the horizontal pan needs
+     forbidding. */
+  touch-action: pan-y pinch-zoom;
   -webkit-overflow-scrolling: touch;
   padding: 16px 20px calc(32px + env(safe-area-inset-bottom)) 12px;
 }
@@ -2088,27 +2100,40 @@ textarea.mention-input {
   transition: transform 0.18s var(--glide);
   background: var(--color-surface);
 }
+/* Picked up. Deliberately unmistakable: the hold that claims this gesture also
+   cancels a swipe that was about to happen, so when the drag wins there has to
+   be no doubt about it — otherwise a swipe-to-delete that got taken over just
+   looks like the row twitching and doing nothing. The lift is the moment to
+   let go and try again if this is not what you meant. */
 .note-bullet--dragging {
   z-index: 2;
   box-shadow: var(--shadow-sheet);
+  background: var(--color-surface);
+  /* NOT a transform, and not an animation on one: the hook writes transform
+     inline every frame to track the finger, and a CSS animation would win the
+     cascade over that and freeze the block in place. The cue has to live on
+     properties the drag does not touch. */
+  outline: 1.5px solid var(--color-primary);
+  outline-offset: -1.5px;
+  border-radius: var(--radius-sm);
+}
+/* Every row of the block being carried, not just its root: a subtree travels
+   whole, so it has to read as one object rather than a row with debris
+   following it. */
+.note-bullet--dragging .note-bullet-dot::before {
+  background: var(--color-text);
 }
 /* Clip the sliding layer only while it is actually moving. Permanent overflow
    hidden would crop the @-mention popup, which has to escape the row. */
 .note-bullet--swiping { overflow: hidden; }
 
-/* The guide line down a nested group, drawn on the row rather than as a
-   container because the list is flat — there is no element wrapping a
-   subtree to hang a border on. Sits in the parent's gutter, one indent step
-   to the left of this row's own dot. */
-.note-bullet--nested::before {
-  content: '';
-  position: absolute;
-  left: calc(-1 * var(--note-indent) + var(--note-gutter) / 2);
-  top: 0; bottom: 0;
-  width: 1.5px;
-  background: var(--color-border);
-  border-radius: 1px;
-}
+/* No nesting rail, deliberately. One was drawn in the parent's gutter for
+   nested rows — but that gutter only exists BECAUSE a row is indented, so
+   top-level bullets could never have one, and the outline showed a rail at
+   every level except the first. Making it consistent the other way meant
+   insetting the whole list by one step so depth 0 had somewhere to draw,
+   which pushes every bullet on the page right for a line that says what the
+   indent already says. The indent is the level; it does not need underlining. */
 
 /* Everything that visually *is* the row. Separate from the <li> so a swipe
    translates the content while the delete backing beneath stays put. */
@@ -2132,15 +2157,24 @@ textarea.mention-input {
   display: flex; align-items: center; justify-content: flex-end;
   padding-right: 18px;
   border-radius: var(--radius-sm);
+  /* Neutral until it will actually fire. This was danger red from the first
+     pixel of travel, separated from the armed state by opacity alone — 0.55
+     against 1.0, which on a dark screen is very nearly no difference at all.
+     So the row showed a red panel with a trash icon the instant it moved,
+     while letting go still did nothing, and the gesture read as broken rather
+     than as unfinished. Colour carries the state now; opacity only fades it
+     in. */
+  background: var(--color-border);
+  color: var(--color-muted);
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+.note-bullet--swiping .note-bullet-trail { opacity: 1; }
+/* Armed: letting go from here really does delete. */
+.note-bullet--swiping .note-bullet-trail--armed {
   background: var(--color-danger, #ef4444);
   color: #fff;
-  opacity: 0;
-  transition: opacity 0.12s;
 }
-.note-bullet--swiping .note-bullet-trail { opacity: 0.55; }
-/* Full strength once the swipe is far enough that letting go would delete —
-   the gesture says what it is about to do before it does it. */
-.note-bullet--swiping .note-bullet-trail--armed { opacity: 1; }
 
 /* Occupies the full gutter and centres a 5px dot inside it, rather than being
    a 5px box nudged into place with margins. */
@@ -2159,7 +2193,12 @@ textarea.mention-input {
 }
 /* The dot doubles as the drag handle, so it needs the grab affordance and has
    to keep the browser from treating the press as the start of a scroll. */
-.note-bullet-dot--draggable { cursor: grab; touch-action: none; }
+.note-bullet-dot--draggable {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
 .note-bullet-dot--draggable:active { cursor: grabbing; }
 .note-bullet-dot--draggable:active::before {
   background: var(--color-text);
@@ -2170,6 +2209,14 @@ textarea.mention-input {
 
 .note-bullet-body {
   flex: 1; min-width: 0;
+  /* Not selectable, and no callout. Holding a bullet is how you pick it up to
+     move it, and iOS answers a long press on text by raising the magnifier and
+     marking a word — so the gesture that reorders the outline was also
+     selecting the thing it was about to move. Nothing is lost: this is the
+     RENDERED text, and tapping it opens the editor, where selection works
+     normally and is where anyone copying a note would be anyway. */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
   /* Matches textarea.mention-input's padding and size so a bullet neither
      shifts sideways nor resizes when you tap it to edit. */
   padding: 4px 4px;
@@ -2210,42 +2257,6 @@ textarea.mention-input {
   width: 9px; height: 9px;
 }
 
-/* Sits on top of the keyboard while a bullet is focused. --keyboard-inset is
-   0 when no keyboard is up (and on Android, which resizes the viewport
-   itself), so the bar simply rests on the bottom edge there. */
-.note-toolbar {
-  position: fixed;
-  left: 0; right: 0;
-  bottom: var(--keyboard-inset, 0px);
-  z-index: 70;
-  display: flex; align-items: center;
-  gap: 4px;
-  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
-  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
-  animation: noteToolbarIn 0.16s ease-out;
-}
-/* With the keyboard up there is no safe-area gap to clear — the keyboard
-   already covers it, and padding for it leaves a bar of dead space. */
-@supports (bottom: env(safe-area-inset-bottom)) {
-  .note-toolbar { padding-bottom: max(6px, calc(6px + env(safe-area-inset-bottom) - var(--keyboard-inset, 0px))); }
-}
-
-@keyframes noteToolbarIn { from { transform: translateY(100%); } }
-
-.note-toolbar-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: 44px; height: 40px;
-  border-radius: var(--radius-sm);
-  color: var(--color-text);
-  transition: background 0.12s, opacity 0.12s;
-}
-.note-toolbar-btn:active { background: var(--color-bg); }
-.note-toolbar-btn:disabled { opacity: 0.3; }
-/* Pushed to the far end: it ends the interaction, the others act within it.
-   No accent colour — the bar is uniformly monochrome, delete included. */
-.note-toolbar-done { margin-left: auto; }
 
 
 

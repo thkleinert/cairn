@@ -19,7 +19,7 @@ export function useTripNotes(tripId: string | undefined) {
   // addNote reorders after a mid-list insert, but reorderNotes is defined
   // below it. A ref breaks that cycle without reshuffling the file into
   // dependency order.
-  const reorderRef = useRef<((ids: string[]) => Promise<void>) | null>(null);
+  const reorderRef = useRef<((ids: string[]) => Promise<boolean>) | null>(null);
   // The current notes, for reading AFTER an await. A closure captures them as
   // they were when the callback was made, which is a different list once a
   // round trip has happened.
@@ -243,8 +243,8 @@ export function useTripNotes(tripId: string | undefined) {
     return data as TripNote;
   }, [fetchNotes, removeNote]);
 
-  const reorderNotes = useCallback(async (orderedIds: string[]) => {
-    if (!tripId) return;
+  const reorderNotes = useCallback(async (orderedIds: string[]): Promise<boolean> => {
+    if (!tripId) return false;
     // Apply immediately, then write the whole order atomically — per-row
     // updates could partially fail and leave three different orders around.
     setNotes(prev => applyOrder(prev, orderedIds));
@@ -252,7 +252,12 @@ export function useTripNotes(tripId: string | undefined) {
       p_trip_id: tripId,
       p_note_ids: orderedIds,
     });
-    if (error) { toast('Could not save the new order'); fetchNotes(); }
+    // Reported, not just toasted: a caller that follows this with a second
+    // structural write — the bullet drag writes order then depth — has to be
+    // able to stop. Writing the new depths against the old order leaves a
+    // bullet stored as a child of whatever happens to precede it.
+    if (error) { toast('Could not save the new order'); fetchNotes(); return false; }
+    return true;
   }, [tripId, fetchNotes]);
 
   reorderRef.current = reorderNotes;

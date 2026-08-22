@@ -26,7 +26,7 @@ interface Props {
   onRemove: (id: string) => Promise<boolean | void> | boolean | void;
   onRestore: (note: TripNote) => Promise<boolean | void> | boolean | void;
   onSetDepths: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
-  onReorder: (orderedIds: string[]) => void;
+  onReorder: (orderedIds: string[]) => void | boolean | Promise<void | boolean>;
   onSelectPlace: (placeId: string) => void;
   /** Fold state, owned by the trip so it survives the page closing and reopening. */
   isCollapsed: (id: string) => boolean;

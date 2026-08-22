@@ -208,3 +208,105 @@ export function promotionsAfterDelete(
     .slice(1)
     .map(n => ({ id: n.id, depth: Math.max(0, n.depth - 1) }));
 }
+
+/**
+ * The deepest a bullet may sit if it lands at `targetIndex`, given that its own
+ * subtree has already been lifted out of the list.
+ *
+ * One level past the bullet above it, and no further — the same rule canIndent
+ * enforces, expressed for a position rather than a move. At the very top there
+ * is nothing above, so the only legal depth is 0.
+ *
+ * `rest` must be the list WITHOUT the block being dragged. Passing the full
+ * list would measure the dragged bullet against itself as it slid past its own
+ * old position, and the ceiling would jump around under the finger.
+ */
+export function maxDepthAt(rest: { depth: number }[], targetIndex: number): number {
+  const above = rest[targetIndex - 1];
+  if (!above) return 0;
+  return Math.min(above.depth + 1, MAX_DEPTH);
+}
+
+/**
+ * Move a subtree to an arbitrary position and depth — the drop half of a
+ * Notion-style drag.
+ *
+ * moveSubtree above only steps one sibling at a time, which is all the arrow
+ * buttons ever needed. A drag can land anywhere, so this takes a target index
+ * and a target depth and returns the whole new order with the depths each
+ * bullet should end up at.
+ *
+ * The depth is clamped rather than refused. A finger is not a precise
+ * instrument, and the alternative — rejecting the drop because the thumb
+ * drifted one level too deep — throws away a gesture the user clearly meant.
+ * Descendants shift by whatever delta the root ended up with, so the subtree's
+ * internal shape survives the move.
+ *
+ * Returns null when the move is a no-op, so callers can skip the write.
+ */
+export function dropSubtree<T extends { id: string; depth: number }>(
+  items: T[], index: number, targetIndex: number, wantDepth: number,
+): { id: string; depth: number }[] | null {
+  if (index < 0 || index >= items.length) return null;
+  const end = subtreeEnd(items, index);
+  const moving = items.slice(index, end);
+  const rest = [...items.slice(0, index), ...items.slice(end)];
+
+  // targetIndex is expressed against `rest`, which is what the caller sees
+  // while the block is out of the flow.
+  const at = Math.max(0, Math.min(targetIndex, rest.length));
+  const depth = Math.max(0, Math.min(wantDepth, maxDepthAt(rest, at)));
+  const delta = depth - moving[0].depth;
+
+  const landed = moving.map(n => ({ id: n.id, depth: Math.max(0, n.depth + delta) }));
+  const next = [...rest.slice(0, at), ...landed, ...rest.slice(at)];
+
+  const before = items.map(i => i.id + ':' + i.depth).join(',');
+  const after = next.map(i => i.id + ':' + i.depth).join(',');
+  if (before === after) return null;
+
+  // normaliseDepths is the final word: clamping the root against its new
+  // neighbour cannot know what the descendants' relative depths do further
+  // down, and a subtree dragged from depth 3 to depth 0 can leave a gap.
+  return normaliseDepths(next).map(i => ({ id: i.id, depth: i.depth }));
+}
+
+/**
+ * Translate a drop expressed in VISIBLE rows into one expressed in the outline.
+ *
+ * The drag measures what is on screen, because that is what the finger is over.
+ * The outline it edits includes bullets hidden under folds. The two lists stop
+ * agreeing the moment anything is folded, so a target index cannot simply be
+ * handed from one to the other.
+ *
+ * The bridge is an id, not a number: whichever visible row the block came to
+ * rest above is looked up in the outline, and the block goes where that row is.
+ * Landing "before the next visible row" is also what makes a folded bullet
+ * behave — its children are off screen, so there is no way to express dropping
+ * between them, which is the right answer rather than a missing feature.
+ *
+ * The bullet is named by id rather than by the index it had when the drag
+ * started: a refetch mid-drag renumbers everything, and a stale index then
+ * points at whichever bullet has since taken that slot.
+ *
+ * Returns indices for dropSubtree: `index` into `items`, `targetIndex` into
+ * `items` with the moving block removed.
+ */
+export function structuralDrop(
+  items: { id: string; depth: number }[],
+  visible: { id: string }[],
+  rootId: string,
+  visibleTarget: number,
+): { index: number; targetIndex: number } | null {
+  const index = items.findIndex(n => n.id === rootId);
+  if (index < 0) return null;
+
+  const moving = new Set(items.slice(index, subtreeEnd(items, index)).map(n => n.id));
+  const visibleRest = visible.filter(n => !moving.has(n.id));
+  const itemsRest = items.filter(n => !moving.has(n.id));
+
+  const anchorId = visibleRest[visibleTarget]?.id;
+  if (anchorId === undefined) return { index, targetIndex: itemsRest.length };
+  const targetIndex = itemsRest.findIndex(n => n.id === anchorId);
+  return { index, targetIndex: targetIndex < 0 ? itemsRest.length : targetIndex };
+}
