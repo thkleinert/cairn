@@ -2083,9 +2083,22 @@ textarea.mention-input {
   transition: transform 0.18s var(--glide);
   background: var(--color-surface);
 }
+/* Picked up. Deliberately unmistakable: the hold that claims this gesture also
+   cancels a swipe that was about to happen, so when the drag wins there has to
+   be no doubt about it — otherwise a swipe-to-delete that got taken over just
+   looks like the row twitching and doing nothing. The lift is the moment to
+   let go and try again if this is not what you meant. */
 .note-bullet--dragging {
   z-index: 2;
   box-shadow: var(--shadow-sheet);
+  background: var(--color-surface);
+  /* NOT a transform, and not an animation on one: the hook writes transform
+     inline every frame to track the finger, and a CSS animation would win the
+     cascade over that and freeze the block in place. The cue has to live on
+     properties the drag does not touch. */
+  outline: 1.5px solid var(--color-primary);
+  outline-offset: -1.5px;
+  border-radius: var(--radius-sm);
 }
 /* Every row of the block being carried, not just its root: a subtree travels
    whole, so it has to read as one object rather than a row with debris

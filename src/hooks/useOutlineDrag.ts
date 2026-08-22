@@ -6,12 +6,22 @@ import { maxDepthAt } from '../lib/outline';
  *
  * The bullet dot sits exactly where a thumb starts a leftward swipe, and both
  * gestures ARE leftward — de-indent and delete — so no amount of direction
- * sniffing separates them. A hold is what every mobile outliner uses, and at
- * this length it still reads as immediate: long enough that a flick past the
- * dot goes to the swipe, short enough that picking a bullet up does not feel
- * like waiting.
+ * sniffing separates them. A hold is what every mobile outliner uses.
+ *
+ * This was 180ms and that was far too short, in a way only a screen recording
+ * showed: a swipe is not a movement, it is a touch, a beat, and THEN a
+ * movement. The beat routinely runs past 180ms, so the hold fired while the
+ * finger was still stationary, the drag claimed, and it cancelled the swipe
+ * that was about to happen — the row slid a few pixels, snapped back, and
+ * nothing was deleted or moved. The de-indent it had switched to was clamped
+ * away to nothing on a bullet already at depth 0, so the gesture had no
+ * outcome at all.
+ *
+ * 450ms is roughly what iOS itself uses to lift something, and it sits well
+ * past the pause at the start of a swipe. It only costs time when picking a
+ * bullet UP; the drag itself is unchanged once it has begun.
  */
-const HOLD_MS = 180;
+const HOLD_MS = 450;
 /**
  * Movement before the hold completes means a swipe, not a pick-up.
  *
