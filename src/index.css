@@ -2140,15 +2140,24 @@ textarea.mention-input {
   display: flex; align-items: center; justify-content: flex-end;
   padding-right: 18px;
   border-radius: var(--radius-sm);
+  /* Neutral until it will actually fire. This was danger red from the first
+     pixel of travel, separated from the armed state by opacity alone — 0.55
+     against 1.0, which on a dark screen is very nearly no difference at all.
+     So the row showed a red panel with a trash icon the instant it moved,
+     while letting go still did nothing, and the gesture read as broken rather
+     than as unfinished. Colour carries the state now; opacity only fades it
+     in. */
+  background: var(--color-border);
+  color: var(--color-muted);
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+.note-bullet--swiping .note-bullet-trail { opacity: 1; }
+/* Armed: letting go from here really does delete. */
+.note-bullet--swiping .note-bullet-trail--armed {
   background: var(--color-danger, #ef4444);
   color: #fff;
-  opacity: 0;
-  transition: opacity 0.12s;
 }
-.note-bullet--swiping .note-bullet-trail { opacity: 0.55; }
-/* Full strength once the swipe is far enough that letting go would delete —
-   the gesture says what it is about to do before it does it. */
-.note-bullet--swiping .note-bullet-trail--armed { opacity: 1; }
 
 /* Occupies the full gutter and centres a 5px dot inside it, rather than being
    a 5px box nudged into place with margins. */
