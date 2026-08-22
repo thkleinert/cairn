@@ -2010,6 +2010,20 @@ select.input {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* This column must never move sideways, and both halves of that are needed.
+     `overflow-y: auto` alone makes overflow-x compute to `auto` too, so
+     anything a pixel too wide turns the page into a horizontal scroller — and
+     then a left swipe pans the page instead of swiping the row, which is
+     exactly what a screen recording showed: the content sliding left under a
+     horizontal scrollbar while swipe-to-delete never got the gesture at all.
+     touch-action says the same thing to the browser before any pixel is
+     measured, so the swipe is handed to us even if something does overflow.
+
+     Safe to clip here, unlike the places list: the swipe deliberately carries
+     the row off the left edge, and the bullet drag moves rows vertically with
+     a padding-based indent, so nothing needs to escape sideways. */
+  overflow-x: hidden;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   padding: 16px 20px calc(32px + env(safe-area-inset-bottom)) 12px;
 }
