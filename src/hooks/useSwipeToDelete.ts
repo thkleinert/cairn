@@ -56,6 +56,20 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
     engaged.current = false;
   }, []);
 
+  /**
+   * Give up this gesture — the bullet drag won it.
+   *
+   * Both gestures start leftward on the same row, and the bullet dot sits
+   * exactly where a thumb begins a left swipe, so direction cannot tell them
+   * apart. The drag claims after a short hold; when it does, whatever this had
+   * armed has to be let go of, or the row would slide and re-nest at once.
+   */
+  const cancel = useCallback(() => {
+    reset();
+    setOffset(0);
+    setSettling(false);
+  }, [reset]);
+
   const commitThreshold = useCallback((el: HTMLElement | null) => {
     const width = el?.getBoundingClientRect().width ?? 0;
     return Math.min(width * COMMIT_FRACTION, COMMIT_MAX_PX);
@@ -129,6 +143,7 @@ export function useSwipeToDelete({ onDelete, enabled = true }: Options) {
   }, [reset]);
 
   return {
+    cancel,
     offset,
     /**
      * True once the swipe is far enough that releasing really would delete.

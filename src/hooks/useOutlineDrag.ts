@@ -1,6 +1,27 @@
 import { useState, useRef, useCallback } from 'react';
 import { maxDepthAt } from '../lib/outline';
 
+/**
+ * How long the dot must be held before the drag takes the gesture.
+ *
+ * The bullet dot sits exactly where a thumb starts a leftward swipe, and both
+ * gestures ARE leftward — de-indent and delete — so no amount of direction
+ * sniffing separates them. A hold is what every mobile outliner uses, and at
+ * this length it still reads as immediate: long enough that a flick past the
+ * dot goes to the swipe, short enough that picking a bullet up does not feel
+ * like waiting.
+ */
+const HOLD_MS = 180;
+/**
+ * Movement before the hold completes means a swipe, not a pick-up.
+ *
+ * Deliberately smaller than useSwipeToDelete's ENGAGE_PX of 12: a moving
+ * finger stands this gesture down four pixels before the swipe visibly takes
+ * the row, so the handover happens while nothing has been drawn yet. Raising
+ * this above 12 would put a stutter in every swipe that starts on the dot.
+ */
+const HOLD_SLOP_PX = 8;
+
 interface Options {
   /** The bullets as rendered — already filtered by folds. */
   items: { id: string; depth: number }[];
@@ -56,23 +77,43 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
   // treats a click as "edit this bullet" — so letting go after dragging a
   // bullet out a level opened the keyboard on it, every time.
   const swallowClick = useRef(false);
+  // The press that has not yet become a drag. Held here rather than in state
+  // because nothing renders from it — until the hold completes, the gesture
+  // may still turn out to belong to the swipe.
+  const pending = useRef<{
+    x: number; y: number; index: number; row: HTMLElement;
+    handle: HTMLElement; pointerId: number; cancelSwipe?: () => void;
+  } | null>(null);
+  const holdTimer = useRef<number | null>(null);
 
-  const start = useCallback((index: number, row: HTMLElement, e: React.PointerEvent) => {
-    if (!enabled) return;
-    e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  const clearHold = useCallback(() => {
+    if (holdTimer.current !== null) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+    pending.current = null;
+  }, []);
 
+  /** Actually take the gesture — only ever called by the hold timer. */
+  const claim = useCallback(() => {
+    const p = pending.current;
+    if (!p) return;
+    pending.current = null;
+    // Whatever the swipe had armed on the way in is released here, not at
+    // pointerdown: until this moment the gesture might still have been a swipe.
+    p.cancelSwipe?.();
+    try { p.handle.setPointerCapture(p.pointerId); } catch { /* pointer already gone */ }
+
+    const row = p.row;
     const parent = row.parentElement;
     const all = Array.from(parent?.children ?? []).filter(
       (el): el is HTMLElement => el instanceof HTMLElement && el.tagName === row.tagName,
     );
     const rects = all.map(el => el.getBoundingClientRect());
+    const index = p.index;
     const len = blockLength(index);
     const block = all.slice(index, index + len);
 
     info.current = {
-      startX: e.clientX,
-      startY: e.clientY,
+      startX: p.x,
+      startY: p.y,
       index,
       len,
       startDepth: items[index]?.depth ?? 0,
@@ -90,9 +131,37 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
     setDragId(items[index]?.id ?? null);
     setTarget(index);
     setDepth(items[index]?.depth ?? 0);
-  }, [enabled, items, blockLength]);
+  }, [items, blockLength]);
+
+  /**
+   * Arm the hold. Deliberately does NOT capture the pointer or stop the event:
+   * doing either at this moment is what broke swipe-to-delete, because the
+   * swipe never saw the press that began on the dot and so could never take
+   * the gesture back.
+   */
+  const press = useCallback((
+    index: number, row: HTMLElement, e: React.PointerEvent, cancelSwipe?: () => void,
+  ) => {
+    if (!enabled) return;
+    clearHold();
+    pending.current = {
+      x: e.clientX, y: e.clientY, index, row,
+      handle: e.currentTarget as HTMLElement, pointerId: e.pointerId, cancelSwipe,
+    };
+    holdTimer.current = window.setTimeout(claim, HOLD_MS);
+  }, [enabled, claim, clearHold]);
 
   const move = useCallback((e: React.PointerEvent) => {
+    // Still deciding: movement before the hold completes means the finger is
+    // swiping, not picking a bullet up. Stand down and leave it to the swipe,
+    // which has been tracking the same pointer all along.
+    const p = pending.current;
+    if (p) {
+      if (Math.abs(e.clientX - p.x) > HOLD_SLOP_PX || Math.abs(e.clientY - p.y) > HOLD_SLOP_PX) {
+        clearHold();
+      }
+      return;
+    }
     const i = info.current;
     if (!i || dragId === null) return;
     dy.current = e.clientY - i.startY;
@@ -121,9 +190,12 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
 
     setTarget(prev => (prev === at ? prev : at));
     setDepth(prev => (prev === clamped ? prev : clamped));
-  }, [dragId, items, step]);
+  }, [dragId, items, step, clearHold]);
 
   const end = useCallback(() => {
+    // A press released before the hold fired was a tap, and taps belong to
+    // whatever is under them.
+    if (pending.current) { clearHold(); return; }
     const i = info.current;
     blockEls.current.forEach(el => {
       el.style.transform = '';
@@ -143,7 +215,7 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
     dy.current = 0;
     setDragId(null);
     setTarget(null);
-  }, [dragId, target, depth, onDrop]);
+  }, [dragId, target, depth, onDrop, clearHold]);
 
   /**
    * How far a row shifts to open the gap. Rows inside the block are moved by
@@ -177,7 +249,7 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
 
   return {
     dragId, depth, settling,
-    onPointerDown: start, onPointerMove: move, onPointerUp: end,
+    onPointerDown: press, onPointerMove: move, onPointerUp: end,
     onClickCapture, offsetFor, inBlock,
   };
 }

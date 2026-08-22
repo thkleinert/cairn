@@ -65,7 +65,18 @@ export function MentionTextarea({
   }, [value]);
 
   useEffect(() => {
-    if (autoFocus) ref.current?.focus();
+    if (!autoFocus) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    // Caret at the END, not the start. Opening a bullet by tapping the space
+    // after its text is how you go back to carry on writing, and landing
+    // before the first character means every one of those taps is followed by
+    // a second one to get to where you meant. A browser puts the caret at 0 on
+    // a programmatic focus, which is the wrong default for an editor you enter
+    // by pointing at the thing you want to append to.
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
   }, [autoFocus]);
 
   const mention = findMentionQuery(value, caret);

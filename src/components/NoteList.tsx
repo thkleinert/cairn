@@ -669,8 +669,8 @@ export function NoteList({
         onDelete={() => structural === -1 ? false : deleteNote(note, structural)}
         onSelectPlace={onSelectPlace}
         onGripDown={handlePointerDown}
-        onPointerMove={dragId !== null ? handlePointerMove : undefined}
-        onPointerUp={dragId !== null ? handlePointerUp : undefined}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
         onClickCapture={handleClickCapture}
         renderEditor={renderEditor}
       />
@@ -708,7 +708,7 @@ interface RowProps {
   /** False when the row survived, so the swipe can put it back. */
   onDelete: () => void | boolean | Promise<void | boolean>;
   onSelectPlace?: (placeId: string) => void;
-  onGripDown: (index: number, row: HTMLElement, e: React.PointerEvent) => void;
+  onGripDown: (index: number, row: HTMLElement, e: React.PointerEvent, cancelSwipe?: () => void) => void;
   onPointerMove?: (e: React.PointerEvent) => void;
   onPointerUp?: (e: React.PointerEvent) => void;
   onClickCapture?: (e: React.MouseEvent) => void;
@@ -724,6 +724,7 @@ function NoteRow({
   onClickCapture, renderEditor,
 }: RowProps) {
   const swipe = useSwipeToDelete({ onDelete, enabled: !editing && !dragging });
+  const cancelSwipe = swipe.cancel;
 
   return (
     <li
@@ -753,14 +754,18 @@ function NoteRow({
           aria-hidden="true"
           onPointerDown={canDrag
             ? e => {
-                // Kept from the swipe handlers on .note-bullet-slide, which
-                // this dot sits inside. useSwipeToDelete reads `enabled` only
-                // at pointerdown, and `dragging` is still false at that
-                // instant, so the press that starts a drag also armed the
-                // swipe — dragging the dot left far enough then both reordered
-                // the row and deleted it on release.
-                e.stopPropagation();
-                onGripDown(index, e.currentTarget.parentElement?.parentElement as HTMLElement, e);
+                // NOT stopped, deliberately. The swipe lives on
+                // .note-bullet-slide, which this dot sits inside, and swallowing
+                // the press here meant a left swipe that happened to start on
+                // the dot — which is exactly where a thumb starts one — could
+                // never become a delete. Both gestures now see the press; the
+                // hold decides, and the drag cancels the swipe if it wins.
+                onGripDown(
+                  index,
+                  e.currentTarget.parentElement?.parentElement as HTMLElement,
+                  e,
+                  cancelSwipe,
+                );
               }
             : undefined}
         />
