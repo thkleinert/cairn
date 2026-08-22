@@ -1785,20 +1785,15 @@ select.input {
 .toast-stack {
   position: fixed;
   left: 0; right: 0;
-  /* Above the keyboard when one is up, using the same inset .note-toolbar is
-     pinned to — on iOS the layout viewport does not shrink for the keyboard,
-     so a toast placed from the bottom edge alone sits underneath it. That hid
-     the only signal that a bullet being typed had failed to save. The 52px
-     clears the edit toolbar itself; with no keyboard the inset is 0 and this
-     falls back to where it always sat. */
+  /* Above the keyboard when one is up: on iOS the layout viewport does not
+     shrink for the keyboard, so a toast placed from the bottom edge alone sits
+     underneath it — which hid the only signal that a bullet being typed had
+     failed to save. With no keyboard the inset is 0 and this falls back to
+     where it always sat. */
   bottom: calc(env(safe-area-inset-bottom) + 92px + var(--keyboard-inset, 0px));
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   z-index: 100;
   pointer-events: none;
-}
-/* Clear of the edit toolbar when that is up too. */
-body:has(.note-toolbar) .toast-stack {
-  bottom: calc(env(safe-area-inset-bottom) + 52px + var(--keyboard-inset, 0px));
 }
 .toast {
   display: flex; align-items: center; gap: 8px;
@@ -2092,6 +2087,12 @@ textarea.mention-input {
   z-index: 2;
   box-shadow: var(--shadow-sheet);
 }
+/* Every row of the block being carried, not just its root: a subtree travels
+   whole, so it has to read as one object rather than a row with debris
+   following it. */
+.note-bullet--dragging .note-bullet-dot::before {
+  background: var(--color-text);
+}
 /* Clip the sliding layer only while it is actually moving. Permanent overflow
    hidden would crop the @-mention popup, which has to escape the row. */
 .note-bullet--swiping { overflow: hidden; }
@@ -2210,42 +2211,6 @@ textarea.mention-input {
   width: 9px; height: 9px;
 }
 
-/* Sits on top of the keyboard while a bullet is focused. --keyboard-inset is
-   0 when no keyboard is up (and on Android, which resizes the viewport
-   itself), so the bar simply rests on the bottom edge there. */
-.note-toolbar {
-  position: fixed;
-  left: 0; right: 0;
-  bottom: var(--keyboard-inset, 0px);
-  z-index: 70;
-  display: flex; align-items: center;
-  gap: 4px;
-  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
-  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
-  animation: noteToolbarIn 0.16s ease-out;
-}
-/* With the keyboard up there is no safe-area gap to clear — the keyboard
-   already covers it, and padding for it leaves a bar of dead space. */
-@supports (bottom: env(safe-area-inset-bottom)) {
-  .note-toolbar { padding-bottom: max(6px, calc(6px + env(safe-area-inset-bottom) - var(--keyboard-inset, 0px))); }
-}
-
-@keyframes noteToolbarIn { from { transform: translateY(100%); } }
-
-.note-toolbar-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: 44px; height: 40px;
-  border-radius: var(--radius-sm);
-  color: var(--color-text);
-  transition: background 0.12s, opacity 0.12s;
-}
-.note-toolbar-btn:active { background: var(--color-bg); }
-.note-toolbar-btn:disabled { opacity: 0.3; }
-/* Pushed to the far end: it ends the interaction, the others act within it.
-   No accent colour — the bar is uniformly monochrome, delete included. */
-.note-toolbar-done { margin-left: auto; }
 
 
 

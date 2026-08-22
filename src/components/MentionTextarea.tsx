@@ -20,6 +20,12 @@ interface Props {
    * the key was consumed.
    */
   onBackspaceAtStart?: () => void | Promise<void | boolean>;
+  /**
+   * Tab and Shift+Tab. The edit toolbar used to carry indent and outdent as
+   * buttons; with those gone the gesture is a drag, which a keyboard cannot
+   * perform — so the binding every outliner already uses stands in for it.
+   */
+  onIndent?: (delta: 1 | -1) => void;
   places: Place[];
   placeholder?: string;
   autoFocus?: boolean;
@@ -37,7 +43,7 @@ interface Props {
 // "@". Shared by the add-a-bullet box and inline bullet editing so the two
 // can't drift apart.
 export function MentionTextarea({
-  value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, places,
+  value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, onIndent, places,
   placeholder, autoFocus, className = '', ariaLabel, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -98,6 +104,14 @@ export function MentionTextarea({
         setDismissedFor(value);
         return;
       }
+    }
+    // Tab moves the bullet, it does not move focus. In an outliner that is what
+    // the key means, and there is nowhere useful for focus to go — the next
+    // control is the next bullet's editor, which Enter already reaches.
+    if (e.key === 'Tab' && onIndent) {
+      e.preventDefault();
+      onIndent(e.shiftKey ? -1 : 1);
+      return;
     }
     // Only a bare caret at the very start counts: with a selection, Backspace
     // is deleting that selection, and mid-text it's deleting a character.
