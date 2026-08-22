@@ -171,12 +171,20 @@ side: write a bullet on a place and it appears under that place here.
 It behaves like an outliner, not a form:
 
 - **Enter** starts the next bullet
-- **Tab-style indent and outdent** from a toolbar that sits above the
-  keyboard, with arrows to move a bullet and its children up or down
+- **Hold a bullet's dot** to pick it up — drag to move it, sideways to change
+  its level. Anything nested under it travels too.
 - **Swipe a bullet left** to delete it, with an undo in the toast
 - **Fold** any heading or bullet that has something under it
 - **`@`-mention a place** to link to it; tap the chip to jump there
 - Links render as their site name, so a bullet stays readable
+
+On a hardware keyboard, **Tab** and **Shift+Tab** indent and outdent, and
+**Alt+Arrow** moves a bullet past its sibling.
+
+There is deliberately no editing toolbar. iOS puts its own bar above the
+keyboard for any text field and it cannot be removed from a web page — so a
+toolbar of our own sat stacked underneath it, two bars deep. Everything it did
+is now a gesture or a key.
 
 Folding is remembered on your own device rather than shared, so collapsing a
 section to think doesn't collapse it under a collaborator who is reading it.
@@ -667,16 +675,18 @@ There is no test suite yet; `npm run build` is the type-safety gate. CI runs
 src/
   components/     Screens & sheets — TripList, TripView, MapView,
                   PlaceListView, PlaceDetailSheet, TripNotesPage, NoteList,
-                  NoteEditToolbar, TripSettingsSheet, SharedTripView, …
+                  TripSettingsSheet, SharedTripView, …
   hooks/          Data hooks wrapping Supabase — usePlaces, useTripNotes,
                   useTrips, useTags, useComments, useNotifications,
                   useCollaborators, useAuth; plus the interaction hooks
-                  useDragReorder, useSwipeToDelete, useFoldState,
-                  usePersistentSet, useHistoryLayer, …
+                  useDragReorder (places), useOutlineDrag (bullets),
+                  useSwipeToDelete, useFoldState, usePersistentSet,
+                  useHistoryLayer, …
   lib/            Supabase client, Mapbox routing, Google photo helpers,
                   storage cleanup, toasts; and the pure rules — outline.ts
-                  (bullet depth), placeTree.ts (stops and spots),
-                  anchor.ts (which kind a new place is), mentions.ts
+                  (bullet depth and where a dropped subtree lands),
+                  placeTree.ts (stops and spots), anchor.ts (which kind a new
+                  place is), mentions.ts
   types/          Shared TypeScript types
 supabase/
   schema.sql      The entire backend: tables, RLS, RPCs, storage bucket,
