@@ -8,6 +8,7 @@ import { NoteBody } from './NoteBody';
 import {
   normaliseDepths, shiftSubtree, promotionsAfterDelete, hasChildren,
   visibleItems, siblings, MAX_DEPTH, dropSubtree, structuralDrop,
+  canIndent, canOutdent, canMoveUp, canMoveDown, moveSubtree,
 } from '../lib/outline';
 import type { Place, TripNote } from '../types';
 
@@ -28,7 +29,9 @@ interface Props {
   /** Resolves false when the row did not go, so nothing is done on its behalf. */
   onRemove: (id: string) => Promise<boolean | void> | boolean | void;
   onSetDepths: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
-  onReorder: (orderedIds: string[]) => void;
+  /** May report false when the order did not save, so a follow-up structural
+   *  write can be skipped. */
+  onReorder: (orderedIds: string[]) => void | boolean | Promise<void | boolean>;
   /**
    * Undo target for a swipe-delete. Without it a deletion is final.
    * Resolve false when the row did not come back, so the children promoted by
@@ -59,8 +62,12 @@ interface Props {
 //   - Enter at the end of a bullet opens the next one, already focused.
 //   - Backspace at the start of an empty bullet removes it and steps back up.
 //   - Swiping a row left deletes it; the toast carries the undo.
-// Indent and outdent live on the toolbar above the keyboard, because a phone
-// keyboard has no Tab key and a swipe was already spoken for.
+//   - Holding a bullet's dot picks it up: drag to move it, sideways to change
+//     its level. That replaced an edit toolbar of six buttons, which sat
+//     stacked underneath iOS's own unremovable keyboard bar.
+//   - On a hardware keyboard, Tab and Shift+Tab indent and Alt+Arrow moves a
+//     bullet past its sibling — the drag needs a pointer, so those are the
+//     routes for anyone without one.
 export function NoteList({
   notes, places, onAdd, onUpdate, onRemove, onSetDepths, onReorder, onRestore,
   isCollapsed, onToggleCollapse, onExpand, startDraft, onDraftStarted,
@@ -270,29 +277,49 @@ export function NoteList({
   // is actually inserted. Dropping "before the next visible row" also gives the
   // right answer for a folded bullet for free — you cannot land inside
   // something whose children are not on screen.
-  const handleDrop = useCallback((vIndex: number, vTarget: number, depth: number) => {
-    const where = structuralDrop(items, visible, vIndex, vTarget);
+  const handleDrop = useCallback(async (rootId: string, vTarget: number, depth: number) => {
+    const where = structuralDrop(items, visible, rootId, vTarget);
     if (!where) return;
     const { index, targetIndex } = where;
 
     const landed = dropSubtree(items, index, targetIndex, depth);
     if (!landed) return;
 
-    // Order first and without awaiting: both writes are optimistic, they touch
-    // different columns — position and depth — so neither refetch can undo the
-    // other, and sequencing them only delays the one the eye is following.
+    // Open a folded new parent BEFORE the write, exactly as nudge does for the
+    // indent key. Otherwise the bullet lands inside something closed and
+    // disappears the instant it arrives, with no toast and nothing to undo —
+    // the drag replaced those buttons, so it inherits the hazard they were
+    // fixed for. The parent is the nearest row above it that is shallower.
+    const at = landed.findIndex(n => n.id === rootId);
+    for (let i = at - 1; i >= 0; i--) {
+      if (landed[i].depth < landed[at].depth) {
+        if (folded(landed[i].id)) onExpand?.(landed[i].id);
+        break;
+      }
+    }
+
+    // Order first, and awaited. It is optimistic, so waiting on the write
+    // behind it costs the eye nothing — and the two CAN half-apply: they touch
+    // different columns, so neither refetch undoes the other, but a failed
+    // reorder followed by a successful depth write leaves the server's old
+    // order carrying the new depths, and the bullet renders as a child of
+    // whatever happens to precede it.
     const before = items.map(n => n.id).join(',');
     const after = landed.map(n => n.id).join(',');
-    if (after !== before) onReorder(landed.map(n => n.id));
+    if (after !== before) {
+      const ok = await onReorder(landed.map(n => n.id));
+      if (ok === false) return;
+    }
 
     const byId = new Map(items.map(n => [n.id, n.depth]));
     const moved = landed.filter(n => byId.get(n.id) !== n.depth);
     if (moved.length) void onSetDepths(moved);
-  }, [items, visible, onReorder, onSetDepths]);
+  }, [items, visible, onReorder, onSetDepths, folded, onExpand]);
 
   const { dragId, depth: dragDepth, settling, onPointerDown: handlePointerDown,
           onPointerMove: handlePointerMove, onPointerUp: handlePointerUp,
-          onClickCapture: handleClickCapture, offsetFor, inBlock } =
+          onClickCapture: handleClickCapture, onPointerCancel: handlePointerCancel,
+          offsetFor, inBlock } =
     useOutlineDrag({
       // Visible rows, because the geometry and the level preview both belong to
       // what is on screen. handleDrop maps back to the outline.
@@ -303,7 +330,7 @@ export function NoteList({
         while (vIndex + n < visible.length && visible[vIndex + n].depth > d) n += 1;
         return n;
       },
-      onDrop: handleDrop,
+      onDrop: (id, target, depth) => { void handleDrop(id, target, depth); },
       // Never while a bullet is being edited: the finger is there to type.
       enabled: !focusId && items.length > 1,
     });
@@ -557,12 +584,34 @@ export function NoteList({
 
   // ---- toolbar ----------------------------------------------------------
 
+  /**
+   * Move the focused bullet past its sibling, children in tow — the keyboard's
+   * replacement for the toolbar's up and down arrows.
+   *
+   * Alt+Arrow, because the bare arrows belong to the caret. Without it the drag
+   * is the only route to reordering and the drag needs a pointer, so a
+   * keyboard-only user could create, edit and delete bullets but never move
+   * one.
+   */
+  const moveFocused = useCallback((direction: 1 | -1) => {
+    if (focusId === DRAFT || focusedIndex === -1) return;
+    if (direction === -1 ? !canMoveUp(items, focusedIndex) : !canMoveDown(items, focusedIndex)) return;
+    const next = moveSubtree(items, focusedIndex, direction);
+    if (next) void onReorder(next);
+  }, [focusId, focusedIndex, items, onReorder]);
+
   const nudge = useCallback((delta: 1 | -1) => {
     if (focusId === DRAFT) {
       if (draft) setDraftState({ ...draft, depth: Math.max(0, Math.min(draft.depth + delta, draftMaxDepth)) });
       return;
     }
     if (focusedIndex === -1) return;
+    // The toolbar supplied this guard by disabling its buttons. Without it Tab
+    // wrote a depth one past what the outline allows: normaliseDepths clamps on
+    // the way back out, so the screen looked right while the stored value was
+    // wrong — and the next edit to the bullet above silently pulled this one
+    // down to the illegal depth it had been carrying all along.
+    if (delta === 1 ? !canIndent(items, focusedIndex) : !canOutdent(items, focusedIndex)) return;
     // Indenting makes this bullet a child of the one above. If that one is
     // carrying a fold flag from an earlier life — folded once, then emptied,
     // so the flag survived with no control left to clear it — the new child
@@ -589,6 +638,10 @@ export function NoteList({
       onBlur={() => blur(focusId)}
       onBackspaceAtStart={handleBackspaceAtStart}
       onIndent={nudge}
+      onMoveBullet={moveFocused}
+      atOuterLevel={focusId === DRAFT
+        ? (draft?.depth ?? 0) === 0
+        : focusedIndex === -1 || !canOutdent(items, focusedIndex)}
       onCancel={() => { movingFocus.current = true; setFocusId(null); setDraftState(null); setBody(''); movingFocus.current = false; }}
       places={places}
       autoFocus={autoFocus}
@@ -671,6 +724,7 @@ export function NoteList({
         onGripDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onClickCapture={handleClickCapture}
         renderEditor={renderEditor}
       />
@@ -711,6 +765,7 @@ interface RowProps {
   onGripDown: (index: number, row: HTMLElement, e: React.PointerEvent, cancelSwipe?: () => void) => void;
   onPointerMove?: (e: React.PointerEvent) => void;
   onPointerUp?: (e: React.PointerEvent) => void;
+  onPointerCancel?: (e: React.PointerEvent) => void;
   onClickCapture?: (e: React.MouseEvent) => void;
   renderEditor: (ariaLabel: string, autoFocus: boolean) => React.ReactNode;
 }
@@ -721,24 +776,11 @@ function NoteRow({
   note, depth, index, places, editing, dragging, offsetPx, suppressTransition, canDrag,
   collapsible, collapsed, onToggleCollapse,
   onStartEdit, onDelete, onSelectPlace, onGripDown, onPointerMove, onPointerUp,
-  onClickCapture, renderEditor,
+  onPointerCancel, onClickCapture, renderEditor,
 }: RowProps) {
-  // Swipe stays live WHILE EDITING. It used to be switched off there, which
-  // was harmless only because the edit toolbar carried a trash button — take
-  // the toolbar away and a bullet you were typing in became undeletable
-  // without first working out that you had to dismiss the keyboard. That is
-  // the state a bullet is in most often when you decide to get rid of it.
-  const swipe = useSwipeToDelete({ onDelete, enabled: !dragging });
+  const swipe = useSwipeToDelete({ onDelete, enabled: !editing && !dragging });
   const cancelSwipe = swipe.cancel;
 
-  // Once the swipe is really under way, get the keyboard out of the way: the
-  // row is about to leave, and blurring also commits whatever was typed, so a
-  // swipe that turns out not to reach the threshold has still saved the edit.
-  useEffect(() => {
-    if (!swipe.swiping || !editing) return;
-    const el = document.activeElement;
-    if (el instanceof HTMLElement) el.blur();
-  }, [swipe.swiping, editing]);
 
   return (
     <li
@@ -750,6 +792,7 @@ function NoteRow({
       } as React.CSSProperties}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onClickCapture={onClickCapture}
     >
       {/* Revealed by the row sliding off it, so the gesture explains itself
@@ -758,7 +801,22 @@ function NoteRow({
         <Trash2 size={16} />
       </span>
 
-      <div className="note-bullet-slide" style={swipe.style} {...swipe.handlers}>
+      {/* Swipe handlers only while NOT editing.
+
+          Attaching them during an edit was an attempt to keep delete reachable
+          for a bullet you were typing in, once the toolbar's trash had gone.
+          It backfired: the textarea lives inside this element, so dragging left
+          to SELECT A WORD engaged the swipe, captured the pointer away from the
+          field, blurred it and deleted the note on release — leftward only,
+          which made it look random. Excluding just the textarea fixed that but
+          left the remaining path (a swipe from the dot) not deleting for a
+          second reason I could not account for, and an unexplained delete path
+          is worse than a missing one.
+
+          So: finish the edit, then swipe. iOS's own keyboard bar carries Done,
+          Escape works on a hardware keyboard, and an empty bullet still
+          disappears on Backspace. */}
+      <div className="note-bullet-slide" style={swipe.style} {...(editing ? {} : swipe.handlers)}>
         {/* The dot is the drag handle, as in any outliner — no separate grip
             column, which is what let the row shed its buttons entirely. A
             folded bullet's dot gains a ring, so a section with something

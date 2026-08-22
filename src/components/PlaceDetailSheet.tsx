@@ -47,7 +47,7 @@ interface Props {
   onRemoveNote?: (id: string) => Promise<boolean | void> | boolean | void;
   onRestoreNote?: (note: TripNote) => Promise<boolean | void> | boolean | void;
   onSetNoteDepths?: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
-  onReorderNotes?: (orderedIds: string[]) => void;
+  onReorderNotes?: (orderedIds: string[]) => void | boolean | Promise<void | boolean>;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
   readOnly?: boolean;
   // When opened from a comment notification, expand + scroll to the thread.

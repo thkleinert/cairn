@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { maxDepthAt } from '../lib/outline';
 
 /**
@@ -39,8 +39,17 @@ interface Options {
   blockLength: (index: number) => number;
   /** Horizontal travel that counts as one level. */
   step?: number;
-  /** Where the block ended up. `targetIndex` is against the list WITHOUT it. */
-  onDrop: (index: number, targetIndex: number, depth: number) => void;
+  /**
+   * Where the block ended up.
+   *
+   * The bullet is named by ID rather than by the index it had when the drag
+   * began. A drag lasts about a second and this list refetches on every
+   * realtime event, so a collaborator inserting a bullet above shifts every
+   * position underneath — and a captured index then resolves to whichever
+   * bullet has since slid into that slot, reordering something the user was
+   * not touching. `targetIndex` is against the visible list WITHOUT the block.
+   */
+  onDrop: (id: string, targetIndex: number, depth: number) => void;
   enabled: boolean;
 }
 
@@ -132,9 +141,11 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
       rows: rects.map(r => ({ top: r.top, height: r.height })),
     };
     blockEls.current = block;
-    // Only the indent animates. transform is left out deliberately so the
-    // block tracks the finger exactly; a transition there lags the pointer.
-    block.forEach(el => { el.style.transition = 'padding-left 0.12s ease-out'; });
+    // Only the indent animates, and the indent is a MARGIN — this named
+    // padding-left, which nothing here sets, so the level preview snapped
+    // rather than easing. transform is still left out deliberately: a
+    // transition on it would lag the block behind the finger.
+    block.forEach(el => { el.style.transition = 'margin-left 0.12s ease-out'; });
 
     dy.current = 0;
     swallowClick.current = false;
@@ -153,6 +164,10 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
     index: number, row: HTMLElement, e: React.PointerEvent, cancelSwipe?: () => void,
   ) => {
     if (!enabled) return;
+    // Same guard useSwipeToDelete carries: a right-click arms the hold, the
+    // context menu then swallows the pointerup, and the row sits picked up
+    // until the next click lands somewhere.
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
     clearHold();
     pending.current = {
       x: e.clientX, y: e.clientY, index, row,
@@ -177,7 +192,14 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
     dy.current = e.clientY - i.startY;
     const dx = e.clientX - i.startX;
     // Past a few pixels this is a drag, not a tap that wobbled.
-    if (Math.abs(dx) > 4 || Math.abs(dy.current) > 4) swallowClick.current = true;
+    //
+    // Only for a mouse. A touch that moved produces NO click for this to
+    // swallow, so the flag simply sat there armed until the next tap anywhere
+    // in the list — which it then ate, making the first tap after every drag
+    // do nothing. The click this guards against is a mouse-only artefact.
+    if (e.pointerType === 'mouse' && (Math.abs(dx) > 4 || Math.abs(dy.current) > 4)) {
+      swallowClick.current = true;
+    }
 
     // 1:1 with the finger, written straight to the DOM.
     blockEls.current.forEach(el => {
@@ -219,7 +241,7 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
       // visibly jumping back before settling.
       setSettling(true);
       requestAnimationFrame(() => setSettling(false));
-      onDrop(i.index, target, depth);
+      onDrop(dragId, target, depth);
     }
     info.current = null;
     dy.current = 0;
@@ -242,6 +264,37 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
   }, [dragId, target]);
 
   /**
+   * The gesture was taken away from us — an edge swipe, a second finger, the OS
+   * interrupting. Abandon it.
+   *
+   * Without this there is no pointerup at all, so `info.current`, `dragId` and
+   * the inline transforms all survive: the row stays visibly picked up, and the
+   * NEXT tap on any bullet fires that row's pointerup, which ends the abandoned
+   * drag and drops a bullet the user was not touching. Every other gesture hook
+   * in this app handles pointercancel; this one did not.
+   */
+  const abandon = useCallback(() => {
+    clearHold();
+    blockEls.current.forEach(el => {
+      el.style.transform = '';
+      el.style.transition = '';
+      el.style.zIndex = '';
+    });
+    blockEls.current = [];
+    info.current = null;
+    dy.current = 0;
+    setDragId(null);
+    setTarget(null);
+  }, [clearHold]);
+
+  // A press that never became a drag must not keep a timer alive past unmount —
+  // the sheet closing within the hold window would otherwise fire claim() into
+  // a torn-down tree and pin the row node and the items array until it ran.
+  useEffect(() => () => {
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+  }, []);
+
+  /**
    * Attach in the CAPTURE phase, on the row. Bubble is too late: the row's own
    * click handler is on a descendant and would already have run.
    */
@@ -260,6 +313,7 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
   return {
     dragId, depth, settling,
     onPointerDown: press, onPointerMove: move, onPointerUp: end,
+    onPointerCancel: abandon,
     onClickCapture, offsetFor, inBlock,
   };
 }

@@ -285,17 +285,19 @@ export function dropSubtree<T extends { id: string; depth: number }>(
  * behave — its children are off screen, so there is no way to express dropping
  * between them, which is the right answer rather than a missing feature.
  *
+ * The bullet is named by id rather than by the index it had when the drag
+ * started: a refetch mid-drag renumbers everything, and a stale index then
+ * points at whichever bullet has since taken that slot.
+ *
  * Returns indices for dropSubtree: `index` into `items`, `targetIndex` into
  * `items` with the moving block removed.
  */
 export function structuralDrop(
   items: { id: string; depth: number }[],
   visible: { id: string }[],
-  visibleIndex: number,
+  rootId: string,
   visibleTarget: number,
 ): { index: number; targetIndex: number } | null {
-  const rootId = visible[visibleIndex]?.id;
-  if (rootId === undefined) return null;
   const index = items.findIndex(n => n.id === rootId);
   if (index < 0) return null;
 

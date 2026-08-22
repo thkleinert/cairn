@@ -26,6 +26,10 @@ interface Props {
    * perform — so the binding every outliner already uses stands in for it.
    */
   onIndent?: (delta: 1 | -1) => void;
+  /** Alt+ArrowUp / Alt+ArrowDown — the keyboard's route to reordering. */
+  onMoveBullet?: (direction: 1 | -1) => void;
+  /** True when Shift+Tab has nothing left to outdent, so Tab stops trapping. */
+  atOuterLevel?: boolean;
   places: Place[];
   placeholder?: string;
   autoFocus?: boolean;
@@ -43,7 +47,7 @@ interface Props {
 // "@". Shared by the add-a-bullet box and inline bullet editing so the two
 // can't drift apart.
 export function MentionTextarea({
-  value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, onIndent, places,
+  value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, onIndent, onMoveBullet, atOuterLevel, places,
   placeholder, autoFocus, className = '', ariaLabel, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -119,7 +123,20 @@ export function MentionTextarea({
     // Tab moves the bullet, it does not move focus. In an outliner that is what
     // the key means, and there is nowhere useful for focus to go — the next
     // control is the next bullet's editor, which Enter already reaches.
+    // Alt keeps the bare arrows for the caret, where they belong.
+    if (onMoveBullet && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      onMoveBullet(e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
     if (e.key === 'Tab' && onIndent) {
+      // Shift+Tab at the outer level is deliberately NOT swallowed: with Tab
+      // bound to indent there would otherwise be no way to leave this field
+      // with the keyboard at all, and Escape discards the edit rather than
+      // committing it. Outdenting until the bullet is at depth 0 and pressing
+      // Shift+Tab once more moves focus on, which is a predictable exit rather
+      // than a trap.
+      if (e.shiftKey && atOuterLevel) return;
       e.preventDefault();
       onIndent(e.shiftKey ? -1 : 1);
       return;

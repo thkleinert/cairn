@@ -2023,7 +2023,10 @@ select.input {
      the row off the left edge, and the bullet drag moves rows vertically with
      a padding-based indent, so nothing needs to escape sideways. */
   overflow-x: hidden;
-  touch-action: pan-y;
+  /* pinch-zoom is spelled out because `pan-y` alone excludes it, which would
+     stop anyone magnifying their own notes. Only the horizontal pan needs
+     forbidding. */
+  touch-action: pan-y pinch-zoom;
   -webkit-overflow-scrolling: touch;
   padding: 16px 20px calc(32px + env(safe-area-inset-bottom)) 12px;
 }
