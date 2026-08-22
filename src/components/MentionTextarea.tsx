@@ -20,6 +20,16 @@ interface Props {
    * the key was consumed.
    */
   onBackspaceAtStart?: () => void | Promise<void | boolean>;
+  /**
+   * Tab and Shift+Tab. The edit toolbar used to carry indent and outdent as
+   * buttons; with those gone the gesture is a drag, which a keyboard cannot
+   * perform — so the binding every outliner already uses stands in for it.
+   */
+  onIndent?: (delta: 1 | -1) => void;
+  /** Alt+ArrowUp / Alt+ArrowDown — the keyboard's route to reordering. */
+  onMoveBullet?: (direction: 1 | -1) => void;
+  /** True when Shift+Tab has nothing left to outdent, so Tab stops trapping. */
+  atOuterLevel?: boolean;
   places: Place[];
   placeholder?: string;
   autoFocus?: boolean;
@@ -37,7 +47,7 @@ interface Props {
 // "@". Shared by the add-a-bullet box and inline bullet editing so the two
 // can't drift apart.
 export function MentionTextarea({
-  value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, places,
+  value, onChange, onSubmit, onBlur, onCancel, onBackspaceAtStart, onIndent, onMoveBullet, atOuterLevel, places,
   placeholder, autoFocus, className = '', ariaLabel, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -59,7 +69,18 @@ export function MentionTextarea({
   }, [value]);
 
   useEffect(() => {
-    if (autoFocus) ref.current?.focus();
+    if (!autoFocus) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    // Caret at the END, not the start. Opening a bullet by tapping the space
+    // after its text is how you go back to carry on writing, and landing
+    // before the first character means every one of those taps is followed by
+    // a second one to get to where you meant. A browser puts the caret at 0 on
+    // a programmatic focus, which is the wrong default for an editor you enter
+    // by pointing at the thing you want to append to.
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
   }, [autoFocus]);
 
   const mention = findMentionQuery(value, caret);
@@ -98,6 +119,27 @@ export function MentionTextarea({
         setDismissedFor(value);
         return;
       }
+    }
+    // Tab moves the bullet, it does not move focus. In an outliner that is what
+    // the key means, and there is nowhere useful for focus to go — the next
+    // control is the next bullet's editor, which Enter already reaches.
+    // Alt keeps the bare arrows for the caret, where they belong.
+    if (onMoveBullet && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      onMoveBullet(e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+    if (e.key === 'Tab' && onIndent) {
+      // Shift+Tab at the outer level is deliberately NOT swallowed: with Tab
+      // bound to indent there would otherwise be no way to leave this field
+      // with the keyboard at all, and Escape discards the edit rather than
+      // committing it. Outdenting until the bullet is at depth 0 and pressing
+      // Shift+Tab once more moves focus on, which is a predictable exit rather
+      // than a trap.
+      if (e.shiftKey && atOuterLevel) return;
+      e.preventDefault();
+      onIndent(e.shiftKey ? -1 : 1);
+      return;
     }
     // Only a bare caret at the very start counts: with a selection, Backspace
     // is deleting that selection, and mid-text it's deleting a character.

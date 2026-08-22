@@ -1,14 +1,14 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Trash2, Plus, Minus } from 'lucide-react';
-import { useDragReorder } from '../hooks/useDragReorder';
+import { useOutlineDrag } from '../hooks/useOutlineDrag';
 import { useSwipeToDelete } from '../hooks/useSwipeToDelete';
 import { toast } from '../lib/toast';
 import { MentionTextarea } from './MentionTextarea';
 import { NoteBody } from './NoteBody';
-import { NoteEditToolbar } from './NoteEditToolbar';
 import {
-  normaliseDepths, canIndent, canOutdent, canMoveUp, canMoveDown, moveSubtree,
-  shiftSubtree, promotionsAfterDelete, hasChildren, visibleItems, siblings, MAX_DEPTH,
+  normaliseDepths, shiftSubtree, promotionsAfterDelete, hasChildren,
+  visibleItems, siblings, MAX_DEPTH, dropSubtree, structuralDrop,
+  canIndent, canOutdent, canMoveUp, canMoveDown, moveSubtree,
 } from '../lib/outline';
 import type { Place, TripNote } from '../types';
 
@@ -29,7 +29,9 @@ interface Props {
   /** Resolves false when the row did not go, so nothing is done on its behalf. */
   onRemove: (id: string) => Promise<boolean | void> | boolean | void;
   onSetDepths: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
-  onReorder: (orderedIds: string[]) => void;
+  /** May report false when the order did not save, so a follow-up structural
+   *  write can be skipped. */
+  onReorder: (orderedIds: string[]) => void | boolean | Promise<void | boolean>;
   /**
    * Undo target for a swipe-delete. Without it a deletion is final.
    * Resolve false when the row did not come back, so the children promoted by
@@ -60,8 +62,12 @@ interface Props {
 //   - Enter at the end of a bullet opens the next one, already focused.
 //   - Backspace at the start of an empty bullet removes it and steps back up.
 //   - Swiping a row left deletes it; the toast carries the undo.
-// Indent and outdent live on the toolbar above the keyboard, because a phone
-// keyboard has no Tab key and a swipe was already spoken for.
+//   - Holding a bullet's dot picks it up: drag to move it, sideways to change
+//     its level. That replaced an edit toolbar of six buttons, which sat
+//     stacked underneath iOS's own unremovable keyboard bar.
+//   - On a hardware keyboard, Tab and Shift+Tab indent and Alt+Arrow moves a
+//     bullet past its sibling — the drag needs a pointer, so those are the
+//     routes for anyone without one.
 export function NoteList({
   notes, places, onAdd, onUpdate, onRemove, onSetDepths, onReorder, onRestore,
   isCollapsed, onToggleCollapse, onExpand, startDraft, onDraftStarted,
@@ -112,17 +118,6 @@ export function NoteList({
   // prompts.
   const draft: Draft | null = draftState;
 
-  const { order, dragId, suppressTransition, handlePointerDown, handlePointerMove, handlePointerUp, getRowOffsetPx } =
-    useDragReorder({
-      items,
-      getId: (n: TripNote) => n.id,
-      onReorder,
-      // Dragging one bullet out of a nested group would leave the outline in a
-      // shape the drag never showed; reorder is for flat lists only until the
-      // drag itself understands subtrees.
-      enabled: !focusId && items.length > 1 && items.every(n => n.depth === 0),
-    });
-
   // Every structural decision below reads `items`, never `order`.
   //
   // `order` is useDragReorder's own copy, synced from items in an effect, so
@@ -147,19 +142,6 @@ export function NoteList({
     ? items.findIndex(n => n.id === focusId)
     : -1;
 
-  /**
-   * The list as it will be once the draft is committed — the draft standing in
-   * at its insertion point. Lets the toolbar answer "can this move?" for a
-   * bullet that has no row yet, and lets the move be computed without waiting
-   * for the insert to come back through state.
-   */
-  const projected = useMemo(() => {
-    if (!draft || draftIndex === -1) return items;
-    const stub = { id: DRAFT, depth: draft.depth } as TripNote;
-    const next = [...items];
-    next.splice(draftIndex, 0, stub);
-    return next;
-  }, [items, draft, draftIndex]);
 
   /** The focused textarea, for putting focus back after a reorder moves it. */
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -280,6 +262,79 @@ export function NoteList({
     () => visibleItems(items, id => activeFolds.has(id)),
     [items, activeFolds],
   );
+
+  // The drag now understands subtrees, so it is no longer restricted to flat
+  // lists — a bullet travels with everything nested under it, and how far it is
+  // pulled sideways decides the level it lands at. That is what let the edit
+  // toolbar go: indent, outdent and both arrows were four buttons doing what
+  // one gesture does, and they cost a bar stacked under iOS's own.
+  //
+  // The drag runs in VISIBLE space — that is what the finger is over and what
+  // the gap animation measures — while the outline it edits is `items`. The two
+  // differ the moment anything is folded, so the drop translates between them
+  // rather than assuming they line up: the row the block came to rest above is
+  // looked up by id, and its position in the structural list is where the block
+  // is actually inserted. Dropping "before the next visible row" also gives the
+  // right answer for a folded bullet for free — you cannot land inside
+  // something whose children are not on screen.
+  const handleDrop = useCallback(async (rootId: string, vTarget: number, depth: number) => {
+    const where = structuralDrop(items, visible, rootId, vTarget);
+    if (!where) return;
+    const { index, targetIndex } = where;
+
+    const landed = dropSubtree(items, index, targetIndex, depth);
+    if (!landed) return;
+
+    // Open a folded new parent BEFORE the write, exactly as nudge does for the
+    // indent key. Otherwise the bullet lands inside something closed and
+    // disappears the instant it arrives, with no toast and nothing to undo —
+    // the drag replaced those buttons, so it inherits the hazard they were
+    // fixed for. The parent is the nearest row above it that is shallower.
+    const at = landed.findIndex(n => n.id === rootId);
+    for (let i = at - 1; i >= 0; i--) {
+      if (landed[i].depth < landed[at].depth) {
+        if (folded(landed[i].id)) onExpand?.(landed[i].id);
+        break;
+      }
+    }
+
+    // Order first, and awaited. It is optimistic, so waiting on the write
+    // behind it costs the eye nothing — and the two CAN half-apply: they touch
+    // different columns, so neither refetch undoes the other, but a failed
+    // reorder followed by a successful depth write leaves the server's old
+    // order carrying the new depths, and the bullet renders as a child of
+    // whatever happens to precede it.
+    const before = items.map(n => n.id).join(',');
+    const after = landed.map(n => n.id).join(',');
+    if (after !== before) {
+      const ok = await onReorder(landed.map(n => n.id));
+      if (ok === false) return;
+    }
+
+    const byId = new Map(items.map(n => [n.id, n.depth]));
+    const moved = landed.filter(n => byId.get(n.id) !== n.depth);
+    if (moved.length) void onSetDepths(moved);
+  }, [items, visible, onReorder, onSetDepths, folded, onExpand]);
+
+  const { dragId, depth: dragDepth, settling, onPointerDown: handlePointerDown,
+          onPointerMove: handlePointerMove, onPointerUp: handlePointerUp,
+          onClickCapture: handleClickCapture, onPointerCancel: handlePointerCancel,
+          offsetFor, inBlock } =
+    useOutlineDrag({
+      // Visible rows, because the geometry and the level preview both belong to
+      // what is on screen. handleDrop maps back to the outline.
+      items: visible,
+      blockLength: (vIndex) => {
+        const d = visible[vIndex]?.depth ?? 0;
+        let n = 1;
+        while (vIndex + n < visible.length && visible[vIndex + n].depth > d) n += 1;
+        return n;
+      },
+      onDrop: (id, target, depth) => { void handleDrop(id, target, depth); },
+      // Never while a bullet is being edited: the finger is there to type.
+      enabled: !focusId && items.length > 1,
+    });
+
 
   /** Where the draft row goes among the visible ones. */
   const draftVisibleIndex = useMemo(() => {
@@ -529,35 +584,21 @@ export function NoteList({
 
   // ---- toolbar ----------------------------------------------------------
 
-  const toolbarState = useMemo(() => {
-    // A draft has no row yet, but it has a place in the list — so it answers
-    // against `projected`, where it stands in at its insertion point. Moving
-    // it commits it first; deleting it discards it. Greying those out meant a
-    // bullet you had just typed could not be put where you wanted it without
-    // committing, leaving, and coming back.
-    if (focusId === DRAFT && draft) {
-      // Moving a draft commits it first, and an empty one cannot be committed
-      // — so the arrows were offered on a row where tapping them did nothing.
-      const movable = body.trim().length > 0;
-      return {
-        canIndent: draft.depth < draftMaxDepth,
-        canOutdent: draft.depth > 0,
-        canMoveUp: movable && canMoveUp(projected, draftIndex),
-        canMoveDown: movable && canMoveDown(projected, draftIndex),
-        canDelete: true,
-      };
-    }
-    if (focusedIndex === -1) {
-      return { canIndent: false, canOutdent: false, canMoveUp: false, canMoveDown: false, canDelete: false };
-    }
-    return {
-      canIndent: canIndent(items, focusedIndex),
-      canOutdent: canOutdent(items, focusedIndex),
-      canMoveUp: canMoveUp(items, focusedIndex),
-      canMoveDown: canMoveDown(items, focusedIndex),
-      canDelete: true,
-    };
-  }, [focusId, draft, draftMaxDepth, projected, draftIndex, items, focusedIndex, body]);
+  /**
+   * Move the focused bullet past its sibling, children in tow — the keyboard's
+   * replacement for the toolbar's up and down arrows.
+   *
+   * Alt+Arrow, because the bare arrows belong to the caret. Without it the drag
+   * is the only route to reordering and the drag needs a pointer, so a
+   * keyboard-only user could create, edit and delete bullets but never move
+   * one.
+   */
+  const moveFocused = useCallback((direction: 1 | -1) => {
+    if (focusId === DRAFT || focusedIndex === -1) return;
+    if (direction === -1 ? !canMoveUp(items, focusedIndex) : !canMoveDown(items, focusedIndex)) return;
+    const next = moveSubtree(items, focusedIndex, direction);
+    if (next) void onReorder(next);
+  }, [focusId, focusedIndex, items, onReorder]);
 
   const nudge = useCallback((delta: 1 | -1) => {
     if (focusId === DRAFT) {
@@ -565,6 +606,12 @@ export function NoteList({
       return;
     }
     if (focusedIndex === -1) return;
+    // The toolbar supplied this guard by disabling its buttons. Without it Tab
+    // wrote a depth one past what the outline allows: normaliseDepths clamps on
+    // the way back out, so the screen looked right while the stored value was
+    // wrong — and the next edit to the bullet above silently pulled this one
+    // down to the illegal depth it had been carrying all along.
+    if (delta === 1 ? !canIndent(items, focusedIndex) : !canOutdent(items, focusedIndex)) return;
     // Indenting makes this bullet a child of the one above. If that one is
     // carrying a fold flag from an earlier life — folded once, then emptied,
     // so the flag survived with no control left to clear it — the new child
@@ -581,52 +628,6 @@ export function NoteList({
     void onSetDepths(shiftSubtree(items, focusedIndex, delta));
   }, [focusId, draft, draftMaxDepth, focusedIndex, items, onSetDepths, folded, onExpand]);
 
-  /**
-   * Move the focused bullet past its sibling, children in tow. Unlike the drag
-   * handle this is safe in a nested list, because the move is computed from
-   * the outline rather than from where a finger happened to let go.
-   *
-   * A draft is committed first, and the resulting order comes from `projected`
-   * rather than from waiting for the insert to arrive back through state — the
-   * new row's place in the list is already known, so there is nothing to wait
-   * for.
-   */
-  const move = useCallback(async (direction: 1 | -1) => {
-    if (busy.current) return;
-
-    if (focusId === DRAFT) {
-      if (!body.trim() || draftIndex === -1) return;
-      busy.current = true;
-      movingFocus.current = true;
-      try {
-        const created = await commit();
-        // Nothing written: leave the draft, its text and the caret alone so it
-        // can be tried again, rather than moving a bullet that does not exist.
-        if (!created) return;
-        const next = moveSubtree(
-          projected.map(n => (n.id === DRAFT ? created : n)), draftIndex, direction,
-        );
-        if (next) onReorder(next);
-        setDraftState(null);
-        setFocusId(created.id);
-      } finally {
-        movingFocus.current = false;
-        busy.current = false;
-      }
-      return;
-    }
-
-    if (focusedIndex === -1) return;
-    const next = moveSubtree(items, focusedIndex, direction);
-    if (!next) return;
-    // Guarded AND refocused. Reordering moves this row's <li>, which blurs the
-    // textarea inside it — and because the move does not change which bullet
-    // is focused, neither of blur's guards fired and it tore the editor down.
-    // That is the exact symptom the guard was introduced to prevent; it only
-    // ever covered moves that changed focus.
-    void withFocusMove(() => { onReorder(next); }, true);
-  }, [focusId, body, draftIndex, projected, commit, focusedIndex, items, onReorder, withFocusMove]);
-
   // ---- render -----------------------------------------------------------
 
   const renderEditor = (ariaLabel: string, autoFocus: boolean) => (
@@ -636,6 +637,11 @@ export function NoteList({
       onSubmit={handleEnter}
       onBlur={() => blur(focusId)}
       onBackspaceAtStart={handleBackspaceAtStart}
+      onIndent={nudge}
+      onMoveBullet={moveFocused}
+      atOuterLevel={focusId === DRAFT
+        ? (draft?.depth ?? 0) === 0
+        : focusedIndex === -1 || !canOutdent(items, focusedIndex)}
       onCancel={() => { movingFocus.current = true; setFocusId(null); setDraftState(null); setBody(''); movingFocus.current = false; }}
       places={places}
       autoFocus={autoFocus}
@@ -649,7 +655,7 @@ export function NoteList({
   const draftRow = draft && (
     <li
       key="draft"
-      className={`note-bullet note-bullet--draft ${draft.depth > 0 ? 'note-bullet--nested' : ''}`}
+      className="note-bullet note-bullet--draft"
       style={{ '--note-depth': draft.depth } as React.CSSProperties}
     >
       <div className="note-bullet-slide">
@@ -675,28 +681,39 @@ export function NoteList({
     </li>
   );
 
-  // Three index spaces, and they are not interchangeable once anything is
-  // folded: `visible` is what's on screen, `items` is the outline every
-  // structural decision is made against, and `order` is the drag animation's
-  // own copy. They coincide exactly whenever dragging is possible — a flat
-  // list has nothing to fold — but a nested one they do not.
+  // Two index spaces, and they stop agreeing the moment anything is folded:
+  // `visible` is what is on screen and what the drag measures, `items` is the
+  // outline every structural decision is made against. Rows are keyed by
+  // position in `visible`; handleDrop translates back.
   const itemIndexOf = useMemo(() => new Map(items.map((n, i) => [n.id, i])), [items]);
-  const orderIndexOf = useMemo(() => new Map(order.map((n, i) => [n.id, i])), [order]);
-  const canDrag = !focusId && items.length > 1 && items.every(n => n.depth === 0);
+  const canDrag = !focusId && items.length > 1;
 
-  const rows = visible.map(note => {
+  // Where the block being dragged starts, so its descendants can be shifted by
+  // the same delta the root picked up.
+  const dragRootIndex = dragId === null ? -1 : visible.findIndex(n => n.id === dragId);
+
+  const rows = visible.map((note, vIndex) => {
     const structural = itemIndexOf.get(note.id) ?? -1;
-    const dragIndex = orderIndexOf.get(note.id) ?? 0;
+    // A block in flight renders at the level it would LAND at, not the one it
+    // came from — that is the whole feedback for the sideways half of the
+    // gesture. Nothing double-counts: the block is translated vertically only,
+    // so the indent is free to show the answer. Descendants shift by the same
+    // delta, so the subtree keeps its shape while it moves.
+    const dragging = inBlock(vIndex);
+    const shown = dragging
+      ? Math.max(0, note.depth + (dragDepth - (visible[dragRootIndex]?.depth ?? note.depth)))
+      : note.depth;
     return (
       <NoteRow
         key={note.id}
         note={note}
-        index={dragIndex}
+        depth={shown}
+        index={vIndex}
         places={places}
         editing={focusId === note.id}
-        dragging={dragId === note.id}
-        offsetPx={getRowOffsetPx(dragIndex, note.id)}
-        suppressTransition={suppressTransition}
+        dragging={dragging}
+        offsetPx={offsetFor(vIndex)}
+        suppressTransition={settling}
         canDrag={canDrag}
         collapsible={structural !== -1 && hasChildren(items, structural)}
         collapsed={activeFolds.has(note.id)}
@@ -705,8 +722,10 @@ export function NoteList({
         onDelete={() => structural === -1 ? false : deleteNote(note, structural)}
         onSelectPlace={onSelectPlace}
         onGripDown={handlePointerDown}
-        onPointerMove={dragId === note.id ? handlePointerMove : undefined}
-        onPointerUp={dragId === note.id ? handlePointerUp : undefined}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onClickCapture={handleClickCapture}
         renderEditor={renderEditor}
       />
     );
@@ -718,35 +737,6 @@ export function NoteList({
     <div className="note-list">
       <ul className="note-bullets">{rows}</ul>
 
-      {focusId && (
-        <NoteEditToolbar
-          canIndent={toolbarState.canIndent}
-          canOutdent={toolbarState.canOutdent}
-          canMoveUp={toolbarState.canMoveUp}
-          canMoveDown={toolbarState.canMoveDown}
-          canDelete={toolbarState.canDelete}
-          onIndent={() => nudge(1)}
-          onOutdent={() => nudge(-1)}
-          onMoveUp={() => void move(-1)}
-          onMoveDown={() => void move(1)}
-          onDelete={() => {
-            // On a draft the trash discards what is being typed — there is no
-            // row to delete, and the alternative was a disabled button on the
-            // one row where "get rid of this" is most likely to be wanted.
-            if (focusId === DRAFT) {
-              movingFocus.current = true;
-              setDraftState(null);
-              setFocusId(null);
-              setBody('');
-              movingFocus.current = false;
-              return;
-            }
-            if (focusedIndex === -1) return;
-            void deleteNote(items[focusedIndex], focusedIndex);
-          }}
-          onDone={() => void blur(focusId)}
-        />
-      )}
     </div>
   );
 }
@@ -755,6 +745,9 @@ export function NoteList({
 
 interface RowProps {
   note: TripNote;
+  /** The level to RENDER at — the landing level while this row is being
+   *  dragged, its own the rest of the time. */
+  depth: number;
   index: number;
   places: Place[];
   editing: boolean;
@@ -769,31 +762,38 @@ interface RowProps {
   /** False when the row survived, so the swipe can put it back. */
   onDelete: () => void | boolean | Promise<void | boolean>;
   onSelectPlace?: (placeId: string) => void;
-  onGripDown: (id: string, index: number, row: HTMLElement, e: React.PointerEvent) => void;
+  onGripDown: (index: number, row: HTMLElement, e: React.PointerEvent, cancelSwipe?: () => void) => void;
   onPointerMove?: (e: React.PointerEvent) => void;
   onPointerUp?: (e: React.PointerEvent) => void;
+  onPointerCancel?: (e: React.PointerEvent) => void;
+  onClickCapture?: (e: React.MouseEvent) => void;
   renderEditor: (ariaLabel: string, autoFocus: boolean) => React.ReactNode;
 }
 
 // Its own component so each row owns a swipe hook. Hooks can't be called in a
 // loop, and a single shared swipe state would move every row at once.
 function NoteRow({
-  note, index, places, editing, dragging, offsetPx, suppressTransition, canDrag,
+  note, depth, index, places, editing, dragging, offsetPx, suppressTransition, canDrag,
   collapsible, collapsed, onToggleCollapse,
-  onStartEdit, onDelete, onSelectPlace, onGripDown, onPointerMove, onPointerUp, renderEditor,
+  onStartEdit, onDelete, onSelectPlace, onGripDown, onPointerMove, onPointerUp,
+  onPointerCancel, onClickCapture, renderEditor,
 }: RowProps) {
   const swipe = useSwipeToDelete({ onDelete, enabled: !editing && !dragging });
+  const cancelSwipe = swipe.cancel;
+
 
   return (
     <li
-      className={`note-bullet ${note.depth > 0 ? 'note-bullet--nested' : ''} ${dragging ? 'note-bullet--dragging' : ''} ${swipe.swiping ? 'note-bullet--swiping' : ''}`}
+      className={`note-bullet ${dragging ? 'note-bullet--dragging' : ''} ${swipe.swiping ? 'note-bullet--swiping' : ''}`}
       style={{
-        '--note-depth': note.depth,
+        '--note-depth': depth,
         transform: dragging ? undefined : `translateY(${offsetPx}px)`,
         transition: suppressTransition ? 'none' : undefined,
       } as React.CSSProperties}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onClickCapture={onClickCapture}
     >
       {/* Revealed by the row sliding off it, so the gesture explains itself
           before it completes. */}
@@ -801,6 +801,21 @@ function NoteRow({
         <Trash2 size={16} />
       </span>
 
+      {/* Swipe handlers only while NOT editing.
+
+          Attaching them during an edit was an attempt to keep delete reachable
+          for a bullet you were typing in, once the toolbar's trash had gone.
+          It backfired: the textarea lives inside this element, so dragging left
+          to SELECT A WORD engaged the swipe, captured the pointer away from the
+          field, blurred it and deleted the note on release — leftward only,
+          which made it look random. Excluding just the textarea fixed that but
+          left the remaining path (a swipe from the dot) not deleting for a
+          second reason I could not account for, and an unexplained delete path
+          is worse than a missing one.
+
+          So: finish the edit, then swipe. iOS's own keyboard bar carries Done,
+          Escape works on a hardware keyboard, and an empty bullet still
+          disappears on Backspace. */}
       <div className="note-bullet-slide" style={swipe.style} {...(editing ? {} : swipe.handlers)}>
         {/* The dot is the drag handle, as in any outliner — no separate grip
             column, which is what let the row shed its buttons entirely. A
@@ -811,14 +826,18 @@ function NoteRow({
           aria-hidden="true"
           onPointerDown={canDrag
             ? e => {
-                // Kept from the swipe handlers on .note-bullet-slide, which
-                // this dot sits inside. useSwipeToDelete reads `enabled` only
-                // at pointerdown, and `dragging` is still false at that
-                // instant, so the press that starts a drag also armed the
-                // swipe — dragging the dot left far enough then both reordered
-                // the row and deleted it on release.
-                e.stopPropagation();
-                onGripDown(note.id, index, e.currentTarget.parentElement?.parentElement as HTMLElement, e);
+                // NOT stopped, deliberately. The swipe lives on
+                // .note-bullet-slide, which this dot sits inside, and swallowing
+                // the press here meant a left swipe that happened to start on
+                // the dot — which is exactly where a thumb starts one — could
+                // never become a delete. Both gestures now see the press; the
+                // hold decides, and the drag cancels the swipe if it wins.
+                onGripDown(
+                  index,
+                  e.currentTarget.parentElement?.parentElement as HTMLElement,
+                  e,
+                  cancelSwipe,
+                );
               }
             : undefined}
         />
