@@ -187,11 +187,6 @@ It behaves like an outliner, not a form:
 On a hardware keyboard, **Tab** and **Shift+Tab** indent and outdent, and
 **Alt+Arrow** moves a bullet past its sibling.
 
-There is deliberately no editing toolbar. iOS puts its own bar above the
-keyboard for any text field and it cannot be removed from a web page — so a
-toolbar of our own sat stacked underneath it, two bars deep. Everything it did
-is now a gesture or a key.
-
 Folding is remembered on your own device rather than shared, so collapsing a
 section to think doesn't collapse it under a collaborator who is reading it.
 
