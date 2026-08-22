@@ -117,6 +117,8 @@ the pill at the bottom flips between them.
 
 ### 🏔️ Stops and Spots
 
+<img align="left" src="docs/screenshots/place-part-of.png" width="235" alt="A spot filed inside its stop" />
+
 A trip has two kinds of place. A **stop** is somewhere you go — a city, an
 island, a lake, a mountain pass. A **spot** is somewhere inside one — a café,
 a hotel, a viewpoint, a trailhead. Spots nest under their stop everywhere it
@@ -140,9 +142,11 @@ gets an offer in the outliner instead — "looks like it's in Bangkok" — and a
 is remembered on your device. You can also set it by hand from the place sheet,
 or by dragging a row sideways on the list.
 
+<br clear="left" />
+
 ### 📍 Every Place Carries Its Story
 
-<img align="left" src="docs/screenshots/place-detail.png" width="235" alt="Place detail" />
+<img align="right" src="docs/screenshots/place-detail.png" width="235" alt="Place detail" />
 
 Tapping a place opens its detail sheet:
 
@@ -156,9 +160,11 @@ Tapping a place opens its detail sheet:
 - **Tags** — color- and emoji-coded, trip-scoped, filterable.
 - **Visited toggle** — flip it when you get there; the map route updates.
 
-<br clear="left" />
+<br clear="right" />
 
 ### 📝 The Whole Trip as One Outline
+
+<img align="left" src="docs/screenshots/trip-outliner.png" width="235" alt="The trip outliner" />
 
 The notebook icon in a trip's top bar opens everything written about that trip
 on one screen. Each stop is a heading with its notes as bullets underneath,
@@ -188,6 +194,8 @@ is now a gesture or a key.
 
 Folding is remembered on your own device rather than shared, so collapsing a
 section to think doesn't collapse it under a collaborator who is reading it.
+
+<br clear="left" />
 
 ### 💬 Talk It Through, Right on the Place
 
