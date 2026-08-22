@@ -2190,7 +2190,12 @@ textarea.mention-input {
 }
 /* The dot doubles as the drag handle, so it needs the grab affordance and has
    to keep the browser from treating the press as the start of a scroll. */
-.note-bullet-dot--draggable { cursor: grab; touch-action: none; }
+.note-bullet-dot--draggable {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
 .note-bullet-dot--draggable:active { cursor: grabbing; }
 .note-bullet-dot--draggable:active::before {
   background: var(--color-text);
@@ -2201,6 +2206,14 @@ textarea.mention-input {
 
 .note-bullet-body {
   flex: 1; min-width: 0;
+  /* Not selectable, and no callout. Holding a bullet is how you pick it up to
+     move it, and iOS answers a long press on text by raising the magnifier and
+     marking a word — so the gesture that reorders the outline was also
+     selecting the thing it was about to move. Nothing is lost: this is the
+     RENDERED text, and tapping it opens the editor, where selection works
+     normally and is where anyone copying a note would be anyway. */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
   /* Matches textarea.mention-input's padding and size so a bullet neither
      shifts sideways nor resizes when you tap it to edit. */
   padding: 4px 4px;
