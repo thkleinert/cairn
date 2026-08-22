@@ -723,8 +723,22 @@ function NoteRow({
   onStartEdit, onDelete, onSelectPlace, onGripDown, onPointerMove, onPointerUp,
   onClickCapture, renderEditor,
 }: RowProps) {
-  const swipe = useSwipeToDelete({ onDelete, enabled: !editing && !dragging });
+  // Swipe stays live WHILE EDITING. It used to be switched off there, which
+  // was harmless only because the edit toolbar carried a trash button — take
+  // the toolbar away and a bullet you were typing in became undeletable
+  // without first working out that you had to dismiss the keyboard. That is
+  // the state a bullet is in most often when you decide to get rid of it.
+  const swipe = useSwipeToDelete({ onDelete, enabled: !dragging });
   const cancelSwipe = swipe.cancel;
+
+  // Once the swipe is really under way, get the keyboard out of the way: the
+  // row is about to leave, and blurring also commits whatever was typed, so a
+  // swipe that turns out not to reach the threshold has still saved the edit.
+  useEffect(() => {
+    if (!swipe.swiping || !editing) return;
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) el.blur();
+  }, [swipe.swiping, editing]);
 
   return (
     <li
@@ -744,7 +758,7 @@ function NoteRow({
         <Trash2 size={16} />
       </span>
 
-      <div className="note-bullet-slide" style={swipe.style} {...(editing ? {} : swipe.handlers)}>
+      <div className="note-bullet-slide" style={swipe.style} {...swipe.handlers}>
         {/* The dot is the drag handle, as in any outliner — no separate grip
             column, which is what let the row shed its buttons entirely. A
             folded bullet's dot gains a ring, so a section with something
