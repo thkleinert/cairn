@@ -51,6 +51,11 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
   const dy = useRef(0);
   const info = useRef<Info | null>(null);
   const blockEls = useRef<HTMLElement[]>([]);
+  // A drag that actually moved has to eat the click that follows it. The
+  // browser synthesises one from the pointerdown/pointerup pair, and the row
+  // treats a click as "edit this bullet" — so letting go after dragging a
+  // bullet out a level opened the keyboard on it, every time.
+  const swallowClick = useRef(false);
 
   const start = useCallback((index: number, row: HTMLElement, e: React.PointerEvent) => {
     if (!enabled) return;
@@ -81,6 +86,7 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
     block.forEach(el => { el.style.transition = 'padding-left 0.12s ease-out'; });
 
     dy.current = 0;
+    swallowClick.current = false;
     setDragId(items[index]?.id ?? null);
     setTarget(index);
     setDepth(items[index]?.depth ?? 0);
@@ -91,6 +97,8 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
     if (!i || dragId === null) return;
     dy.current = e.clientY - i.startY;
     const dx = e.clientX - i.startX;
+    // Past a few pixels this is a drag, not a tap that wobbled.
+    if (Math.abs(dx) > 4 || Math.abs(dy.current) > 4) swallowClick.current = true;
 
     // 1:1 with the finger, written straight to the DOM.
     blockEls.current.forEach(el => {
@@ -151,6 +159,17 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
     return 0;
   }, [dragId, target]);
 
+  /**
+   * Attach in the CAPTURE phase, on the row. Bubble is too late: the row's own
+   * click handler is on a descendant and would already have run.
+   */
+  const onClickCapture = useCallback((e: React.MouseEvent) => {
+    if (!swallowClick.current) return;
+    swallowClick.current = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
   const inBlock = useCallback((index: number): boolean => {
     const i = info.current;
     return !!i && dragId !== null && index >= i.index && index < i.index + i.len;
@@ -159,6 +178,6 @@ export function useOutlineDrag({ items, blockLength, step = 28, onDrop, enabled 
   return {
     dragId, depth, settling,
     onPointerDown: start, onPointerMove: move, onPointerUp: end,
-    offsetFor, inBlock,
+    onClickCapture, offsetFor, inBlock,
   };
 }

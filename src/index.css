@@ -2097,19 +2097,13 @@ textarea.mention-input {
    hidden would crop the @-mention popup, which has to escape the row. */
 .note-bullet--swiping { overflow: hidden; }
 
-/* The guide line down a nested group, drawn on the row rather than as a
-   container because the list is flat — there is no element wrapping a
-   subtree to hang a border on. Sits in the parent's gutter, one indent step
-   to the left of this row's own dot. */
-.note-bullet--nested::before {
-  content: '';
-  position: absolute;
-  left: calc(-1 * var(--note-indent) + var(--note-gutter) / 2);
-  top: 0; bottom: 0;
-  width: 1.5px;
-  background: var(--color-border);
-  border-radius: 1px;
-}
+/* No nesting rail, deliberately. One was drawn in the parent's gutter for
+   nested rows — but that gutter only exists BECAUSE a row is indented, so
+   top-level bullets could never have one, and the outline showed a rail at
+   every level except the first. Making it consistent the other way meant
+   insetting the whole list by one step so depth 0 had somewhere to draw,
+   which pushes every bullet on the page right for a line that says what the
+   indent already says. The indent is the level; it does not need underlining. */
 
 /* Everything that visually *is* the row. Separate from the <li> so a swipe
    translates the content while the delete backing beneath stays put. */

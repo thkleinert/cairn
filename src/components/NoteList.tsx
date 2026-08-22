@@ -292,7 +292,7 @@ export function NoteList({
 
   const { dragId, depth: dragDepth, settling, onPointerDown: handlePointerDown,
           onPointerMove: handlePointerMove, onPointerUp: handlePointerUp,
-          offsetFor, inBlock } =
+          onClickCapture: handleClickCapture, offsetFor, inBlock } =
     useOutlineDrag({
       // Visible rows, because the geometry and the level preview both belong to
       // what is on screen. handleDrop maps back to the outline.
@@ -602,7 +602,7 @@ export function NoteList({
   const draftRow = draft && (
     <li
       key="draft"
-      className={`note-bullet note-bullet--draft ${draft.depth > 0 ? 'note-bullet--nested' : ''}`}
+      className="note-bullet note-bullet--draft"
       style={{ '--note-depth': draft.depth } as React.CSSProperties}
     >
       <div className="note-bullet-slide">
@@ -671,6 +671,7 @@ export function NoteList({
         onGripDown={handlePointerDown}
         onPointerMove={dragId !== null ? handlePointerMove : undefined}
         onPointerUp={dragId !== null ? handlePointerUp : undefined}
+        onClickCapture={handleClickCapture}
         renderEditor={renderEditor}
       />
     );
@@ -710,6 +711,7 @@ interface RowProps {
   onGripDown: (index: number, row: HTMLElement, e: React.PointerEvent) => void;
   onPointerMove?: (e: React.PointerEvent) => void;
   onPointerUp?: (e: React.PointerEvent) => void;
+  onClickCapture?: (e: React.MouseEvent) => void;
   renderEditor: (ariaLabel: string, autoFocus: boolean) => React.ReactNode;
 }
 
@@ -718,13 +720,14 @@ interface RowProps {
 function NoteRow({
   note, depth, index, places, editing, dragging, offsetPx, suppressTransition, canDrag,
   collapsible, collapsed, onToggleCollapse,
-  onStartEdit, onDelete, onSelectPlace, onGripDown, onPointerMove, onPointerUp, renderEditor,
+  onStartEdit, onDelete, onSelectPlace, onGripDown, onPointerMove, onPointerUp,
+  onClickCapture, renderEditor,
 }: RowProps) {
   const swipe = useSwipeToDelete({ onDelete, enabled: !editing && !dragging });
 
   return (
     <li
-      className={`note-bullet ${depth > 0 ? 'note-bullet--nested' : ''} ${dragging ? 'note-bullet--dragging' : ''} ${swipe.swiping ? 'note-bullet--swiping' : ''}`}
+      className={`note-bullet ${dragging ? 'note-bullet--dragging' : ''} ${swipe.swiping ? 'note-bullet--swiping' : ''}`}
       style={{
         '--note-depth': depth,
         transform: dragging ? undefined : `translateY(${offsetPx}px)`,
@@ -732,6 +735,7 @@ function NoteRow({
       } as React.CSSProperties}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onClickCapture={onClickCapture}
     >
       {/* Revealed by the row sliding off it, so the gesture explains itself
           before it completes. */}
