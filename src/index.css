@@ -289,8 +289,11 @@ select.input {
 .trip-list-header {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 12px;
-  /* Full width, for the reason .trip-topbar is. */
+  /* Full width, for the reason .trip-topbar is — including its landscape
+     safe-area caveat. */
   padding: calc(22px + env(safe-area-inset-top)) 16px 20px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
   background: var(--color-surface);
   border-bottom: 1px solid transparent;
   position: relative;
@@ -518,8 +521,18 @@ select.input {
      controls floating away from the text it acts on looks unmoored. On a wide
      screen it reads the other way round: the bar is chrome, not content, and
      chrome belongs to the window. Back on the left edge, actions on the
-     right, the way every other application title bar behaves. */
-  padding: env(safe-area-inset-top) 8px 0 4px;
+     right, the way every other application title bar behaves.
+
+     The left/right insets matter now that the bar really does reach the edge.
+     iOS ignores the manifest's orientation lock (see public/viewport.js), and
+     the page is drawn with viewport-fit=cover, so in landscape on a notched
+     device a 4px inset puts the back button under the sensor housing. max()
+     keeps the intent and is literally inert wherever the inset is zero, which
+     is every desktop and every phone in portrait. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: 0;
+  padding-left: max(4px, env(safe-area-inset-left));
+  padding-right: max(8px, env(safe-area-inset-right));
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   z-index: 10;
