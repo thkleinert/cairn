@@ -30,7 +30,14 @@ export function useLongPressDrag({ enabled, holdMs = 420, slopPx = 8, onMove, on
   const armed = useRef(false);
   // A drag ends with a click on whatever the finger is over. Without this,
   // dropping a row opens the place that was under it.
+  //
+  // It has to expire on its own, not just when something consumes it: a drag
+  // that actually TRAVELLED emits no compatibility click at all, so a flag
+  // waiting to be read would sit set until the next genuine tap and eat that
+  // instead — the place sheet silently refusing to open, one tap after a
+  // reorder. Short enough that no real second tap falls inside it.
   const swallow = useRef(false);
+  const swallowTimer = useRef<number | null>(null);
 
   /**
    * The only thing that can stop the list scrolling once a press has become a
@@ -55,6 +62,33 @@ export function useLongPressDrag({ enabled, holdMs = 420, slopPx = 8, onMove, on
   }, []);
 
   /**
+   * Let go of whatever is held, telling the drag about it if one was running.
+   *
+   * Both the release AND a new press come through here. A bare cancel on a new
+   * press abandoned a drag already in flight without ever calling onEnd — the
+   * second finger of a two-finger scroll was enough — and useDragReorder went
+   * on holding the row, which keeps its lifted transform in inline styles that
+   * no re-render clears. The row stayed picked up until the view was left.
+   */
+  const release = useCallback(() => {
+    if (armed.current) {
+      onEnd();
+      swallow.current = true;
+      if (swallowTimer.current) clearTimeout(swallowTimer.current);
+      swallowTimer.current = window.setTimeout(() => { swallow.current = false; }, 150);
+    }
+    cancel();
+  }, [cancel, onEnd]);
+
+  // A row can go while its press is still pending — a collaborator's delete,
+  // or the view changing. The timer would then fire against a detached
+  // element, and setPointerCapture on one throws.
+  useEffect(() => () => {
+    if (press.current) clearTimeout(press.current.timer);
+    if (swallowTimer.current) clearTimeout(swallowTimer.current);
+  }, []);
+
+  /**
    * `begin` is handed the press's ORIGINAL coordinates, not the ones the
    * pointer has now. The drag measures every later move against where the
    * finger started, and by the time this fires the React event that carried
@@ -63,14 +97,14 @@ export function useLongPressDrag({ enabled, holdMs = 420, slopPx = 8, onMove, on
    */
   const start = useCallback((e: React.PointerEvent, begin: (point: DragPoint) => void) => {
     if (!enabled) return;
-    cancel();
+    release();
     const { clientX, clientY, pointerId, target } = e;
     const timer = window.setTimeout(() => {
       armed.current = true;
       begin({ clientX, clientY, pointerId, target, preventDefault: () => {} });
     }, holdMs);
     press.current = { timer, x: clientX, y: clientY };
-  }, [enabled, holdMs, cancel]);
+  }, [enabled, holdMs, release]);
 
   const move = useCallback((e: React.PointerEvent) => {
     if (!press.current) return;
@@ -83,13 +117,7 @@ export function useLongPressDrag({ enabled, holdMs = 420, slopPx = 8, onMove, on
     onMove(e);
   }, [cancel, onMove, slopPx]);
 
-  const end = useCallback(() => {
-    if (armed.current) {
-      onEnd();
-      swallow.current = true;
-    }
-    cancel();
-  }, [cancel, onEnd]);
+  const end = release;
 
   /** True once, immediately after a drag — the click it produced is not a tap. */
   const swallowedClick = useCallback(() => {

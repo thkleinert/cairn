@@ -1442,8 +1442,10 @@ select.input {
    dragged sideways visible — clipping the container would cut off the very
    gesture the indent exists for. The trade is that a drag in progress does
    widen the scroll range, since its transform is not padding; that lasts as
-   long as the finger is down, and touch-action:none on the grip means it
-   cannot be panned to. Only the resting layout is guaranteed overflow-free,
+   long as the finger is down, and while it is down useLongPressDrag is
+   preventDefaulting every touchmove, so the widened range cannot be panned to.
+   (That guarantee used to come from touch-action:none on the drag grip, which
+   no longer exists.) Only the resting layout is guaranteed overflow-free,
    which is the one that has to be. */
 /* Holding a row is how you pick it up to move it, and both platforms answer a
    long press with something else by default: iOS raises the magnifier and
@@ -1558,7 +1560,6 @@ select.input {
 
    Only at the outer level — a nested row is already indented past the strip,
    so max() gives it no gutter at all. */
-/* Holds the column open on a row with no grip, so content stays on one axis. */
 
 .place-list-item-content {
   flex: 1; min-width: 0;

@@ -228,6 +228,11 @@ export function PlaceListView({
             onPointerDown={e => {
               const row = rowRefs.current[place.id];
               if (!row || !draggableIds.has(place.id)) return;
+              // The fold control lives inside this row, so its own press
+              // bubbles up here — holding it to expand a stop picked the whole
+              // row up instead. The grip used to be immune to this only by
+              // being a separate element with the handlers on it.
+              if ((e.target as HTMLElement).closest('.place-list-fold')) return;
               // The press's own coordinates travel with it — by the time the
               // hold lands, this event is gone. See useLongPressDrag.
               press.start(e, point => handlePointerDown(place.id, index, row, point));
