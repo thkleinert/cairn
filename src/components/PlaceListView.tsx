@@ -251,24 +251,8 @@ export function PlaceListView({
               <span className="place-list-drag-handle place-list-drag-handle--empty" aria-hidden="true" />
             )}
 
-            {/* The fold's column is held open on a row that has nothing to
-                fold, the same way the drag grip's is just above — and now for
-                a second reason as well as tidiness: the dates are right-
-                aligned inside the body, so a row whose body is 38px narrower
-                than its neighbour's puts its dates 38px out of line, and the
-                column they are supposed to form stops being one.
-
-                Reserved as padding INSIDE this button rather than as a spacer
-                beside it. A sibling took the width off a flex:1 target and
-                left a 38px dead strip down the right edge of every childless
-                row — a tenth of the row on a phone, where a tap used to open
-                the place and then did nothing at all. */}
             <button
-              className={[
-                'place-list-item-content',
-                !canReorder ? 'place-list-item-content--flush' : '',
-                canReorder && children === 0 ? 'place-list-item-content--fold-gap' : '',
-              ].filter(Boolean).join(' ')}
+              className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
               onClick={() => onSelectPlace(place)}
             >
               {place.image_url && (
@@ -281,53 +265,40 @@ export function PlaceListView({
                     : <Circle size={16} color="var(--color-muted)" />
                   }
                   <span className="place-list-name">{place.name}</span>
-                  {/* On the name's own line, at the right, rather than a line
-                      of its own. A line each made a dated place a row taller
-                      than an undated one, so a list with some dates in it went
-                      lumpy — and the dates all land on the same axis this way,
-                      which is how you read an itinerary down the page. */}
-                  {/* The count comes BEFORE the dates, so the dates keep the
-                      right edge to themselves. The other way round, a folded
-                      stop's dates were pushed left by the width of the pill
-                      and dropped out of the column every other row was
-                      forming — the pill is the occasional element, so the
-                      pill is the one that moves. */}
                   {folded && children > 0 && (
                     <span className="place-list-folded-count">
                       {children} inside
                     </span>
                   )}
-                  {/* The first visit, plus a count of any others.
-                      Spelling every visit out — "24 – 25 Oct · 11 – 14 Nov" —
-                      is 25 characters of metadata on a row whose most
-                      important word is the name, and on a folded stop it
-                      crushed "Bangkok" down to "Ba…". The name must never be
-                      the thing that gives way. The full list is a tap away on
-                      the place sheet, and the timeline shows every visit in
-                      its own right — this line only has to say WHEN, roughly,
-                      and whether there is more than one. */}
-                  {(visitsByPlace.get(place.id) ?? []).length > 0 && (() => {
-                    const own = visitsByPlace.get(place.id)!;
-                    return (
-                      <span
-                        className="place-list-dates"
-                        // Only when there is something the line is not
-                        // showing. On the single-visit majority this would
-                        // repeat the text beside it — and a title has no
-                        // hover on the phone this is designed for, so it is a
-                        // courtesy to a desktop reader rather than the way
-                        // anyone reaches the full list. That is the place
-                        // sheet and the timeline.
-                        title={own.length > 1 ? own.map(v => formatVisit(v, year)).join(' · ') : undefined}
-                      >
-                        {formatVisit(own[0], year)}
-                        {own.length > 1 && (
-                          <span className="place-list-dates-more"> +{own.length - 1}</span>
-                        )}
-                      </span>
-                    );
-                  })()}
                 </div>
+                {/* A line of its own, under the name. It shared the name's
+                    row while the address was still there and a dated place was
+                    four lines tall; with the address gone the row can afford
+                    one, and on its own line the dates compete with nothing —
+                    which is also why every visit is spelled out again rather
+                    than summarised. A city you come back to reads as
+                    "24 – 25 Oct · 11 – 14 Nov", which is the fact worth seeing
+                    at a glance and the reason a visit is a row in the database
+                    rather than a pair of columns. */}
+                {(visitsByPlace.get(place.id) ?? []).length > 0 && (() => {
+                  const all = visitsByPlace.get(place.id)!
+                    .map(v => formatVisit(v, year)).join(' · ');
+                  return (
+                    // The line still truncates — around four visits on a
+                    // narrow screen — and having dropped the "+N" summary
+                    // there is nothing left to say so. The title is only a
+                    // courtesy to a desktop reader, since a phone has no
+                    // hover; the full list lives on the place sheet and in
+                    // the timeline. Set only when there is more than one
+                    // visit, so it never just repeats the visible text.
+                    <p
+                      className="place-list-dates"
+                      title={visitsByPlace.get(place.id)!.length > 1 ? all : undefined}
+                    >
+                      {all}
+                    </p>
+                  );
+                })()}
                 {/* No address line at all. For a stop it was the name back
                     again — "Surat Thani, Amphoe Mueang Surat Thani, Surat
                     Thani, Thailand" under a row already headed Surat Thani —
@@ -354,9 +325,8 @@ export function PlaceListView({
             {/* Right-aligned plus/minus, the same control a note bullet and a
                 notes-page heading use — "there is more under this" looks the
                 same everywhere. Only a stop with something inside it gets one;
-                a row with nothing to fold shows no control rather than a
-                dead one — its column is held open by padding on the content
-                button above, not by an inert element here. */}
+                a row with nothing to fold shows no control rather than a dead
+                one. */}
             {canReorder && children > 0 && (
               <button
                 className="place-list-fold"
