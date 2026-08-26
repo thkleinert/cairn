@@ -7,12 +7,14 @@ import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
 import { NoteList } from './NoteList';
 import { NoteBody } from './NoteBody';
+import { DateField } from './DateField';
 import { normaliseDepths } from '../lib/outline';
+import { visitsForPlace } from '../lib/timeline';
 import {
   X,
   Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
 } from 'lucide-react';
-import type { Place, Tag, PlaceImage, TripNote } from '../types';
+import type { Place, Tag, PlaceImage, TripNote, PlaceVisit } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
 import { authorName, avatarColor } from '../lib/people';
 
@@ -49,6 +51,13 @@ interface Props {
   onSetNoteDepths?: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorderNotes?: (orderedIds: string[]) => void | boolean | Promise<void | boolean>;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
+  // When this place is. Every visit in the trip, not just this place's — the
+  // filtering happens here so the caller cannot hand over a list grouped by a
+  // rule this sheet disagrees with.
+  visits?: PlaceVisit[];
+  onAddVisit?: (startsOn: string, endsOn: string | null) => Promise<PlaceVisit | null>;
+  onUpdateVisit?: (id: string, updates: { starts_on?: string; ends_on?: string | null }) => Promise<boolean>;
+  onRemoveVisit?: (id: string) => Promise<boolean>;
   readOnly?: boolean;
   // When opened from a comment notification, expand + scroll to the thread.
   scrollToComments?: boolean;
@@ -58,6 +67,7 @@ interface Props {
 export function PlaceDetailSheet({
   place, allTags, onClose, onToggleVisited, onDelete, onSetParent,
   onSetTags, onAddImage, onUploadImage, onRemoveImage, onCreateTag, readOnly = false,
+  visits = [], onAddVisit, onUpdateVisit, onRemoveVisit,
   scrollToComments = false, onCommentsShown,
   notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onRestoreNote,
   onSetNoteDepths, onReorderNotes,
@@ -69,6 +79,12 @@ export function PlaceDetailSheet({
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
+  // An unsaved visit, held here until it has an arrival date. A visit with no
+  // start cannot be written — starts_on is not null — so the row has to exist
+  // on screen before it exists in the database, and this is where it lives in
+  // between. A departure picked first is kept too, rather than being thrown
+  // away for having been entered in the other order.
+  const [draftVisit, setDraftVisit] = useState<{ starts_on: string; ends_on: string } | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(true);
   const galleryRef = useRef<HTMLDivElement>(null);
@@ -90,6 +106,20 @@ export function PlaceDetailSheet({
   // repair it — its value already matches "Nowhere in particular", so choosing
   // that fires no change — so this is the one control that can.
   const isOrphanSpot = place.kind === 'spot' && !place.parent_place_id;
+
+  // This place's dates, earliest first. Only a stop can have any — a spot is
+  // inside a stop and inherits its window by sitting there — so the section
+  // below is not offered for anything else, and the database refuses it in
+  // case something offers it anyway.
+  const placeVisits = visitsForPlace(visits, place.id);
+  const canEditVisits = !readOnly && place.kind === 'stop' && !!onAddVisit;
+  // Filing a dated stop inside another stop would make it a spot, which
+  // places_dated_stop_guard refuses. Pre-empted here rather than left to fail:
+  // the reason is a section further up this same sheet, and a select that
+  // silently rejects every option is worse than one that says why. The write
+  // still surfaces the guard's own message if a collaborator dates this place
+  // while the sheet is open.
+  const blockedByDates = place.kind === 'stop' && placeVisits.length > 0;
 
   const handleAddComment = async () => {
     const body = commentDraft.trim();
@@ -119,7 +149,29 @@ export function PlaceDetailSheet({
   useEffect(() => {
     setSelectedTags((place.tags ?? []).map(t => t.id));
     setDirty(false);
+    // A half-entered visit belongs to the place it was started on. The sheet
+    // is reused rather than remounted when another place is opened, so
+    // without this an abandoned draft follows you to the next one.
+    setDraftVisit(null);
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * A draft becomes a real visit the moment it has an arrival, which is the
+   * first point at which it can be written at all. No Add button: the fields
+   * are the form, and one that saves itself matches every other control on
+   * this sheet.
+   *
+   * The values are passed in rather than read from state — this runs from an
+   * onChange, and state set in the same tick is not readable yet.
+   */
+  const commitDraft = async (startsOn: string, endsOn: string) => {
+    setDraftVisit({ starts_on: startsOn, ends_on: endsOn });
+    if (!startsOn || !onAddVisit) return;
+    const created = await onAddVisit(startsOn, endsOn || null);
+    // Kept on failure. Clearing it would throw away the dates just entered and
+    // leave a toast as the only trace, with nothing on screen to retry from.
+    if (created) setDraftVisit(null);
+  };
 
   const images: PlaceImage[] = place.images ?? [];
   // get_shared_trip flattens a place's bullets onto the place itself, since the
@@ -255,6 +307,107 @@ export function PlaceDetailSheet({
           </div>
         )}
 
+        {/* Dates — when you are here, and for how long.
+
+            One section, many rows: a place can be visited more than once, and
+            a trip that opens and closes in the same city is the ordinary case
+            rather than the exotic one. Each row is one arrival and one
+            departure, and an empty departure means a single day rather than an
+            open-ended stay — there is nothing to draw on a timeline for a
+            visit with no end, and nothing to be wrong about either.
+
+            Stops only. A spot is somewhere inside a stop, and it is the stop
+            you arrive at; giving a café its own arrival date would invite two
+            answers to the same question. */}
+        {canEditVisits && (
+          <div className="detail-section">
+            <div className="detail-label-row">
+              <label className="detail-label">Dates</label>
+              {/* One draft at a time. Two blank rows on screen is two ways to
+                  do the same thing and no way to tell them apart. */}
+              {!draftVisit && (
+                <button
+                  type="button"
+                  className="detail-label-add"
+                  aria-label="Add dates"
+                  onClick={() => setDraftVisit({ starts_on: '', ends_on: '' })}
+                >
+                  <Plus size={16} />
+                </button>
+              )}
+            </div>
+
+            {placeVisits.length === 0 && !draftVisit && (
+              <p className="detail-hint">No dates yet.</p>
+            )}
+
+            <ul className="visit-rows">
+              {placeVisits.map(visit => (
+                <li key={visit.id} className="visit-row">
+                  <div className="date-row">
+                    {/* Each field is bounded by the other, so the picker
+                        cannot offer a departure before its arrival at all.
+                        The check constraint behind this would refuse the same
+                        thing, but only after a round trip and in words about
+                        a relation and a constraint name. */}
+                    <DateField
+                      label="Arrive"
+                      value={visit.starts_on}
+                      max={visit.ends_on ?? undefined}
+                      onChange={value => { if (value) onUpdateVisit?.(visit.id, { starts_on: value }); }}
+                    />
+                    <DateField
+                      label="Depart"
+                      value={visit.ends_on ?? ''}
+                      min={visit.starts_on}
+                      emptyLabel="Same day"
+                      onChange={value => onUpdateVisit?.(visit.id, { ends_on: value || null })}
+                      onClear={() => onUpdateVisit?.(visit.id, { ends_on: null })}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="visit-remove"
+                    aria-label={`Remove ${visit.starts_on}`}
+                    onClick={() => onRemoveVisit?.(visit.id)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </li>
+              ))}
+
+              {draftVisit && (
+                <li className="visit-row visit-row--draft">
+                  <div className="date-row">
+                    <DateField
+                      label="Arrive"
+                      value={draftVisit.starts_on}
+                      max={draftVisit.ends_on || undefined}
+                      onChange={value => commitDraft(value, draftVisit.ends_on)}
+                    />
+                    <DateField
+                      label="Depart"
+                      value={draftVisit.ends_on}
+                      min={draftVisit.starts_on || undefined}
+                      emptyLabel="Same day"
+                      onChange={value => commitDraft(draftVisit.starts_on, value)}
+                      onClear={() => setDraftVisit({ ...draftVisit, ends_on: '' })}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="visit-remove"
+                    aria-label="Discard these dates"
+                    onClick={() => setDraftVisit(null)}
+                  >
+                    <X size={15} />
+                  </button>
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+
         {/* Part of — anchors this place inside another, so the notes page nests
             it under that one instead of giving a café its own top-level
             section next to the city it's in.
@@ -281,7 +434,7 @@ export function PlaceDetailSheet({
               id="place-parent"
               className="input"
               value={place.parent_place_id ?? ''}
-              disabled={hasChildren}
+              disabled={hasChildren || blockedByDates}
               onChange={e => onSetParent(e.target.value || null)}
             >
               <option value="">Nowhere in particular</option>
@@ -292,6 +445,13 @@ export function PlaceDetailSheet({
             {hasChildren && (
               <p className="detail-hint">
                 Move the places inside this one out first.
+              </p>
+            )}
+            {/* Named in the same words the database uses, because they are the
+                same rule and the section that undoes it is directly above. */}
+            {blockedByDates && !hasChildren && (
+              <p className="detail-hint">
+                Remove this place&rsquo;s dates before making it a spot.
               </p>
             )}
             {isOrphanSpot && !hasChildren && (

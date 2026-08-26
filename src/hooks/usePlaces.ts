@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { insertOnce, applyOrder } from '../lib/rows';
+import { guardMessage } from '../lib/guards';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
 import { kindFor } from '../lib/anchor';
 import { removeStorageUrls } from '../lib/storage';
@@ -207,7 +208,12 @@ export function usePlaces(tripId: string | undefined) {
       .select()
       .single();
     if (error || !data) {
-      toast('Could not save changes');
+      // A guard that refused this has already said why, in words meant for
+      // the person reading them — "Remove this place's dates before making it
+      // a spot" names the control that fixes it, where "Could not save
+      // changes" leaves someone with no idea what to try next. Anything the
+      // database did not phrase for a reader keeps the generic line.
+      toast(guardMessage(error) ?? 'Could not save changes');
       fetchPlaces();
       return null;
     }

@@ -85,26 +85,49 @@ export function visitsForPlace(visits: PlaceVisit[], placeId: string): PlaceVisi
 }
 
 /**
- * A visit as a short label: "8 – 12 Nov", or "12 Nov – 3 Dec" when it crosses a
- * month, or "8 Nov" for a single day. The year is added only when the visit is
- * not in the year given, which keeps the common case short without ever being
- * ambiguous about a trip that straddles New Year.
+ * A span of dates as a short label: "8 – 12 Nov", or "12 Nov – 3 Dec" when it
+ * crosses a month, or "8 Nov" for a single day. The year is added only when
+ * the span is not in the year given, which keeps the common case short without
+ * ever being ambiguous about a trip that straddles New Year.
  */
-export function formatVisit(visit: PlaceVisit, thisYear?: number): string {
+export function formatRange(startsOn: string, endsOn: string | null, thisYear?: number): string {
   const fmt = (iso: string, withMonth: boolean, withYear: boolean) => {
     const [y, m, d] = iso.split('-').map(Number);
     const month = new Date(Date.UTC(2000, m - 1, 1))
       .toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' });
     return `${d}${withMonth ? ` ${month}` : ''}${withYear ? ` ${y}` : ''}`;
   };
-  const [sy, sm] = visit.starts_on.split('-').map(Number);
-  const end = visit.ends_on;
+  const [sy, sm] = startsOn.split('-').map(Number);
   const showStartYear = thisYear !== undefined && sy !== thisYear;
 
-  if (!end || end === visit.starts_on) return fmt(visit.starts_on, true, showStartYear);
+  if (!endsOn || endsOn === startsOn) return fmt(startsOn, true, showStartYear);
 
-  const [ey, em] = end.split('-').map(Number);
+  const [ey, em] = endsOn.split('-').map(Number);
   const sameMonth = sy === ey && sm === em;
   const showEndYear = thisYear !== undefined && ey !== thisYear;
-  return `${fmt(visit.starts_on, !sameMonth, showStartYear && !sameMonth)} – ${fmt(end, true, showEndYear)}`;
+  return `${fmt(startsOn, !sameMonth, showStartYear && !sameMonth)} – ${fmt(endsOn, true, showEndYear)}`;
+}
+
+/** One visit as a short label — see formatRange. */
+export function formatVisit(visit: PlaceVisit, thisYear?: number): string {
+  return formatRange(visit.starts_on, visit.ends_on, thisYear);
+}
+
+/**
+ * The year a trip's dates are "in", so labels can leave it off.
+ *
+ * Taken from the earliest visit rather than from the trip's own start_date:
+ * plenty of trips have no dates set on the trip itself, and the point of this
+ * is only to decide which year is unremarkable enough to omit. A trip that
+ * runs into January then shows the year on exactly the visits that need it.
+ *
+ * Every surface derives it from the same full list, so none of them can
+ * disagree about which year is the quiet one.
+ */
+export function baseYear(visits: PlaceVisit[]): number | undefined {
+  let earliest: string | null = null;
+  for (const v of visits) {
+    if (!earliest || v.starts_on < earliest) earliest = v.starts_on;
+  }
+  return earliest ? Number(earliest.slice(0, 4)) : undefined;
 }

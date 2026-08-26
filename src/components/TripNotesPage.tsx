@@ -2,18 +2,24 @@ import { ArrowLeft, NotebookPen, Plus, Minus, X } from 'lucide-react';
 import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { NoteList } from './NoteList';
+import { TripTimeline } from './TripTimeline';
 import { groupPlaces } from '../lib/placeTree';
 import { nearestParent } from '../lib/anchor';
-import type { Place, Tag, TripNote } from '../types';
+import type { Place, PlaceVisit, Tag, TripNote } from '../types';
 
 // The trip-wide section folds like any other, but has no place id to key that
 // on. A constant is safe: the stored set is already scoped to one trip, and
 // this can't collide with a uuid.
 const TRIP_WIDE = 'trip-wide';
+// Same trick for the timeline, which is a section on this page without being
+// a place either.
+const TIMELINE = 'timeline';
 
 interface Props {
   places: Place[];
   allTags: Tag[];
+  /** Every dated visit in the trip — the timeline strip is built from these. */
+  visits: PlaceVisit[];
   tripNotes: TripNote[];
   notesByPlace: Map<string, TripNote[]>;
   loading: boolean;
@@ -61,7 +67,7 @@ interface Props {
 // about — to add the first note to a place you had to find it on the map
 // instead. An empty place is just its heading: no bullet, no prompt.
 export function TripNotesPage({
-  places, allTags, tripNotes, notesByPlace, loading,
+  places, allTags, visits, tripNotes, notesByPlace, loading,
   onAdd, onUpdate, onRemove, onRestore, onSetDepths, onReorder, onSelectPlace,
   isCollapsed, toggleCollapse, isNoteFolded, toggleNoteFold, onExpandNote,
   onAnchorPlace, isAnchorDismissed, onDismissAnchor, onClose,
@@ -264,6 +270,18 @@ export function TripNotesPage({
       </div>
 
       <div className="notes-page-body">
+        {/* Above General, because when a trip has dates they are the first
+            thing anyone opening this page wants — and because everything
+            below is sorted by name, which reads a trip in an order it never
+            happens in. Draws nothing at all until something is dated. */}
+        <TripTimeline
+          visits={visits}
+          places={places}
+          collapsed={isCollapsed(TIMELINE)}
+          onToggle={() => toggleCollapse(TIMELINE)}
+          onSelectPlace={onSelectPlace}
+        />
+
         {/* Wrapped, not doubly-classed: .notes-group and .notes-block both
             set margin-bottom at equal specificity, so putting both on one
             element let the later rule win and swallowed the gap after this
