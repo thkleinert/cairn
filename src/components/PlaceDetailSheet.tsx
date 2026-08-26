@@ -85,6 +85,11 @@ export function PlaceDetailSheet({
   // between. A departure picked first is kept too, rather than being thrown
   // away for having been entered in the other order.
   const [draftVisit, setDraftVisit] = useState<{ starts_on: string; ends_on: string } | null>(null);
+  // Refs, not state: these coordinate one in-flight insert with the changes
+  // that land during it, and they have to be readable and writable inside the
+  // same async call rather than at the next render. See commitDraft.
+  const savingDraft = useRef(false);
+  const lateDepart = useRef<string | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(true);
   const galleryRef = useRef<HTMLDivElement>(null);
@@ -153,6 +158,7 @@ export function PlaceDetailSheet({
     // is reused rather than remounted when another place is opened, so
     // without this an abandoned draft follows you to the next one.
     setDraftVisit(null);
+    lateDepart.current = null;
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
@@ -167,10 +173,27 @@ export function PlaceDetailSheet({
   const commitDraft = async (startsOn: string, endsOn: string) => {
     setDraftVisit({ starts_on: startsOn, ends_on: endsOn });
     if (!startsOn || !onAddVisit) return;
+
+    // The draft row stays on screen for the length of the insert, and both of
+    // its fields still work — so picking a departure in that window called
+    // this a second time with the same arrival and wrote a DUPLICATE VISIT.
+    // Only one insert per draft; a change that lands mid-flight is held and
+    // applied to the row once it has an id.
+    if (savingDraft.current) { lateDepart.current = endsOn; return; }
+    savingDraft.current = true;
     const created = await onAddVisit(startsOn, endsOn || null);
+    savingDraft.current = false;
+
     // Kept on failure. Clearing it would throw away the dates just entered and
     // leave a toast as the only trace, with nothing on screen to retry from.
-    if (created) setDraftVisit(null);
+    if (!created) { lateDepart.current = null; return; }
+    setDraftVisit(null);
+
+    const held = lateDepart.current;
+    lateDepart.current = null;
+    if (held !== null && held !== (created.ends_on ?? '')) {
+      await onUpdateVisit?.(created.id, { ends_on: held || null });
+    }
   };
 
   const images: PlaceImage[] = place.images ?? [];

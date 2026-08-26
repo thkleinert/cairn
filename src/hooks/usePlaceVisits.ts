@@ -22,6 +22,13 @@ export function usePlaceVisits(tripId: string | undefined) {
   // Realtime events arrive in bursts and each triggers a refetch; without this
   // the last response to *resolve* wins even when it carries an older snapshot.
   const fetchSeqRef = useRef(0);
+  // The current visits, for reading AFTER an await — the same ref useTripNotes
+  // keeps, for the same reason. A closure captures the list as it was when the
+  // callback was made, which is a different list once a round trip has
+  // happened. Concretely: the place sheet writes a departure onto a visit it
+  // has only just inserted, and a captured array does not contain that row
+  // yet, so the update found nothing and did nothing, silently.
+  const visitsRef = useRef<PlaceVisit[]>([]);
 
   const fetchVisits = useCallback(async () => {
     if (!tripId) { setVisits([]); setLoading(false); return; }
@@ -57,6 +64,8 @@ export function usePlaceVisits(tripId: string | undefined) {
       .subscribe();
     return () => { channelRef.current?.unsubscribe(); };
   }, [tripId, fetchVisits]);
+
+  visitsRef.current = visits;
 
   /**
    * Date a stop. `endsOn` null is a single day, not an open-ended stay.
@@ -95,6 +104,11 @@ export function usePlaceVisits(tripId: string | undefined) {
     }
     const created = data as PlaceVisit;
     setVisits(prev => insertOnce(prev, created));
+    // The ref too, not just the state. A caller that follows this with an
+    // update to the row it just got back — the sheet applying a departure
+    // picked while the insert was in flight — runs before React has
+    // re-rendered, and updateVisit would not find it.
+    visitsRef.current = insertOnce(visitsRef.current, created);
     return created;
   }, [tripId]);
 
@@ -109,7 +123,7 @@ export function usePlaceVisits(tripId: string | undefined) {
     id: string,
     updates: { starts_on?: string; ends_on?: string | null },
   ): Promise<boolean> => {
-    const current = visits.find(v => v.id === id);
+    const current = visitsRef.current.find(v => v.id === id);
     if (!current) return false;
     const next = { ...current, ...updates };
     if (next.ends_on && next.ends_on < next.starts_on) {
@@ -131,7 +145,7 @@ export function usePlaceVisits(tripId: string | undefined) {
     }
     setVisits(prev => prev.map(v => v.id === id ? { ...v, ...(data as PlaceVisit) } : v));
     return true;
-  }, [visits, fetchVisits]);
+  }, [fetchVisits]);
 
   /**
    * Undate a visit.
@@ -141,7 +155,7 @@ export function usePlaceVisits(tripId: string | undefined) {
    * come back immediately rather than watch a gap for a round trip.
    */
   const removeVisit = useCallback(async (id: string): Promise<boolean> => {
-    const previous = visits;
+    const previous = visitsRef.current;
     setVisits(prev => prev.filter(v => v.id !== id));
     const { error } = await supabase.from('place_visits').delete().eq('id', id);
     if (error) {
@@ -150,7 +164,7 @@ export function usePlaceVisits(tripId: string | undefined) {
       return false;
     }
     return true;
-  }, [visits]);
+  }, []);
 
   return { visits, loading, addVisit, updateVisit, removeVisit };
 }
