@@ -1460,10 +1460,12 @@ select.input {
   color: var(--color-muted);
 }
 .place-list-fold:active { background: var(--color-bg); color: var(--color-text); }
+/* A spacer, not a control — it must not take a tap or announce itself. */
+.place-list-fold--empty { pointer-events: none; }
+.place-list-fold--empty:active { background: none; }
 
 .place-list-folded-count {
   flex-shrink: 0;
-  margin-left: auto;
   padding: 1px 8px;
   border-radius: 99px;
   background: var(--color-bg);
@@ -1556,12 +1558,13 @@ select.input {
 .place-list-body { flex: 1; min-width: 0; }
 .place-list-top { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 .place-list-name {
+  /* Takes the slack, so the dates and the folded count sit hard right. Two
+     elements each claiming `margin-left: auto` would split the gap between
+     them and strand the dates in the middle of the row. */
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 15px; font-weight: 600;
   letter-spacing: -0.01em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.place-list-address {
-  font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .place-list-tags { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -2712,12 +2715,19 @@ textarea.mention-input {
 
 /* Dates on a list row, above the address: when comes before where, because
    the order of a trip is what the list view is arranged by. */
+/* A count of the visits this line is not showing. Dimmer than the date it
+   follows, because it is a pointer to the place sheet rather than a fact
+   about the trip. */
+.place-list-dates-more { color: var(--color-muted); }
+
 .place-list-dates {
+  flex-shrink: 0;
   font-size: 12px;
+  /* tabular-nums so the dates form a column the eye can run down rather than
+     a ragged edge that shifts with the width of each numeral. */
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
-  margin-bottom: 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  white-space: nowrap;
 }
 
 /* ============================================================

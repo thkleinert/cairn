@@ -265,25 +265,56 @@ export function PlaceListView({
                     : <Circle size={16} color="var(--color-muted)" />
                   }
                   <span className="place-list-name">{place.name}</span>
+                  {/* On the name's own line, at the right, rather than a line
+                      of its own. A line each made a dated place a row taller
+                      than an undated one, so a list with some dates in it went
+                      lumpy — and the dates all land on the same axis this way,
+                      which is how you read an itinerary down the page.
+
+                      One label however many visits: a city you come back to
+                      reads as "8 – 12 Nov · 24 – 26 Nov", which is the fact
+                      worth seeing at a glance and the reason a visit is a row
+                      rather than a pair of columns. */}
+                  {/* The count comes BEFORE the dates, so the dates keep the
+                      right edge to themselves. The other way round, a folded
+                      stop's dates were pushed left by the width of the pill
+                      and dropped out of the column every other row was
+                      forming — the pill is the occasional element, so the
+                      pill is the one that moves. */}
                   {folded && children > 0 && (
                     <span className="place-list-folded-count">
                       {children} inside
                     </span>
                   )}
+                  {/* The first visit, plus a count of any others.
+                      Spelling every visit out — "24 – 25 Oct · 11 – 14 Nov" —
+                      is 25 characters of metadata on a row whose most
+                      important word is the name, and on a folded stop it
+                      crushed "Bangkok" down to "Ba…". The name must never be
+                      the thing that gives way. The full list is a tap away on
+                      the place sheet, and the timeline shows every visit in
+                      its own right — this line only has to say WHEN, roughly,
+                      and whether there is more than one. */}
+                  {(visitsByPlace.get(place.id) ?? []).length > 0 && (() => {
+                    const own = visitsByPlace.get(place.id)!;
+                    const all = own.map(v => formatVisit(v, year)).join(' · ');
+                    return (
+                      <span className="place-list-dates" title={all}>
+                        {formatVisit(own[0], year)}
+                        {own.length > 1 && (
+                          <span className="place-list-dates-more"> +{own.length - 1}</span>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </div>
-                {/* When this place is, under what it is. One line however
-                    many visits there are — a city you come back to reads as
-                    "8 – 12 Nov · 24 – 26 Nov", which is the fact worth seeing
-                    at a glance and the reason a visit is a row rather than a
-                    pair of columns. */}
-                {(visitsByPlace.get(place.id) ?? []).length > 0 && (
-                  <p className="place-list-dates">
-                    {visitsByPlace.get(place.id)!
-                      .map(v => formatVisit(v, year))
-                      .join(' · ')}
-                  </p>
-                )}
-                {place.address && <p className="place-list-address">{place.address}</p>}
+                {/* No address line at all. For a stop it was the name back
+                    again — "Surat Thani, Amphoe Mueang Surat Thani, Surat
+                    Thani, Thailand" under a row already headed Surat Thani —
+                    and for a spot it was a detail this screen is not for. The
+                    list view is the itinerary: what, in what order, and when.
+                    Where a place is, is what the map is, and the place sheet
+                    prints the address in full next to a pin. */}
                 {(place.tags ?? []).length > 0 && (
                   <div className="place-list-tags">
                     {(place.tags ?? []).map(tag => {
@@ -305,6 +336,15 @@ export function PlaceListView({
                 same everywhere. Only a stop with something inside it gets one;
                 a row with nothing to fold shows no control rather than a dead
                 one. */}
+            {/* The fold's column is held open on a row that has nothing to
+                fold, the same way the drag grip's is just above — and now for
+                a second reason as well as tidiness: the dates are right-
+                aligned inside the body, so a row whose body is 38px narrower
+                than its neighbour's puts its dates 38px out of line, and the
+                column they are supposed to form stops being one. */}
+            {canReorder && children === 0 && (
+              <span className="place-list-fold place-list-fold--empty" aria-hidden="true" />
+            )}
             {canReorder && children > 0 && (
               <button
                 className="place-list-fold"
