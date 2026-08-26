@@ -1460,12 +1460,11 @@ select.input {
   color: var(--color-muted);
 }
 .place-list-fold:active { background: var(--color-bg); color: var(--color-text); }
-/* A spacer, not a control — it must not take a tap or announce itself. */
-.place-list-fold--empty { pointer-events: none; }
-.place-list-fold--empty:active { background: none; }
 
 .place-list-folded-count {
-  flex-shrink: 0;
+  flex-shrink: 100;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding: 1px 8px;
   border-radius: 99px;
   background: var(--color-bg);
@@ -1547,6 +1546,12 @@ select.input {
   transition: background 0.12s;
 }
 .place-list-item-content:active { background: var(--color-bg); }
+/* A row with no fold control still leaves its column empty, so the dates
+   above stay on the same axis as every other row's. As padding rather than a
+   sibling element, so the button still spans the full width and the right-hand
+   tenth of the row is not a dead strip. 38px = the control's 34px plus its
+   4px margin; 16px is this button's own right padding. */
+.place-list-item-content--fold-gap { padding-right: calc(16px + 38px); }
 .place-list-item-content--flush { padding-left: 16px; }
 
 .place-list-thumb {
@@ -1557,6 +1562,17 @@ select.input {
 
 .place-list-body { flex: 1; min-width: 0; }
 .place-list-top { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+/* What gives way when this row runs out of width, in order.
+   The status icon never does: it is an <svg> with width/height attributes and
+   a flex item's default flex-shrink of 1, so under pressure it was squashing
+   to a 6px clipped ring rather than staying a circle.
+   The dates never do either — they are the column this row exists to line up.
+   The pill goes first and hardest: it is a hint about hidden children, and the
+   fold control beside it already says the same thing. A shrink factor this
+   large means it collapses almost entirely before the name loses a character,
+   which is the point — with a thumbnail, a wide pill and a two-visit label the
+   name was being squeezed to nothing. */
+.place-list-top > svg { flex-shrink: 0; }
 .place-list-name {
   /* Takes the slack, so the dates and the folded count sit hard right. Two
      elements each claiming `margin-left: auto` would split the gap between
@@ -2713,15 +2729,21 @@ textarea.mention-input {
   color: var(--color-danger);
 }
 
-/* Dates on a list row, above the address: when comes before where, because
-   the order of a trip is what the list view is arranged by. */
 /* A count of the visits this line is not showing. Dimmer than the date it
    follows, because it is a pointer to the place sheet rather than a fact
    about the trip. */
 .place-list-dates-more { color: var(--color-muted); }
 
 .place-list-dates {
-  flex-shrink: 0;
+  /* Shrinks, but three times more readily than the name does — so on a row
+     that runs out of width the order of sacrifice is: the pill collapses, then
+     the dates truncate, then the name. An earlier version pinned the dates at
+     flex-shrink: 0 to protect the column, and on a stop with a thumbnail, a
+     dozen spots and a cross-year range that turned "Chiang Mai" into "C…".
+     The column is worth protecting; it is not worth the name. */
+  flex-shrink: 3;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis;
   font-size: 12px;
   /* tabular-nums so the dates form a column the eye can run down rather than
      a ragged edge that shifts with the width of each numeral. */

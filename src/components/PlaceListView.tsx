@@ -251,8 +251,24 @@ export function PlaceListView({
               <span className="place-list-drag-handle place-list-drag-handle--empty" aria-hidden="true" />
             )}
 
+            {/* The fold's column is held open on a row that has nothing to
+                fold, the same way the drag grip's is just above — and now for
+                a second reason as well as tidiness: the dates are right-
+                aligned inside the body, so a row whose body is 38px narrower
+                than its neighbour's puts its dates 38px out of line, and the
+                column they are supposed to form stops being one.
+
+                Reserved as padding INSIDE this button rather than as a spacer
+                beside it. A sibling took the width off a flex:1 target and
+                left a 38px dead strip down the right edge of every childless
+                row — a tenth of the row on a phone, where a tap used to open
+                the place and then did nothing at all. */}
             <button
-              className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
+              className={[
+                'place-list-item-content',
+                !canReorder ? 'place-list-item-content--flush' : '',
+                canReorder && children === 0 ? 'place-list-item-content--fold-gap' : '',
+              ].filter(Boolean).join(' ')}
               onClick={() => onSelectPlace(place)}
             >
               {place.image_url && (
@@ -269,12 +285,7 @@ export function PlaceListView({
                       of its own. A line each made a dated place a row taller
                       than an undated one, so a list with some dates in it went
                       lumpy — and the dates all land on the same axis this way,
-                      which is how you read an itinerary down the page.
-
-                      One label however many visits: a city you come back to
-                      reads as "8 – 12 Nov · 24 – 26 Nov", which is the fact
-                      worth seeing at a glance and the reason a visit is a row
-                      rather than a pair of columns. */}
+                      which is how you read an itinerary down the page. */}
                   {/* The count comes BEFORE the dates, so the dates keep the
                       right edge to themselves. The other way round, a folded
                       stop's dates were pushed left by the width of the pill
@@ -297,9 +308,18 @@ export function PlaceListView({
                       and whether there is more than one. */}
                   {(visitsByPlace.get(place.id) ?? []).length > 0 && (() => {
                     const own = visitsByPlace.get(place.id)!;
-                    const all = own.map(v => formatVisit(v, year)).join(' · ');
                     return (
-                      <span className="place-list-dates" title={all}>
+                      <span
+                        className="place-list-dates"
+                        // Only when there is something the line is not
+                        // showing. On the single-visit majority this would
+                        // repeat the text beside it — and a title has no
+                        // hover on the phone this is designed for, so it is a
+                        // courtesy to a desktop reader rather than the way
+                        // anyone reaches the full list. That is the place
+                        // sheet and the timeline.
+                        title={own.length > 1 ? own.map(v => formatVisit(v, year)).join(' · ') : undefined}
+                      >
                         {formatVisit(own[0], year)}
                         {own.length > 1 && (
                           <span className="place-list-dates-more"> +{own.length - 1}</span>
@@ -334,17 +354,9 @@ export function PlaceListView({
             {/* Right-aligned plus/minus, the same control a note bullet and a
                 notes-page heading use — "there is more under this" looks the
                 same everywhere. Only a stop with something inside it gets one;
-                a row with nothing to fold shows no control rather than a dead
-                one. */}
-            {/* The fold's column is held open on a row that has nothing to
-                fold, the same way the drag grip's is just above — and now for
-                a second reason as well as tidiness: the dates are right-
-                aligned inside the body, so a row whose body is 38px narrower
-                than its neighbour's puts its dates 38px out of line, and the
-                column they are supposed to form stops being one. */}
-            {canReorder && children === 0 && (
-              <span className="place-list-fold place-list-fold--empty" aria-hidden="true" />
-            )}
+                a row with nothing to fold shows no control rather than a
+                dead one — its column is held open by padding on the content
+                button above, not by an inert element here. */}
             {canReorder && children > 0 && (
               <button
                 className="place-list-fold"
