@@ -280,13 +280,25 @@ export function PlaceListView({
                     "24 – 25 Oct · 11 – 14 Nov", which is the fact worth seeing
                     at a glance and the reason a visit is a row in the database
                     rather than a pair of columns. */}
-                {(visitsByPlace.get(place.id) ?? []).length > 0 && (
-                  <p className="place-list-dates">
-                    {visitsByPlace.get(place.id)!
-                      .map(v => formatVisit(v, year))
-                      .join(' · ')}
-                  </p>
-                )}
+                {(visitsByPlace.get(place.id) ?? []).length > 0 && (() => {
+                  const all = visitsByPlace.get(place.id)!
+                    .map(v => formatVisit(v, year)).join(' · ');
+                  return (
+                    // The line still truncates — around four visits on a
+                    // narrow screen — and having dropped the "+N" summary
+                    // there is nothing left to say so. The title is only a
+                    // courtesy to a desktop reader, since a phone has no
+                    // hover; the full list lives on the place sheet and in
+                    // the timeline. Set only when there is more than one
+                    // visit, so it never just repeats the visible text.
+                    <p
+                      className="place-list-dates"
+                      title={visitsByPlace.get(place.id)!.length > 1 ? all : undefined}
+                    >
+                      {all}
+                    </p>
+                  );
+                })()}
                 {/* No address line at all. For a stop it was the name back
                     again — "Surat Thani, Amphoe Mueang Surat Thani, Surat
                     Thani, Thailand" under a row already headed Surat Thani —

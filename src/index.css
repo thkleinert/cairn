@@ -1461,9 +1461,17 @@ select.input {
 }
 .place-list-fold:active { background: var(--color-bg); color: var(--color-text); }
 
+/* Collapses long before the name loses a character. This is a hint about
+   hidden children sitting next to a fold control that says the same thing,
+   so it is the row's most expendable element — and the name is its least.
+   The two share this row whether or not the dates do, which is why moving the
+   dates off it did not make this rule unnecessary.
+   No margin-left: auto — the name's flex-grow already consumes the free space
+   before auto margins are resolved, so it was inert. */
 .place-list-folded-count {
-  flex-shrink: 0;
-  margin-left: auto;
+  flex-shrink: 100;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding: 1px 8px;
   border-radius: 99px;
   background: var(--color-bg);
@@ -1554,6 +1562,10 @@ select.input {
 }
 
 .place-list-body { flex: 1; min-width: 0; }
+/* Nothing in the body pushes against its own bottom edge. These margins exist
+   to separate lines from each other, and the last line has nothing under it —
+   left in, they made the text block sit above the row's optical centre. */
+.place-list-body > :last-child { margin-bottom: 0; }
 .place-list-top { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 /* The status icon is an <svg> with width/height attributes and a flex item's
    default flex-shrink of 1, so a crowded row squashed it from 16px to a
@@ -1562,9 +1574,8 @@ select.input {
    rendering fault. */
 .place-list-top > svg { flex-shrink: 0; }
 .place-list-name {
-  /* Takes the slack, so the dates and the folded count sit hard right. Two
-     elements each claiming `margin-left: auto` would split the gap between
-     them and strand the dates in the middle of the row. */
+  /* Takes the slack, so the folded count sits hard right without needing an
+     auto margin of its own. */
   flex: 1 1 auto;
   min-width: 0;
   font-size: 15px; font-weight: 600;
