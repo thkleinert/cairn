@@ -1306,14 +1306,30 @@ select.input {
 .tag-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .tag-icon { font-size: 16px; line-height: 1; }
 
+/* A tag name is user input with no length limit, and this pill had nothing
+   stopping it: no max-width, and a flex item's min-width: auto floors it at
+   min-content, so one long unbroken word pushed the row wider than the screen.
+   .place-list has overflow-y: auto and therefore overflow-x: auto, so that
+   turned the ENTIRE list into a horizontal scroller — the trap this file
+   already carries two comments about.
+   Pre-existing, but the text column's new left indent spends 24px of the
+   headroom that used to hide it, so it is closed here rather than left to
+   surface later with a shorter name. Measured: a 41-character tag gave the
+   list a scrollWidth of 473 against a 390 client. */
 .tag-pill {
   display: inline-flex; align-items: center; gap: 5px;
+  min-width: 0; max-width: 100%;
   padding: 2px 9px;
   border-radius: 99px;
   font-size: 11px; font-weight: 600;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
 }
+.tag-pill-label {
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .tag-pill-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
@@ -1568,9 +1584,17 @@ select.input {
      for the whole text column instead of the name on one axis and the dates
      and tags on another, which is what it looked like before.
 
-     Derived from the two numbers that actually decide it, so it cannot drift
-     from them: the icon's own 16px and the 8px gap .place-list-top puts after
-     it. Change either and this follows. */
+     Both halves are copies, not derivations, and the first one is the
+     dangerous kind: 16px is the icon's size, which is set in JSX as size={16}
+     on the Circle / CheckCircle in PlaceListView, NOT read from here. Change
+     that prop without changing this and the text column shifts by the
+     difference, with nothing to catch it — no lint error, no build error, just
+     a column two pixels out. The 8px at least sits a dozen lines below, on
+     .place-list-top's own gap.
+
+     Left as literals rather than made CSS-authoritative with a width/height on
+     the svg: that would fix the drift by making size={16} do nothing, which
+     trades a silent misalignment for a silently ignored prop. */
   --row-gutter: calc(16px + 8px);
 }
 /* Nothing in the body pushes against its own bottom edge. These margins exist
@@ -1593,6 +1617,17 @@ select.input {
   letter-spacing: -0.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.place-list-dates {
+  padding-left: var(--row-gutter);
+  font-size: 12px;
+  /* tabular-nums so the dates form a column the eye can run down rather than
+     a ragged edge that shifts with the width of each numeral. */
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .place-list-tags {
   display: flex; flex-wrap: wrap; gap: 4px;
   /* Indented with the dates: two elements under the name, one text column. */
@@ -2743,16 +2778,7 @@ textarea.mention-input {
   color: var(--color-danger);
 }
 
-.place-list-dates {
-  padding-left: var(--row-gutter);
-  font-size: 12px;
-  /* tabular-nums so the dates form a column the eye can run down rather than
-     a ragged edge that shifts with the width of each numeral. */
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-secondary);
-  margin-bottom: 4px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
+
 
 /* ============================================================
    VISIT EDITOR — the Dates section of a place sheet

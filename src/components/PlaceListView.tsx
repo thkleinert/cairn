@@ -313,7 +313,11 @@ export function PlaceListView({
                       return (
                         <span key={tag.id} className="tag-pill">
                           <span className="tag-pill-dot" style={{ background: full?.color ?? 'var(--color-muted)' }} />
-                          {full?.name ?? tag.name}
+                          {/* The label is its own element so it can ellipsise.
+                              As a bare text node it was an anonymous flex item,
+                              which nothing can target — so a long tag name had
+                              no way to end and pushed the whole row wide. */}
+                          <span className="tag-pill-label">{full?.name ?? tag.name}</span>
                         </span>
                       );
                     })}
