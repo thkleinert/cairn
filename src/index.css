@@ -1561,7 +1561,18 @@ select.input {
   object-fit: cover; flex-shrink: 0;
 }
 
-.place-list-body { flex: 1; min-width: 0; }
+.place-list-body {
+  flex: 1; min-width: 0;
+  /* The status circle sits in a gutter of its own, and everything in this
+     body lines up with the NAME rather than with the circle — one left edge
+     for the whole text column instead of the name on one axis and the dates
+     and tags on another, which is what it looked like before.
+
+     Derived from the two numbers that actually decide it, so it cannot drift
+     from them: the icon's own 16px and the 8px gap .place-list-top puts after
+     it. Change either and this follows. */
+  --row-gutter: calc(16px + 8px);
+}
 /* Nothing in the body pushes against its own bottom edge. These margins exist
    to separate lines from each other, and the last line has nothing under it —
    left in, they made the text block sit above the row's optical centre. */
@@ -1582,7 +1593,11 @@ select.input {
   letter-spacing: -0.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.place-list-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.place-list-tags {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  /* Indented with the dates: two elements under the name, one text column. */
+  padding-left: var(--row-gutter);
+}
 
 /* ============================================================
    FORMS
@@ -2729,6 +2744,7 @@ textarea.mention-input {
 }
 
 .place-list-dates {
+  padding-left: var(--row-gutter);
   font-size: 12px;
   /* tabular-nums so the dates form a column the eye can run down rather than
      a ragged edge that shifts with the width of each numeral. */
