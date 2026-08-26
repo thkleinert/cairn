@@ -38,6 +38,22 @@ interface Options<T> {
   sidewaysStep?: number;
 }
 
+/**
+ * The minimum a drag needs to know about where it began.
+ *
+ * A React.PointerEvent satisfies this, so every existing caller is unchanged —
+ * but a drag that starts on a TIMER rather than on the event itself has no
+ * live event left to hand over, only the numbers copied out of it. See
+ * useLongPressDrag.
+ */
+export interface DragPoint {
+  clientX: number;
+  clientY: number;
+  pointerId: number;
+  target: EventTarget | null;
+  preventDefault: () => void;
+}
+
 interface DragInfo {
   startX: number;
   startY: number;
@@ -94,7 +110,7 @@ export function useDragReorder<T>({ items, getId, onReorder, enabled, trackSidew
     return px;
   }, []);
 
-  const handlePointerDown = useCallback((id: string, index: number, row: HTMLElement, e: React.PointerEvent) => {
+  const handlePointerDown = useCallback((id: string, index: number, row: HTMLElement, e: DragPoint) => {
     if (!enabled) return;
     // A drag begun inside a previous drop's glide window must not be wiped
     // by that drop's deferred commit — flush it now instead.
