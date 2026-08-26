@@ -306,6 +306,12 @@ select.input {
   font-size: 12px;
   color: var(--color-danger);
   text-align: right;
+  /* Right-aligned to sit under the sign-out button it explains, so it has to
+     follow that button inward. Left full-width it ended up at the window's
+     edge, a couple of hundred pixels from the control it annotates. Same
+     formula as .trip-list-header, and inert on a phone for the same reason. */
+  padding-left: max(16px, calc((100% - var(--gallery-max)) / 2 + 16px));
+  padding-right: max(16px, calc((100% - var(--gallery-max)) / 2 + 16px));
 }
 
 .trip-list-header--compact {
@@ -373,9 +379,19 @@ select.input {
      one full-width card per row, same 10px gap.
 
      align-content: start because a grid stretches its rows to fill the
-     scroller by default, which would space three cards down an empty screen. */
+     scroller by default, which would space three cards down an empty screen.
+
+     min(280px, 100%) rather than a bare 280px: a track floor is a HARD
+     minimum, so on a viewport narrower than about 304px the single track came
+     out wider than the container holding it. This element has overflow-y:auto
+     and therefore overflow-x:auto, so that turned the trip list into a
+     sideways scroller with every card's right edge clipped — the same trap
+     .place-list and .notes-page-body each have their own comment about. The
+     min() is inert above 304px and simply lets the track shrink below it, the
+     way the flex column this replaced always did. Reachable on a Galaxy Fold
+     cover screen and by dragging a desktop window narrow. */
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   align-content: start;
   gap: 10px;
 }
@@ -408,6 +424,12 @@ select.input {
 /* Entrance stagger — cards settle in on first render */
 .trip-cards li {
   animation: rowIn var(--dur-base) var(--glide) backwards;
+  /* The grid stretches each li to its row's height, but the card inside is a
+     button with its own natural height — so one trip name wrapping to two
+     lines left its neighbours ending short and the row's bottom edge ragged.
+     Only visible once there are columns; as a flex column there was never a
+     second card on the row to line up with. */
+  display: flex;
 }
 .trip-cards li:nth-child(1) { animation-delay: 0.03s; }
 .trip-cards li:nth-child(2) { animation-delay: 0.08s; }
