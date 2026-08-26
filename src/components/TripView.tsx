@@ -4,6 +4,7 @@ import { ArrowLeft, Tag as TagIcon, Settings, List, Map, Plus, NotebookPen, Eye,
 import type { PickedPoint, Place, Trip } from '../types';
 import { usePlaces } from '../hooks/usePlaces';
 import { useTripNotes } from '../hooks/useTripNotes';
+import { usePlaceVisits } from '../hooks/usePlaceVisits';
 import { useTags } from '../hooks/useTags';
 import { useFoldState } from '../hooks/useFoldState';
 import { usePersistentSet } from '../hooks/usePersistentSet';
@@ -64,6 +65,10 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
     tripNotes, notesByPlace, loading: notesLoading,
     addNote, updateNote, removeNote, restoreNote, reorderNotes, setNoteDepths,
   } = useTripNotes(trip.id);
+  // Owned here, not inside any one surface: the timeline, the list rows and
+  // the place sheet all read the same rows, and three subscriptions would be
+  // three chances for them to disagree about what today's plan is.
+  const { visits, addVisit, updateVisit, removeVisit } = usePlaceVisits(trip.id);
 
   // Selection is an id — the place object is always derived fresh from `places`,
   // so realtime refetches and edits never leave the sheet stale.
@@ -361,6 +366,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
             places={places}
             activeTags={activeTags}
             allTags={tags}
+            visits={visits}
             onSelectPlace={(place) => setSelectedPlaceId(place.id)}
             onReorder={reorderPlaces}
             onSetParent={handleSetParent}
@@ -422,6 +428,7 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
         <TripNotesPage
           places={places}
           allTags={tags}
+          visits={visits}
           tripNotes={tripNotes}
           notesByPlace={notesByPlace}
           loading={notesLoading}
@@ -459,6 +466,10 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onUploadImage={(file) => uploadPlaceImage(selectedPlace.id, file)}
           onRemoveImage={(imageId) => removePlaceImage(selectedPlace.id, imageId)}
           onCreateTag={createTag}
+          visits={visits}
+          onAddVisit={(startsOn, endsOn) => addVisit(selectedPlace.id, startsOn, endsOn)}
+          onUpdateVisit={updateVisit}
+          onRemoveVisit={removeVisit}
           notes={notesByPlace.get(selectedPlace.id) ?? []}
           allPlaces={places}
           onAddNote={(body, opts) => addNote(body, selectedPlace.id, opts)}

@@ -65,6 +65,28 @@ export interface TripNote {
 
 export type PlaceKind = 'stop' | 'spot';
 
+/**
+ * When you are at a stop, and for how long.
+ *
+ * A row per visit rather than dates on the place, because a place can be
+ * visited more than once — a loop comes back through where it started, and a
+ * trip often opens and closes in the same city.
+ *
+ * Only stops have these. A spot is inside a stop, and it is the stop you
+ * arrive at; the spots under it inherit that window.
+ */
+export interface PlaceVisit {
+  id: string;
+  trip_id: string;
+  place_id: string;
+  /** `YYYY-MM-DD`. A date, not a timestamp: a stay has no time zone. */
+  starts_on: string;
+  /** Null means a single day, not an open-ended stay. */
+  ends_on: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Place {
   id: string;
   trip_id: string;

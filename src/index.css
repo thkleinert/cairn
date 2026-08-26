@@ -1526,6 +1526,7 @@ select.input {
   position: absolute; inset: 0;
   display: flex; align-items: center;
   padding: 0 14px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-sm);
   font-size: 15px;
@@ -1535,6 +1536,8 @@ select.input {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .date-field-display--empty { color: var(--color-muted); }
+/* Room for the X that overlays this end of the box. */
+.date-field-wrap--clearable .date-field-display { padding-right: 32px; }
 .date-field-native:focus + .date-field-display {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(13,148,136,0.12);
@@ -2612,3 +2615,123 @@ textarea.mention-input {
 .tag-delete-confirm { color: var(--color-danger); }
 
 .auth-forgot { margin-top: 4px; }
+
+/* ============================================================
+   TIMELINE — the trip in the order it happens
+   ============================================================ */
+
+/* Indented to the same axis as the bullets under every other heading on the
+   outliner page, so the timeline reads as one more section of the outline
+   rather than a panel bolted to the top of it. */
+.timeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 calc(var(--block-indent) + var(--note-step));
+}
+
+.timeline-row {
+  display: flex; align-items: baseline; gap: 8px;
+  min-height: 28px;
+}
+
+/* Fixed-width and tabular so the dates form a column the eye can run down,
+   rather than a ragged edge that moves with the length of each place name. */
+.timeline-dates {
+  flex: 0 0 auto;
+  min-width: 96px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
+.timeline-place {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: left;
+  font-size: 14.5px;
+  color: var(--color-text);
+}
+.timeline-place:active { opacity: 0.55; }
+
+.timeline-nights {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+
+/* A gap is ordinary — a night on a train, or a stretch nobody has decided
+   about yet — so it is a quiet separator between the two stays it falls
+   between, not a warning about either of them. */
+.timeline-gap {
+  margin: 2px 0;
+  padding-left: 2px;
+  border-left: 2px dotted var(--color-border);
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+
+/* An overlap is not ordinary: two stays claiming the same night is a plan
+   that cannot be carried out, so this one does get the danger colour. */
+.timeline-overlap {
+  display: flex; align-items: center; gap: 5px;
+  margin: 0 0 2px;
+  font-size: 11.5px;
+  color: var(--color-danger);
+}
+
+/* Dates on a list row, above the address: when comes before where, because
+   the order of a trip is what the list view is arranged by. */
+.place-list-dates {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ============================================================
+   VISIT EDITOR — the Dates section of a place sheet
+   ============================================================ */
+.visit-rows { list-style: none; margin: 0; padding: 0; }
+
+.visit-row {
+  display: flex; align-items: flex-end; gap: 8px;
+  margin-bottom: 10px;
+}
+/* .date-row is flex:1 on its two fields already; this makes it take the width
+   the remove button leaves. */
+.visit-row .date-row { flex: 1 1 auto; min-width: 0; gap: 8px; }
+/* A notch down from the form elsewhere, for the same width reason. */
+.visit-row .date-field-display { font-size: 14px; padding-left: 10px; }
+.visit-row .date-label { font-size: 12px; }
+
+/* Dashed while the row has no id yet, so an unsaved visit is visibly not one.
+   It becomes a solid row the moment an arrival is picked and the insert
+   lands. */
+.visit-row--draft .date-field-display { border-style: dashed; }
+
+/* Narrower than a full tap target, and only in this direction: the row has
+   two date boxes to fit beside it on a 390px screen, and a date that
+   ellipsises is a worse loss than eight pixels of width on a secondary
+   control. Full height, so it is still comfortably hittable. */
+.visit-remove {
+  flex: 0 0 auto;
+  width: 36px; height: var(--tap-target);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-muted);
+  border-radius: var(--radius-sm);
+}
+.visit-remove:active { background: var(--color-bg); color: var(--color-danger); }
+
+/* Sits above the invisible native input, which covers the whole box to catch
+   taps — underneath it this would open the picker instead of clearing. */
+.date-field-clear {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  z-index: 2;
+  width: 30px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-muted);
+}
+.date-field-clear:active { color: var(--color-text); }

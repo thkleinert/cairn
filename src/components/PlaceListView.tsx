@@ -1,13 +1,20 @@
 import { useRef, useMemo } from 'react';
 import { CheckCircle, Circle, MapPin, GripVertical, Plus, Minus } from 'lucide-react';
-import type { Place, Tag } from '../types';
+import type { Place, PlaceVisit, Tag } from '../types';
 import { useDragReorder } from '../hooks/useDragReorder';
+import { visitsForPlace, formatVisit, baseYear } from '../lib/timeline';
 import { flattenPlaces, resolveDrop, withHiddenChildren, spotStaysWithParent, INDENT_PX } from '../lib/placeTree';
 
 interface Props {
   places: Place[];
   activeTags: string[];
   allTags: Tag[];
+  /**
+   * Every dated visit in the trip. Filtered per row rather than pre-grouped
+   * because the shared read-only view has no visits at all, and an absent
+   * prop should mean "no dates", not a missing map.
+   */
+  visits?: PlaceVisit[];
   onSelectPlace: (place: Place) => void;
   onReorder: (orderedIds: string[]) => void;
   /**
@@ -22,12 +29,28 @@ interface Props {
 }
 
 export function PlaceListView({
-  places, activeTags, allTags, onSelectPlace, onReorder, onSetParent,
+  places, activeTags, allTags, visits = [], onSelectPlace, onReorder, onSetParent,
   isFolded, onToggleFold, onExpandFold,
 }: Props) {
   // Reordering only makes sense against the full, unfiltered order.
   const canReorder = activeTags.length === 0;
   const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
+
+  // Grouped once rather than filtered inside the row, which renders on every
+  // frame of a drag. Stops only: a spot sits under a stop that already shows
+  // the window, and repeating it on every café under it is noise — the whole
+  // reason only stops can be dated in the first place.
+  const visitsByPlace = useMemo(() => {
+    const map = new Map<string, PlaceVisit[]>();
+    if (visits.length === 0) return map;
+    for (const place of places) {
+      if (place.kind !== 'stop') continue;
+      const own = visitsForPlace(visits, place.id);
+      if (own.length > 0) map.set(place.id, own);
+    }
+    return map;
+  }, [places, visits]);
+  const year = useMemo(() => baseYear(visits), [visits]);
 
   // Stops with their spots under them, folded ones collapsed away. The
   // drag operates on exactly this list, so what you grab and what moves are
@@ -248,6 +271,18 @@ export function PlaceListView({
                     </span>
                   )}
                 </div>
+                {/* When this place is, under what it is. One line however
+                    many visits there are — a city you come back to reads as
+                    "8 – 12 Nov · 24 – 26 Nov", which is the fact worth seeing
+                    at a glance and the reason a visit is a row rather than a
+                    pair of columns. */}
+                {(visitsByPlace.get(place.id) ?? []).length > 0 && (
+                  <p className="place-list-dates">
+                    {visitsByPlace.get(place.id)!
+                      .map(v => formatVisit(v, year))
+                      .join(' · ')}
+                  </p>
+                )}
                 {place.address && <p className="place-list-address">{place.address}</p>}
                 {(place.tags ?? []).length > 0 && (
                   <div className="place-list-tags">
