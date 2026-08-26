@@ -8,7 +8,8 @@ import { useCollaborators } from '../hooks/useCollaborators';
 import { useSwipeToClose } from '../hooks/useSwipeToClose';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { QuickAddSheet } from './QuickAddSheet';
-import { DateField } from './DateField';
+import { DateRangeField } from './DateRangeField';
+import type { DateRange } from './DateRangeSheet';
 
 interface Props {
   trip: Trip;
@@ -94,14 +95,23 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
     else setName(trip.name);
   };
 
-  const handleStartDateChange = (value: string) => {
-    setStartDate(value);
-    onUpdate({ start_date: value || null });
-  };
-
-  const handleEndDateChange = (value: string) => {
-    setEndDate(value);
-    onUpdate({ end_date: value || null });
+  /**
+   * Both ends in one write, because they are now chosen together.
+   *
+   * This was two handlers writing two columns independently, which is how a
+   * trip could end up with an end date and no start — the create form would
+   * take one without the other, and nothing here objected. Neither surface can
+   * produce that any more, since both now write the pair or neither.
+   *
+   * A row already in that state is NOT repaired on sight: this writes only
+   * when someone picks or clears a range, and the field above shows such a
+   * trip as undated until they do. Normalising it on open would be a write
+   * nobody asked for, against data this sheet was only opened to look at.
+   */
+  const handleDatesChange = (range: DateRange | null) => {
+    setStartDate(range?.start ?? '');
+    setEndDate(range?.end ?? '');
+    onUpdate({ start_date: range?.start ?? null, end_date: range?.end ?? null });
   };
 
   const handleSetCoverUrl = (url: string) => {
@@ -199,11 +209,16 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
             </div>
 
             <div className="detail-section">
-              <label className="detail-label">Dates</label>
-              <div className="date-row">
-                <DateField label="Start" value={startDate} onChange={handleStartDateChange} />
-                <DateField label="End" value={endDate} onChange={handleEndDateChange} />
-              </div>
+              {/* A trip may legitimately have no dates at all, so this one
+                  clears; a visit cannot, so that one does not. */}
+              <DateRangeField
+                label="Dates"
+                title="When is this trip?"
+                value={startDate ? { start: startDate, end: endDate || null } : null}
+                onChange={handleDatesChange}
+                year={new Date().getFullYear()}
+                clearable
+              />
             </div>
 
             <div className="detail-section">

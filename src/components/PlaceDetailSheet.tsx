@@ -7,9 +7,10 @@ import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
 import { NoteList } from './NoteList';
 import { NoteBody } from './NoteBody';
-import { DateField } from './DateField';
+import { DateRangeField } from './DateRangeField';
+import { DateRangeSheet, type DateRange } from './DateRangeSheet';
 import { normaliseDepths } from '../lib/outline';
-import { visitsForPlace } from '../lib/timeline';
+import { visitsForPlace, baseYear } from '../lib/timeline';
 import {
   X,
   Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
@@ -79,17 +80,9 @@ export function PlaceDetailSheet({
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
-  // An unsaved visit, held here until it has an arrival date. A visit with no
-  // start cannot be written — starts_on is not null — so the row has to exist
-  // on screen before it exists in the database, and this is where it lives in
-  // between. A departure picked first is kept too, rather than being thrown
-  // away for having been entered in the other order.
-  const [draftVisit, setDraftVisit] = useState<{ starts_on: string; ends_on: string } | null>(null);
-  // Refs, not state: these coordinate one in-flight insert with the changes
-  // that land during it, and they have to be readable and writable inside the
-  // same async call rather than at the next render. See commitDraft.
-  const savingDraft = useRef(false);
-  const lateDraft = useRef<{ starts_on: string; ends_on: string } | null>(null);
+  // Whether the calendar is open for a NEW visit. Existing ones carry their
+  // own open state inside their field.
+  const [addingVisit, setAddingVisit] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(true);
   const galleryRef = useRef<HTMLDivElement>(null);
@@ -154,67 +147,28 @@ export function PlaceDetailSheet({
   useEffect(() => {
     setSelectedTags((place.tags ?? []).map(t => t.id));
     setDirty(false);
-    // A half-entered visit belongs to the place it was started on. The sheet
-    // is reused rather than remounted when another place is opened, so
-    // without this an abandoned draft follows you to the next one.
-    setDraftVisit(null);
-    lateDraft.current = null;
-    // The in-flight flag too. Its own await clears it, but a sheet switched
-    // away from mid-insert should not be able to carry a stuck flag back.
-    savingDraft.current = false;
+    // The sheet is reused rather than remounted when another place is opened,
+    // so a calendar left open would follow you to the next one.
+    setAddingVisit(false);
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
-   * A draft becomes a real visit the moment it has an arrival, which is the
-   * first point at which it can be written at all. No Add button: the fields
-   * are the form, and one that saves itself matches every other control on
-   * this sheet.
+   * Add a visit, from a range chosen in one go.
    *
-   * The values are passed in rather than read from state — this runs from an
-   * onChange, and state set in the same tick is not readable yet.
+   * This used to be forty lines coordinating two date inputs with an insert
+   * that might still be in flight — a re-entry flag, a held-over value, and a
+   * follow-up write to apply whatever changed while the row was being created.
+   * All of it existed because two fields could each fire a change at any
+   * moment, including during the write. A range arrives complete or not at
+   * all, so there is one call and nothing to reconcile.
    */
-  const commitDraft = async (startsOn: string, endsOn: string) => {
-    setDraftVisit({ starts_on: startsOn, ends_on: endsOn });
-    if (!startsOn || !onAddVisit) return;
-
-    // The draft row stays on screen for the length of the insert, and both of
-    // its fields still work — so picking a departure in that window called
-    // this a second time with the same arrival and wrote a DUPLICATE VISIT.
-    // Only one insert per draft; a change that lands mid-flight is held and
-    // applied to the row once it has an id.
-    // BOTH fields, not just the departure. A native date input fires a change
-    // for every value it passes through rather than only the one let go of, so
-    // the arrival that starts the insert is routinely not the arrival the user
-    // meant — holding only the departure saved the visit on a date they moved
-    // off, with no toast and the draft row unmounted from under the picker.
-    if (savingDraft.current) {
-      lateDraft.current = { starts_on: startsOn, ends_on: endsOn };
-      return;
-    }
-
-    savingDraft.current = true;
-    // .finally rather than a line after the await. postgrest-js resolves its
-    // errors rather than throwing, but if anything here ever does throw, a
-    // latched flag would silently stop this section saving for the life of the
-    // sheet — a failure with no error and no way to notice it.
-    const created = await onAddVisit(startsOn, endsOn || null)
-      .finally(() => { savingDraft.current = false; });
-
-    const held = lateDraft.current;
-    lateDraft.current = null;
-    // Kept on failure. Clearing it would throw away the dates just entered and
-    // leave a toast as the only trace, with nothing on screen to retry from.
-    if (!created) return;
-    setDraftVisit(null);
-
-    // Only when the row does not already say what the user last chose.
-    if (held && (held.starts_on !== created.starts_on ||
-                 held.ends_on !== (created.ends_on ?? ''))) {
-      await onUpdateVisit?.(created.id, {
-        starts_on: held.starts_on,
-        ends_on: held.ends_on || null,
-      });
-    }
+  const handleAddVisit = async (range: DateRange | null): Promise<boolean> => {
+    if (!range || !onAddVisit) return false;
+    // Reported, not swallowed. The calendar keeps itself open on false, so a
+    // failed insert leaves the dates on screen to retry from rather than a
+    // toast and an unchanged section — which is the guarantee the two-input
+    // editor had and this briefly lost.
+    return !!(await onAddVisit(range.start, range.end));
   };
 
   const images: PlaceImage[] = place.images ?? [];
@@ -367,48 +321,38 @@ export function PlaceDetailSheet({
           <div className="detail-section">
             <div className="detail-label-row">
               <label className="detail-label">Dates</label>
-              {/* One draft at a time. Two blank rows on screen is two ways to
-                  do the same thing and no way to tell them apart. */}
-              {!draftVisit && (
-                <button
-                  type="button"
-                  className="detail-label-add"
-                  aria-label="Add dates"
-                  onClick={() => setDraftVisit({ starts_on: '', ends_on: '' })}
-                >
-                  <Plus size={16} />
-                </button>
-              )}
+              <button
+                type="button"
+                className="detail-label-add"
+                aria-label="Add dates"
+                onClick={() => setAddingVisit(true)}
+              >
+                <Plus size={16} />
+              </button>
             </div>
 
-            {placeVisits.length === 0 && !draftVisit && (
+            {placeVisits.length === 0 && (
               <p className="detail-hint">No dates yet.</p>
             )}
 
             <ul className="visit-rows">
-              {placeVisits.map(visit => (
+              {placeVisits.map((visit, index) => (
                 <li key={visit.id} className="visit-row">
-                  <div className="date-row">
-                    {/* Each field is bounded by the other, so the picker
-                        cannot offer a departure before its arrival at all.
-                        The check constraint behind this would refuse the same
-                        thing, but only after a round trip and in words about
-                        a relation and a constraint name. */}
-                    <DateField
-                      label="Arrive"
-                      value={visit.starts_on}
-                      max={visit.ends_on ?? undefined}
-                      onChange={value => { if (value) onUpdateVisit?.(visit.id, { starts_on: value }); }}
-                    />
-                    <DateField
-                      label="Depart"
-                      value={visit.ends_on ?? ''}
-                      min={visit.starts_on}
-                      emptyLabel="Same day"
-                      onChange={value => onUpdateVisit?.(visit.id, { ends_on: value || null })}
-                      onClear={() => onUpdateVisit?.(visit.id, { ends_on: null })}
-                    />
-                  </div>
+                  {/* Editing an existing visit reopens the same calendar it was
+                      created in, so there is one way to express a range rather
+                      than one for making it and another for changing it. */}
+                  <DateRangeField
+                    label={`Visit ${index + 1}`}
+                    value={{ start: visit.starts_on, end: visit.ends_on }}
+                    title="When are you here?"
+                    startLabel="Arrive"
+                    endLabel="Depart"
+                    year={baseYear(visits)}
+                    onChange={async range => {
+                      if (!range) return false;
+                      return !!(await onUpdateVisit?.(visit.id, { starts_on: range.start, ends_on: range.end }));
+                    }}
+                  />
                   <button
                     type="button"
                     className="visit-remove"
@@ -419,36 +363,24 @@ export function PlaceDetailSheet({
                   </button>
                 </li>
               ))}
-
-              {draftVisit && (
-                <li className="visit-row visit-row--draft">
-                  <div className="date-row">
-                    <DateField
-                      label="Arrive"
-                      value={draftVisit.starts_on}
-                      max={draftVisit.ends_on || undefined}
-                      onChange={value => commitDraft(value, draftVisit.ends_on)}
-                    />
-                    <DateField
-                      label="Depart"
-                      value={draftVisit.ends_on}
-                      min={draftVisit.starts_on || undefined}
-                      emptyLabel="Same day"
-                      onChange={value => commitDraft(draftVisit.starts_on, value)}
-                      onClear={() => setDraftVisit({ ...draftVisit, ends_on: '' })}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="visit-remove"
-                    aria-label="Discard these dates"
-                    onClick={() => setDraftVisit(null)}
-                  >
-                    <X size={15} />
-                  </button>
-                </li>
-              )}
             </ul>
+
+            {/* A new visit opens straight into the calendar. There is no blank
+                row on screen first, because a visit with no dates is not a
+                thing this can store — starts_on is not null — and a row that
+                cannot be saved yet was exactly what the old draft state
+                existed to babysit. */}
+            {addingVisit && (
+              <DateRangeSheet
+                title="When are you here?"
+                value={null}
+                startLabel="Arrive"
+                endLabel="Depart"
+                year={baseYear(visits)}
+                onCommit={handleAddVisit}
+                onClose={() => setAddingVisit(false)}
+              />
+            )}
           </div>
         )}
 
