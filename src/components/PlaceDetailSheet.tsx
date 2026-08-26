@@ -89,7 +89,7 @@ export function PlaceDetailSheet({
   // that land during it, and they have to be readable and writable inside the
   // same async call rather than at the next render. See commitDraft.
   const savingDraft = useRef(false);
-  const lateDepart = useRef<string | null>(null);
+  const lateDraft = useRef<{ starts_on: string; ends_on: string } | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(true);
   const galleryRef = useRef<HTMLDivElement>(null);
@@ -158,7 +158,10 @@ export function PlaceDetailSheet({
     // is reused rather than remounted when another place is opened, so
     // without this an abandoned draft follows you to the next one.
     setDraftVisit(null);
-    lateDepart.current = null;
+    lateDraft.current = null;
+    // The in-flight flag too. Its own await clears it, but a sheet switched
+    // away from mid-insert should not be able to carry a stuck flag back.
+    savingDraft.current = false;
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
@@ -179,20 +182,38 @@ export function PlaceDetailSheet({
     // this a second time with the same arrival and wrote a DUPLICATE VISIT.
     // Only one insert per draft; a change that lands mid-flight is held and
     // applied to the row once it has an id.
-    if (savingDraft.current) { lateDepart.current = endsOn; return; }
-    savingDraft.current = true;
-    const created = await onAddVisit(startsOn, endsOn || null);
-    savingDraft.current = false;
+    // BOTH fields, not just the departure. A native date input fires a change
+    // for every value it passes through rather than only the one let go of, so
+    // the arrival that starts the insert is routinely not the arrival the user
+    // meant — holding only the departure saved the visit on a date they moved
+    // off, with no toast and the draft row unmounted from under the picker.
+    if (savingDraft.current) {
+      lateDraft.current = { starts_on: startsOn, ends_on: endsOn };
+      return;
+    }
 
+    savingDraft.current = true;
+    // .finally rather than a line after the await. postgrest-js resolves its
+    // errors rather than throwing, but if anything here ever does throw, a
+    // latched flag would silently stop this section saving for the life of the
+    // sheet — a failure with no error and no way to notice it.
+    const created = await onAddVisit(startsOn, endsOn || null)
+      .finally(() => { savingDraft.current = false; });
+
+    const held = lateDraft.current;
+    lateDraft.current = null;
     // Kept on failure. Clearing it would throw away the dates just entered and
     // leave a toast as the only trace, with nothing on screen to retry from.
-    if (!created) { lateDepart.current = null; return; }
+    if (!created) return;
     setDraftVisit(null);
 
-    const held = lateDepart.current;
-    lateDepart.current = null;
-    if (held !== null && held !== (created.ends_on ?? '')) {
-      await onUpdateVisit?.(created.id, { ends_on: held || null });
+    // Only when the row does not already say what the user last chose.
+    if (held && (held.starts_on !== created.starts_on ||
+                 held.ends_on !== (created.ends_on ?? ''))) {
+      await onUpdateVisit?.(created.id, {
+        starts_on: held.starts_on,
+        ends_on: held.ends_on || null,
+      });
     }
   };
 

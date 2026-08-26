@@ -131,7 +131,19 @@ export function usePlaceVisits(tripId: string | undefined) {
       return false;
     }
 
-    setVisits(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
+    // The ref alongside the state, exactly as addVisit does it. Two edits to
+    // one visit issued before React re-renders — moving the arrival, then
+    // adjusting the departure, which is what two adjacent date fields invite —
+    // would otherwise have the second read a pre-first-edit `current` above.
+    // Its ordering check then passes on stale values, Postgres refuses the
+    // write against the real row, and because that constraint's message is the
+    // generated form guardMessage rightly suppresses, the user gets the
+    // generic line and a refetch that reverts what they just did.
+    const apply = (rows: PlaceVisit[]) =>
+      rows.map(v => v.id === id ? { ...v, ...updates } : v);
+    visitsRef.current = apply(visitsRef.current);
+    setVisits(apply);
+
     const { data, error } = await supabase
       .from('place_visits')
       .update(updates)
@@ -143,7 +155,10 @@ export function usePlaceVisits(tripId: string | undefined) {
       fetchVisits();
       return false;
     }
-    setVisits(prev => prev.map(v => v.id === id ? { ...v, ...(data as PlaceVisit) } : v));
+    const merge = (rows: PlaceVisit[]) =>
+      rows.map(v => v.id === id ? { ...v, ...(data as PlaceVisit) } : v);
+    visitsRef.current = merge(visitsRef.current);
+    setVisits(merge);
     return true;
   }, [fetchVisits]);
 
@@ -156,10 +171,12 @@ export function usePlaceVisits(tripId: string | undefined) {
    */
   const removeVisit = useCallback(async (id: string): Promise<boolean> => {
     const previous = visitsRef.current;
+    visitsRef.current = previous.filter(v => v.id !== id);
     setVisits(prev => prev.filter(v => v.id !== id));
     const { error } = await supabase.from('place_visits').delete().eq('id', id);
     if (error) {
       toast('Could not remove these dates');
+      visitsRef.current = previous;
       setVisits(previous);
       return false;
     }
