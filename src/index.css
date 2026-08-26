@@ -30,6 +30,21 @@
   --radius-md: 14px;
   --radius-lg: 22px;
 
+  /* How wide content is allowed to get.
+     This is a phone app that happens to open in desktop browsers too, and
+     with nothing capping it the trip cards stretched to whatever the window
+     was — a 1400px-wide card with a name at one end and a date at the other.
+     620px is about the widest a single column of this content reads well at,
+     and it is above every phone in portrait, so it is inert on the device the
+     app is actually designed for. Nothing below changes on a phone. */
+  --content-max: 620px;
+  /* The trip list is a gallery rather than a column of prose, so it gets its
+     own, wider bound. Each card carries a hero image, and a hero stretched to
+     the width of a reading column is a 4:1 letterbox — the cards want to sit
+     beside each other on a wide screen, not grow. Three tracks at this width;
+     see .trip-cards. */
+  --gallery-max: 1080px;
+
   --tap-target: 44px;
   --topbar-height: 58px;
   --bottombar-height: 68px;
@@ -274,7 +289,10 @@ select.input {
 .trip-list-header {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 12px;
+  /* Same rule as .trip-topbar — full-bleed bar, column-aligned contents. */
   padding: calc(22px + env(safe-area-inset-top)) 16px 20px;
+  padding-left: max(16px, calc((100% - var(--gallery-max)) / 2 + 16px));
+  padding-right: max(16px, calc((100% - var(--gallery-max)) / 2 + 16px));
   background: var(--color-surface);
   border-bottom: 1px solid transparent;
   position: relative;
@@ -343,10 +361,23 @@ select.input {
 
 .trip-cards {
   flex: 1;
+  width: 100%; max-width: var(--gallery-max); margin-inline: auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 16px 12px calc(96px + env(safe-area-inset-bottom));
-  display: flex; flex-direction: column; gap: 10px;
+  /* A grid rather than a stack, so wide screens get columns instead of wider
+     cards. auto-fill with a 280px floor means the count follows the window
+     with no breakpoints to keep in sync: one track on any phone in portrait
+     (366px of inner width cannot fit two), two by about 600px, three at the
+     cap. The phone case is byte-identical to the flex column it replaces —
+     one full-width card per row, same 10px gap.
+
+     align-content: start because a grid stretches its rows to fill the
+     scroller by default, which would space three cards down an empty screen. */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  align-content: start;
+  gap: 10px;
 }
 
 /* Floating add-trip button — bottom-center, matching the FAB used for
@@ -466,7 +497,13 @@ select.input {
 .trip-topbar {
   display: flex; align-items: center; gap: 8px;
   height: calc(var(--topbar-height) + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) 8px 0 4px;
+  /* The bar spans the window; its contents track the content column. See
+     --content-max. Below the cap both max() calls resolve to the original
+     4px/8px, so this is a no-op on a phone. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: 0;
+  padding-left: max(4px, calc((100% - var(--content-max)) / 2 + 4px));
+  padding-right: max(8px, calc((100% - var(--content-max)) / 2 + 8px));
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   z-index: 10;
@@ -757,6 +794,7 @@ select.input {
 @keyframes fadeIn { from { opacity: 0; } }
 
 .bottom-sheet {
+  width: 100%; max-width: var(--content-max); margin-inline: auto;
   background: var(--color-surface);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: 12px 20px 32px;
@@ -1306,6 +1344,7 @@ select.input {
    PLACE LIST VIEW
    ============================================================ */
 .place-list {
+  width: 100%; max-width: var(--content-max); margin-inline: auto;
   /* height: 100%, not flex: 1 — the parent (.trip-content) is a plain block,
      not a flex container, so flex:1 was a no-op: the list sized to its content,
      .trip-content's overflow:hidden clipped the excess, and this element's own
@@ -2011,6 +2050,7 @@ select.input {
    against. */
 .notes-page-body {
   flex: 1;
+  width: 100%; max-width: var(--content-max); margin-inline: auto;
   min-height: 0;
   overflow-y: auto;
   /* This column must never move sideways, and both halves of that are needed.
