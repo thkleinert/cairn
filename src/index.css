@@ -289,10 +289,11 @@ select.input {
 .trip-list-header {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 12px;
-  /* Same rule as .trip-topbar — full-bleed bar, column-aligned contents. */
+  /* Full width, for the reason .trip-topbar is — including its landscape
+     safe-area caveat. */
   padding: calc(22px + env(safe-area-inset-top)) 16px 20px;
-  padding-left: max(16px, calc((100% - var(--gallery-max)) / 2 + 16px));
-  padding-right: max(16px, calc((100% - var(--gallery-max)) / 2 + 16px));
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
   background: var(--color-surface);
   border-bottom: 1px solid transparent;
   position: relative;
@@ -305,13 +306,9 @@ select.input {
   padding: 6px 16px;
   font-size: 12px;
   color: var(--color-danger);
+  /* Right-aligned to sit under the sign-out button it explains — which is now
+     back at the window's right edge, so this follows it there. */
   text-align: right;
-  /* Right-aligned to sit under the sign-out button it explains, so it has to
-     follow that button inward. Left full-width it ended up at the window's
-     edge, a couple of hundred pixels from the control it annotates. Same
-     formula as .trip-list-header, and inert on a phone for the same reason. */
-  padding-left: max(16px, calc((100% - var(--gallery-max)) / 2 + 16px));
-  padding-right: max(16px, calc((100% - var(--gallery-max)) / 2 + 16px));
 }
 
 .trip-list-header--compact {
@@ -519,13 +516,23 @@ select.input {
 .trip-topbar {
   display: flex; align-items: center; gap: 8px;
   height: calc(var(--topbar-height) + env(safe-area-inset-top));
-  /* The bar spans the window; its contents track the content column. See
-     --content-max. Below the cap both max() calls resolve to the original
-     4px/8px, so this is a no-op on a phone. */
+  /* Full width, edge to edge, at every size. The contents used to be inset to
+     line up with the content column below, on the theory that a row of
+     controls floating away from the text it acts on looks unmoored. On a wide
+     screen it reads the other way round: the bar is chrome, not content, and
+     chrome belongs to the window. Back on the left edge, actions on the
+     right, the way every other application title bar behaves.
+
+     The left/right insets matter now that the bar really does reach the edge.
+     iOS ignores the manifest's orientation lock (see public/viewport.js), and
+     the page is drawn with viewport-fit=cover, so in landscape on a notched
+     device a 4px inset puts the back button under the sensor housing. max()
+     keeps the intent and is literally inert wherever the inset is zero, which
+     is every desktop and every phone in portrait. */
   padding-top: env(safe-area-inset-top);
   padding-bottom: 0;
-  padding-left: max(4px, calc((100% - var(--content-max)) / 2 + 4px));
-  padding-right: max(8px, calc((100% - var(--content-max)) / 2 + 8px));
+  padding-left: max(4px, env(safe-area-inset-left));
+  padding-right: max(8px, env(safe-area-inset-right));
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   z-index: 10;
