@@ -3,8 +3,20 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever it targets — deliberately unfiltered.
+  #
+  # This used to read `branches: [main]`, which sounds like "the branch the
+  # code is going to" and actually means "the branch the PR is opened
+  # against". So a PR stacked on another branch ran no lint and no build at
+  # all, and said nothing about it: the Cloudflare Pages deploy still reported
+  # a green tick beside it, and the only sign anything was missing was a row
+  # absent from a list. That happened on #18, which was reviewed and nearly
+  # merged with no CI behind it.
+  #
+  # A check that silently does not run is worse than one that fails, so the
+  # filter is gone rather than extended to a list of branch prefixes somebody
+  # has to remember to keep in step with how branches are named.
   pull_request:
-    branches: [main]
 
 jobs:
   check:
