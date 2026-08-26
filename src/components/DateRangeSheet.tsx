@@ -17,8 +17,17 @@ export interface DateRange {
 interface Props {
   title: string;
   value: DateRange | null;
-  /** Null means "no dates at all", which only some callers allow. */
-  onCommit: (range: DateRange | null) => void;
+  /**
+   * Null means "no dates at all", which only some callers allow.
+   *
+   * A caller that writes to the network returns false when the write failed,
+   * and the sheet stays open with the range still on screen. The two-input
+   * version kept its half-made row for exactly this reason, and closing
+   * unconditionally quietly gave that up: a failed insert left a toast and
+   * nothing to retry from. Anything other than false — including a caller
+   * that returns nothing because it cannot fail — closes.
+   */
+  onCommit: (range: DateRange | null) => void | boolean | Promise<void | boolean>;
   onClose: () => void;
   /** Whether clearing to nothing is a legal answer. A visit must have a date. */
   clearable?: boolean;
@@ -58,6 +67,10 @@ export function DateRangeSheet({
   // Which end the next tap sets. Reset to 'start' whenever a range completes,
   // so tapping again begins a new one rather than nudging the old one.
   const [picking, setPicking] = useState<'start' | 'end'>('start');
+  // Blocks a second tap while a write is in flight. The old two-input editor
+  // needed a ref for this because its inputs stayed live during the write;
+  // here there is one button and it can simply be disabled.
+  const [saving, setSaving] = useState(false);
   const [view, setView] = useState<YearMonth>(
     monthOf(value?.start ?? todayIso()),
   );
@@ -111,7 +124,11 @@ export function DateRangeSheet({
 
         <div className="sheet-header-row">
           <h2 className="place-name">{title}</h2>
-          <button className="sheet-close" onClick={onClose} aria-label="Close">
+          {/* type="button" is load-bearing: DateRangeField renders this sheet
+              as a DOM descendant of whatever contains it, and in the create-trip
+              form that is a <form>. An untyped button there is a SUBMIT button,
+              so "close the calendar" would mean "create the trip". */}
+          <button type="button" className="sheet-close" onClick={onClose} aria-label="Close">
             <X size={20} />
           </button>
         </div>
@@ -168,7 +185,12 @@ export function DateRangeSheet({
             ))}
           </div>
 
-          <div className="calendar-grid" role="grid" aria-label={monthLabel(view)}>
+          {/* Plain buttons, deliberately. role="grid" needs role="row" between
+              it and its cells, and role="gridcell" overrides the button role
+              these already have — a half-built grid widget announces worse
+              than the native input this replaced. Each day names itself in
+              full, because "8" on its own is not a date. */}
+          <div className="calendar-grid" role="group" aria-label={monthLabel(view)}>
             {cells.map((iso, i) => {
               if (!iso) return <span key={`blank-${i}`} className="calendar-cell calendar-cell--blank" />;
               const isStart = iso === draft?.start;
@@ -178,8 +200,8 @@ export function DateRangeSheet({
                 <button
                   key={iso}
                   type="button"
-                  role="gridcell"
-                  aria-selected={inRange}
+                  aria-label={`${Number(iso.slice(8))} ${monthLabel(view)}`}
+                  aria-pressed={inRange}
                   className={[
                     'calendar-cell',
                     inRange ? 'calendar-cell--in-range' : '',
@@ -204,7 +226,13 @@ export function DateRangeSheet({
             <button
               type="button"
               className="btn-ghost"
-              onClick={() => { setDraft(null); setPicking('start'); onCommit(null); onClose(); }}
+              onClick={async () => {
+                if (saving) return;
+                setSaving(true);
+                const ok = await onCommit(null);
+                setSaving(false);
+                if (ok !== false) { setDraft(null); setPicking('start'); onClose(); }
+              }}
             >
               Clear
             </button>
@@ -214,10 +242,16 @@ export function DateRangeSheet({
           <button
             type="button"
             className="btn-primary"
-            disabled={!draft}
-            onClick={() => { if (draft) { onCommit(draft); onClose(); } }}
+            disabled={!draft || saving}
+            onClick={async () => {
+              if (!draft || saving) return;
+              setSaving(true);
+              const ok = await onCommit(draft);
+              setSaving(false);
+              if (ok !== false) onClose();
+            }}
           >
-            {draft ? `Use ${formatRange(draft.start, draft.end, year)}` : 'Pick a date'}
+            {saving ? 'Saving…' : draft ? `Use ${formatRange(draft.start, draft.end, year)}` : 'Pick a date'}
           </button>
         </div>
       </div>

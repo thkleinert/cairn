@@ -162,9 +162,13 @@ export function PlaceDetailSheet({
    * moment, including during the write. A range arrives complete or not at
    * all, so there is one call and nothing to reconcile.
    */
-  const handleAddVisit = async (range: DateRange | null) => {
-    if (!range || !onAddVisit) return;
-    await onAddVisit(range.start, range.end);
+  const handleAddVisit = async (range: DateRange | null): Promise<boolean> => {
+    if (!range || !onAddVisit) return false;
+    // Reported, not swallowed. The calendar keeps itself open on false, so a
+    // failed insert leaves the dates on screen to retry from rather than a
+    // toast and an unchanged section — which is the guarantee the two-input
+    // editor had and this briefly lost.
+    return !!(await onAddVisit(range.start, range.end));
   };
 
   const images: PlaceImage[] = place.images ?? [];
@@ -332,20 +336,21 @@ export function PlaceDetailSheet({
             )}
 
             <ul className="visit-rows">
-              {placeVisits.map(visit => (
+              {placeVisits.map((visit, index) => (
                 <li key={visit.id} className="visit-row">
                   {/* Editing an existing visit reopens the same calendar it was
                       created in, so there is one way to express a range rather
                       than one for making it and another for changing it. */}
                   <DateRangeField
-                    label={`Visit ${visitsForPlace(visits, place.id).indexOf(visit) + 1}`}
+                    label={`Visit ${index + 1}`}
                     value={{ start: visit.starts_on, end: visit.ends_on }}
                     title="When are you here?"
                     startLabel="Arrive"
                     endLabel="Depart"
                     year={baseYear(visits)}
-                    onChange={range => {
-                      if (range) onUpdateVisit?.(visit.id, { starts_on: range.start, ends_on: range.end });
+                    onChange={async range => {
+                      if (!range) return false;
+                      return !!(await onUpdateVisit?.(visit.id, { starts_on: range.start, ends_on: range.end }));
                     }}
                   />
                   <button
@@ -372,7 +377,7 @@ export function PlaceDetailSheet({
                 startLabel="Arrive"
                 endLabel="Depart"
                 year={baseYear(visits)}
-                onCommit={range => { void handleAddVisit(range); }}
+                onCommit={handleAddVisit}
                 onClose={() => setAddingVisit(false)}
               />
             )}

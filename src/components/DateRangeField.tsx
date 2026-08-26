@@ -6,7 +6,7 @@ import { formatRange } from '../lib/timeline';
 interface Props {
   label: string;
   value: DateRange | null;
-  onChange: (range: DateRange | null) => void;
+  onChange: (range: DateRange | null) => void | boolean | Promise<void | boolean>;
   /** Whether "no dates" is a legal answer. A trip may be undated; a visit not. */
   clearable?: boolean;
   /** What an unset field invites you to do. */

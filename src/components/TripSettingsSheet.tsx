@@ -100,9 +100,13 @@ export function TripSettingsSheet({ trip, onClose, onUpdate, onDelete, onUploadC
    *
    * This was two handlers writing two columns independently, which is how a
    * trip could end up with an end date and no start — the create form would
-   * take one without the other, and nothing here objected. Writing both every
-   * time also repairs any trip already in that state the moment someone opens
-   * this sheet and picks a range.
+   * take one without the other, and nothing here objected. Neither surface can
+   * produce that any more, since both now write the pair or neither.
+   *
+   * A row already in that state is NOT repaired on sight: this writes only
+   * when someone picks or clears a range, and the field above shows such a
+   * trip as undated until they do. Normalising it on open would be a write
+   * nobody asked for, against data this sheet was only opened to look at.
    */
   const handleDatesChange = (range: DateRange | null) => {
     setStartDate(range?.start ?? '');

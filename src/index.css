@@ -2722,6 +2722,12 @@ textarea.mention-input {
   display: flex; align-items: flex-end; gap: 8px;
   margin-bottom: 10px;
 }
+/* The field takes the width the remove button leaves. Without this it is a
+   default flex item: it sizes to its own content, so a short range like
+   "3 - 6 Nov" left dead space before the trash icon, and min-width: auto
+   pinned it to the label's full width, so range-field-value's ellipsis could
+   never engage. The rule this replaces did the same job for .date-row. */
+.visit-row .range-field { flex: 1 1 auto; min-width: 0; }
 
 
 /* Narrower than a full tap target, and only in this direction: the row has
