@@ -1563,46 +1563,7 @@ select.input {
    FORMS
    ============================================================ */
 .create-trip-form { display: flex; flex-direction: column; gap: 14px; }
-.date-row { display: flex; gap: 12px; }
-.date-label {
-  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;
-  font-size: 13px; font-weight: 600; color: var(--color-text-secondary);
-}
 
-/* The native date input is invisible and only exists to catch taps and
-   open the OS picker — it's absolutely positioned over the visible box
-   below, which is a plain styled div under our full control instead of
-   relying on the browser's own (unreliable) date-input rendering. */
-.date-field-wrap {
-  position: relative;
-  height: var(--tap-target);
-}
-.date-field-native {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  opacity: 0;
-  z-index: 1;
-}
-.date-field-display {
-  position: absolute; inset: 0;
-  display: flex; align-items: center;
-  padding: 0 14px;
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 15px;
-  color: var(--color-text);
-  background: var(--color-surface);
-  pointer-events: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.date-field-display--empty { color: var(--color-muted); }
-/* Room for the X that overlays this end of the box. */
-.date-field-wrap--clearable .date-field-display { padding-right: 32px; }
-.date-field-native:focus + .date-field-display {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(13,148,136,0.12);
-}
 .form-actions { display: flex; gap: 10px; }
 .form-actions > * { flex: 1; }
 
@@ -2761,17 +2722,7 @@ textarea.mention-input {
   display: flex; align-items: flex-end; gap: 8px;
   margin-bottom: 10px;
 }
-/* .date-row is flex:1 on its two fields already; this makes it take the width
-   the remove button leaves. */
-.visit-row .date-row { flex: 1 1 auto; min-width: 0; gap: 8px; }
-/* A notch down from the form elsewhere, for the same width reason. */
-.visit-row .date-field-display { font-size: 14px; padding-left: 10px; }
-.visit-row .date-label { font-size: 12px; }
 
-/* Dashed while the row has no id yet, so an unsaved visit is visibly not one.
-   It becomes a solid row the moment an arrival is picked and the insert
-   lands. */
-.visit-row--draft .date-field-display { border-style: dashed; }
 
 /* Narrower than a full tap target, and only in this direction: the row has
    two date boxes to fit beside it on a 390px screen, and a date that
@@ -2786,14 +2737,125 @@ textarea.mention-input {
 }
 .visit-remove:active { background: var(--color-bg); color: var(--color-danger); }
 
-/* Sits above the invisible native input, which covers the whole box to catch
-   taps — underneath it this would open the picker instead of clearing. */
-.date-field-clear {
-  position: absolute;
-  top: 0; right: 0; bottom: 0;
-  z-index: 2;
-  width: 30px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--color-muted);
+
+/* ============================================================
+   DATE RANGE PICKER
+   ============================================================ */
+
+/* The field: one line saying what is chosen, which opens the calendar. */
+.range-field { display: flex; flex-direction: column; gap: 6px; }
+
+.range-field-button {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  min-height: var(--tap-target);
+  padding: 0 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 15px;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.date-field-clear:active { color: var(--color-text); }
+.range-field-button:active { border-color: var(--color-primary); }
+.range-field-button:disabled { opacity: 0.5; }
+.range-field-button--empty { color: var(--color-muted); }
+.range-field-value { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* The two ends, read back in the same words the timeline uses. The one about
+   to be set is highlighted, so a tap on the grid has a visible destination. */
+.range-summary { margin-bottom: 16px; }
+.range-summary-ends { display: flex; align-items: flex-end; gap: 10px; }
+.range-end { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.range-end-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--color-muted);
+}
+.range-end-value {
+  font-size: 17px; font-weight: 700;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.range-end--active .range-end-label { color: var(--color-primary); }
+.range-end-arrow { color: var(--color-muted); padding-bottom: 3px; }
+.range-summary-nights { margin-top: 4px; font-size: 12.5px; color: var(--color-text-secondary); }
+
+.calendar { margin-bottom: 8px; }
+
+.calendar-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.calendar-nav-btn {
+  width: var(--tap-target); height: var(--tap-target);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+}
+.calendar-nav-btn:active { background: var(--color-bg); }
+.calendar-month { font-size: 15px; font-weight: 700; }
+
+/* Seven equal columns. Both rows use the SAME template so the weekday
+   initials sit over the days they label — declaring them separately is how
+   those two drift apart the next time either changes. */
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+.calendar-weekdays { margin-bottom: 2px; }
+.calendar-weekday {
+  text-align: center;
+  font-size: 11px; font-weight: 700;
+  color: var(--color-muted);
+  padding-bottom: 4px;
+}
+
+/* No gap between cells: the selected range is drawn as a continuous band, and
+   a gap would cut it into separate blocks. The breathing room comes from the
+   cells being taller than their content instead. */
+.calendar-grid { row-gap: 2px; }
+
+.calendar-cell {
+  aspect-ratio: 1;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14.5px;
+  color: var(--color-text);
+  border-radius: 0;
+  position: relative;
+}
+.calendar-cell--blank { pointer-events: none; }
+.calendar-cell:not(.calendar-cell--blank):active { background: var(--color-bg); }
+
+/* Today is marked but not selected — a dot rather than a fill, so it cannot
+   be mistaken for part of the range. */
+.calendar-cell--today::after {
+  content: '';
+  position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+  width: 3px; height: 3px; border-radius: 50%;
+  background: var(--color-muted);
+}
+
+.calendar-cell--in-range { background: var(--color-primary-light); }
+
+.calendar-cell--start,
+.calendar-cell--end {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 700;
+}
+.calendar-cell--start::after,
+.calendar-cell--end::after { background: var(--color-on-primary); }
+
+/* The band's ends are rounded, its middle is not. A single day is both ends
+   at once and gets rounded on both sides — otherwise one tap looks like the
+   open beginning of a range that was never finished. */
+.calendar-cell--start { border-radius: 999px 0 0 999px; }
+.calendar-cell--end { border-radius: 0 999px 999px 0; }
+.calendar-cell--only { border-radius: 999px; }
+
+.range-actions {
+  display: flex; gap: 10px; align-items: center;
+  padding-top: 4px;
+}
+.range-actions .btn-primary { flex: 1; }

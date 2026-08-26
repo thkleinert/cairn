@@ -7,7 +7,7 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useNotifications, type Notification } from '../hooks/useNotifications';
 import { NotificationsSheet } from './NotificationsSheet';
 import { toast } from '../lib/toast';
-import { DateField } from './DateField';
+import { DateRangeField } from './DateRangeField';
 import { format, parseISO } from 'date-fns';
 
 interface Props {
@@ -231,10 +231,14 @@ export function TripList({ userId, onSelectTrip }: Props) {
                 autoFocus
                 required
               />
-              <div className="date-row">
-                <DateField label="Start" value={startDate} onChange={setStartDate} />
-                <DateField label="End" value={endDate} onChange={setEndDate} />
-              </div>
+              <DateRangeField
+                label="Dates"
+                title="When is this trip?"
+                value={startDate ? { start: startDate, end: endDate || null } : null}
+                onChange={range => { setStartDate(range?.start ?? ''); setEndDate(range?.end ?? ''); }}
+                year={new Date().getFullYear()}
+                clearable
+              />
               {createError && <p className="error-text">{createError}</p>}
               <div className="form-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
