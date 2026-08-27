@@ -228,11 +228,14 @@ export function PlaceListView({
             onPointerDown={e => {
               const row = rowRefs.current[place.id];
               if (!row || !draggableIds.has(place.id)) return;
-              // The fold control lives inside this row, so its own press
-              // bubbles up here — holding it to expand a stop picked the whole
-              // row up instead. The grip used to be immune to this only by
-              // being a separate element with the handlers on it.
-              if ((e.target as HTMLElement).closest('.place-list-fold')) return;
+              // The fold control and the status marker's strip both sit inside
+              // this row, so their presses bubble up here. Neither should pick
+              // it up: holding the fold to expand a stop lifted the whole row,
+              // and the marker's strip is the leading edge a thumb rests on.
+              // The old grip was immune to this only by being a separate
+              // element with the handlers on it.
+              const on = (sel: string) => (e.target as HTMLElement).closest(sel);
+              if (on('.place-list-fold') || on('.place-list-status-zone')) return;
               // The press's own coordinates travel with it — by the time the
               // hold lands, this event is gone. See useLongPressDrag.
               press.start(e, point => handlePointerDown(place.id, index, row, point));
@@ -268,10 +271,18 @@ export function PlaceListView({
                   the single fact this marker exists to carry was the one thing
                   missing from it. It sits inside the row's button, so the
                   label joins that button's own name. */}
-              {isVisited
-                ? <CheckCircle size={16} className="place-list-status" color="var(--color-text)" role="img" aria-label="Visited" />
-                : <Circle size={16} className="place-list-status" color="var(--color-muted)" role="img" aria-label="Not visited" />
-              }
+              {/* The marker sits in a zone that does not start a drag. It is
+                  the strip a thumb rests on at the leading edge of a row, and
+                  a press landing there is far more likely to be someone about
+                  to scroll than someone about to reorder. Tapping it still
+                  opens the place — the zone is inside the row's button, and
+                  only the drag is suppressed. */}
+              <span className="place-list-status-zone">
+                {isVisited
+                  ? <CheckCircle size={16} className="place-list-status" color="var(--color-text)" role="img" aria-label="Visited" />
+                  : <Circle size={16} className="place-list-status" color="var(--color-muted)" role="img" aria-label="Not visited" />
+                }
+              </span>
               {place.image_url && (
                 <img src={place.image_url} alt="" className="place-list-thumb" />
               )}
