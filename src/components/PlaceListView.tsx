@@ -1,7 +1,8 @@
 import { useRef, useMemo } from 'react';
-import { CheckCircle, Circle, MapPin, GripVertical, Plus, Minus } from 'lucide-react';
+import { CheckCircle, Circle, MapPin, Plus, Minus } from 'lucide-react';
 import type { Place, PlaceVisit, Tag } from '../types';
 import { useDragReorder } from '../hooks/useDragReorder';
+import { useLongPressDrag } from '../hooks/useLongPressDrag';
 import { visitsForPlace, formatVisit, baseYear } from '../lib/timeline';
 import { flattenPlaces, resolveDrop, withHiddenChildren, spotStaysWithParent, INDENT_PX } from '../lib/placeTree';
 
@@ -147,6 +148,14 @@ export function PlaceListView({
     },
   });
 
+  // No grab handle: a press held on the row itself becomes the drag, and any
+  // travel before it lands leaves the gesture to the list's own scrolling.
+  const press = useLongPressDrag({
+    enabled: canReorder,
+    onMove: handlePointerMove,
+    onEnd: handlePointerUp,
+  });
+
   const depthOf = useMemo(() => {
     const map = new Map(rows.map(r => [r.place.id, r.depth]));
     return (id: string) => map.get(id) ?? 0;
@@ -216,6 +225,21 @@ export function PlaceListView({
               dragging ? 'place-list-item--dragging' : '',
               dragging && previewDepth !== depth ? 'place-list-item--renesting' : '',
             ].filter(Boolean).join(' ')}
+            onPointerDown={e => {
+              const row = rowRefs.current[place.id];
+              if (!row || !draggableIds.has(place.id)) return;
+              // The fold control lives inside this row, so its own press
+              // bubbles up here — holding it to expand a stop picked the whole
+              // row up instead. The grip used to be immune to this only by
+              // being a separate element with the handlers on it.
+              if ((e.target as HTMLElement).closest('.place-list-fold')) return;
+              // The press's own coordinates travel with it — by the time the
+              // hold lands, this event is gone. See useLongPressDrag.
+              press.start(e, point => handlePointerDown(place.id, index, row, point));
+            }}
+            onPointerMove={press.move}
+            onPointerUp={press.end}
+            onPointerCancel={press.end}
             style={{
               ...(offsetPx ? { transform: `translateY(${offsetPx}px)` } : undefined),
               // The row being dragged keeps its real indent. Its transform is
@@ -227,33 +251,10 @@ export function PlaceListView({
               '--place-depth': dragging ? depth : previewDepth,
             } as React.CSSProperties}
           >
-            {draggableIds.has(place.id) && (
-              <button
-                className="place-list-drag-handle"
-                aria-label={`Reorder ${place.name}`}
-                onPointerDown={e => {
-                  const row = rowRefs.current[place.id];
-                  if (row) handlePointerDown(place.id, index, row, e);
-                }}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-              >
-                <GripVertical size={16} />
-              </button>
-            )}
-            {/* The grip's column is held open on a row that has none, so an
-                expanded stop does not sit 34px left of its own siblings.
-                Reserving the space is what lets the handle be per-row at all —
-                hiding it used to be safe only because it was hidden on every
-                row at once. */}
-            {canReorder && !draggableIds.has(place.id) && (
-              <span className="place-list-drag-handle place-list-drag-handle--empty" aria-hidden="true" />
-            )}
 
             <button
-              className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
-              onClick={() => onSelectPlace(place)}
+              className="place-list-item-content"
+              onClick={() => { if (!press.swallowedClick()) onSelectPlace(place); }}
             >
               {/* The status marker leads the row, ahead of the thumbnail —
                   it belongs to the place rather than to its name, and out here

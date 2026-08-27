@@ -1442,10 +1442,20 @@ select.input {
    dragged sideways visible — clipping the container would cut off the very
    gesture the indent exists for. The trade is that a drag in progress does
    widen the scroll range, since its transform is not padding; that lasts as
-   long as the finger is down, and touch-action:none on the grip means it
-   cannot be panned to. Only the resting layout is guaranteed overflow-free,
+   long as the finger is down, and while it is down useLongPressDrag is
+   preventDefaulting every touchmove, so the widened range cannot be panned to.
+   (That guarantee used to come from touch-action:none on the drag grip, which
+   no longer exists.) Only the resting layout is guaranteed overflow-free,
    which is the one that has to be. */
+/* Holding a row is how you pick it up to move it, and both platforms answer a
+   long press with something else by default: iOS raises the magnifier and
+   marks a word, and a press on the thumbnail offers to save the image. Same
+   reasoning as .note-bullet-body, which had the same fight.
+   Nothing is lost — the names here are labels on a button, not text anyone
+   copies, and the place sheet has the address and notes in selectable form. */
 .place-list-item {
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
   width: 100%;
   display: flex; align-items: stretch;
   background: var(--color-surface);
@@ -1550,31 +1560,17 @@ select.input {
 
    Only at the outer level — a nested row is already indented past the strip,
    so max() gives it no gutter at all. */
-.place-list-drag-handle {
-  flex-shrink: 0;
-  margin-left: max(0px, calc(12px - var(--place-depth, 0) * var(--place-indent, 36px)));
-  width: 32px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--color-muted);
-  touch-action: none;
-  -webkit-user-select: none; user-select: none;
-  cursor: grab;
-}
-.place-list-drag-handle:active { cursor: grabbing; color: var(--color-text); }
-/* Holds the column open on a row with no grip, so content stays on one axis. */
-.place-list-drag-handle--empty { pointer-events: none; }
 
 .place-list-item-content {
   flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 12px;
-  /* No left padding: the grip's own width is the separation, and on a 390px
-     screen this column is the one that pays for everything to its left. */
-  padding: 12px 16px 12px 0;
+  /* Its own left padding now. The grip used to supply the separation, and
+     with the grip gone the row would otherwise start hard against the edge. */
+  padding: 12px 16px;
   text-align: left;
   transition: background 0.12s;
 }
 .place-list-item-content:active { background: var(--color-bg); }
-.place-list-item-content--flush { padding-left: 16px; }
 
 .place-list-thumb {
   width: 52px; height: 52px;
