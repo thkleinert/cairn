@@ -1312,10 +1312,15 @@ select.input {
    .place-list has overflow-y: auto and therefore overflow-x: auto, so that
    turned the ENTIRE list into a horizontal scroller — the trap this file
    already carries two comments about.
-   Pre-existing, but the text column's new left indent spends 24px of the
-   headroom that used to hide it, so it is closed here rather than left to
-   surface later with a shorter name. Measured: a 41-character tag gave the
-   list a scrollWidth of 473 against a 390 client. */
+   Pre-existing, but the row's leading column spends the headroom that used to
+   hide it, so it is closed rather than left to surface later with a shorter
+   name. Measured: a 41-character tag gave the list a scrollWidth of 473
+   against a 390 client.
+
+   That column is the status marker now — 16px plus its 12px gap — where it was
+   once a 24px text indent. Four pixels WORSE, not better, so nothing here has
+   become removable: this guard is what stops a long tag turning the whole list
+   into a sideways scroller. */
 .tag-pill {
   display: inline-flex; align-items: center; gap: 5px;
   min-width: 0; max-width: 100%;

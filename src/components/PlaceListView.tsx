@@ -261,9 +261,15 @@ export function PlaceListView({
                   the body: with nothing before the name, the name, the dates
                   and the tags share the body's own left edge and no longer
                   need an indent to line up. */}
+              {/* Labelled, because shape and colour are the only other cues
+                  it has: a check ring against an empty one, in text ink
+                  against muted. Read aloud, both rows said the same thing, and
+                  the single fact this marker exists to carry was the one thing
+                  missing from it. It sits inside the row's button, so the
+                  label joins that button's own name. */}
               {isVisited
-                ? <CheckCircle size={16} className="place-list-status" color="var(--color-text)" />
-                : <Circle size={16} className="place-list-status" color="var(--color-muted)" />
+                ? <CheckCircle size={16} className="place-list-status" color="var(--color-text)" role="img" aria-label="Visited" />
+                : <Circle size={16} className="place-list-status" color="var(--color-muted)" role="img" aria-label="Not visited" />
               }
               {place.image_url && (
                 <img src={place.image_url} alt="" className="place-list-thumb" />
