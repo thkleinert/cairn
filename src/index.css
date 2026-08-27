@@ -1598,11 +1598,14 @@ select.input {
 .place-list-status-zone {
   display: flex; align-items: center; align-self: stretch;
   flex-shrink: 0;
-  /* Left inset exactly cancels the row's own 16px padding, so the zone starts
-     on the row's edge rather than 4px outside it, and reaches the thumbnail on
-     the other side. The strip is dead for dragging from edge to edge. */
-  padding: 0 12px 0 16px;
-  margin: 0 -12px 0 -16px;
+  /* Insets that exactly cancel the row button's own padding, so the zone
+     reaches the row's edges on all four sides rather than stopping at its
+     content box. align-self: stretch alone only fills the flex LINE, which
+     left a live 12px band above and below — right at the row boundary, which
+     is precisely where a resting thumb lands. Horizontally it reaches the
+     thumbnail. Dead from edge to edge, in both directions. */
+  padding: 12px 12px 12px 16px;
+  margin: -12px -12px -12px -16px;
 }
 .place-list-name {
   /* Takes the slack, so the folded count sits hard right without needing an

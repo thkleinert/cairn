@@ -228,13 +228,12 @@ export function PlaceListView({
             onPointerDown={e => {
               const row = rowRefs.current[place.id];
               if (!row || !draggableIds.has(place.id)) return;
-              // The fold control lives inside this row, so its own press
-              // bubbles up here — holding it to expand a stop picked the whole
-              // row up instead. The grip used to be immune to this only by
-              // being a separate element with the handlers on it.
-              // The fold control and the status marker's strip both sit
-              // inside this row, so their presses bubble here. Neither should
-              // pick the row up.
+              // The fold control and the status marker's strip both sit inside
+              // this row, so their presses bubble up here. Neither should pick
+              // it up: holding the fold to expand a stop lifted the whole row,
+              // and the marker's strip is the leading edge a thumb rests on.
+              // The old grip was immune to this only by being a separate
+              // element with the handlers on it.
               const on = (sel: string) => (e.target as HTMLElement).closest(sel);
               if (on('.place-list-fold') || on('.place-list-status-zone')) return;
               // The press's own coordinates travel with it — by the time the

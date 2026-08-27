@@ -35,6 +35,12 @@ interface Options {
 export function useLongPressDrag({ enabled, holdMs = 200, slopPx = 8, onMove, onEnd }: Options) {
   const press = useRef<{ timer: number; x: number; y: number } | null>(null);
   const armed = useRef(false);
+  // Whether an armed press actually went anywhere. Arming is not the same as
+  // dragging: hold a row for a quarter of a second and let go without moving
+  // and you have TAPPED it. Swallowing the click on arming alone meant that
+  // tap opened nothing — rare at a 420ms hold, ordinary at 200ms, which is
+  // exactly the change that made it matter.
+  const moved = useRef(false);
   // A drag ends with a click on whatever the finger is over. Without this,
   // dropping a row opens the place that was under it.
   //
@@ -80,9 +86,13 @@ export function useLongPressDrag({ enabled, holdMs = 200, slopPx = 8, onMove, on
   const release = useCallback(() => {
     if (armed.current) {
       onEnd();
-      swallow.current = true;
-      if (swallowTimer.current) clearTimeout(swallowTimer.current);
-      swallowTimer.current = window.setTimeout(() => { swallow.current = false; }, 150);
+      // Only a drag that TRAVELLED leaves a click worth discarding. A
+      // stationary one is a slow tap, and its click is what opens the place.
+      if (moved.current) {
+        swallow.current = true;
+        if (swallowTimer.current) clearTimeout(swallowTimer.current);
+        swallowTimer.current = window.setTimeout(() => { swallow.current = false; }, 150);
+      }
     }
     cancel();
   }, [cancel, onEnd]);
@@ -111,16 +121,20 @@ export function useLongPressDrag({ enabled, holdMs = 200, slopPx = 8, onMove, on
       begin({ clientX, clientY, pointerId, target, preventDefault: () => {} });
     }, holdMs);
     press.current = { timer, x: clientX, y: clientY };
+    moved.current = false;
   }, [enabled, holdMs, release]);
 
   const move = useCallback((e: React.PointerEvent) => {
     if (!press.current) return;
+    const dx = e.clientX - press.current.x;
+    const dy = e.clientY - press.current.y;
     if (!armed.current) {
-      const dx = e.clientX - press.current.x;
-      const dy = e.clientY - press.current.y;
       if (Math.hypot(dx, dy) > slopPx) cancel();
       return;
     }
+    // Same threshold as the slop, so a thumb's jitter is not mistaken for
+    // travel and does not turn a slow tap into a swallowed one.
+    if (!moved.current && Math.hypot(dx, dy) > slopPx) moved.current = true;
     onMove(e);
   }, [cancel, onMove, slopPx]);
 
