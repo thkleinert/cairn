@@ -3,7 +3,14 @@ import type { DragPoint } from './useDragReorder';
 
 interface Options {
   enabled: boolean;
-  /** How long the press must be held before it becomes a drag. */
+  /**
+   * How long the press must be held before it becomes a drag.
+   *
+   * Short, because the hold is not what makes this safe — the slop is. Any
+   * travel cancels, so a gesture that is going to scroll has already
+   * disqualified itself long before a slower timer would have expired, and
+   * the only thing a longer wait buys is a list that feels stuck.
+   */
   holdMs?: number;
   /** Travel before the hold lands that means this was a scroll after all. */
   slopPx?: number;
@@ -25,7 +32,7 @@ interface Options {
  * scrolling, and therefore the only condition under which it can still be
  * told not to.
  */
-export function useLongPressDrag({ enabled, holdMs = 420, slopPx = 8, onMove, onEnd }: Options) {
+export function useLongPressDrag({ enabled, holdMs = 200, slopPx = 8, onMove, onEnd }: Options) {
   const press = useRef<{ timer: number; x: number; y: number } | null>(null);
   const armed = useRef(false);
   // A drag ends with a click on whatever the finger is over. Without this,

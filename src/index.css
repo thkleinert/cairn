@@ -1589,6 +1589,21 @@ select.input {
    crowded row squashed it from 16px to a clipped ring — a status marker that
    is not round reads as a rendering fault. */
 .place-list-status { flex-shrink: 0; }
+/* A bigger target than the 16px glyph, without moving it: the padding grows
+   the hit box and the negative margin gives the space straight back, so the
+   marker still measures 44px from the row's edge. Full height, because the
+   strip a thumb rests on runs the depth of the row rather than just the
+   glyph's own line. Nothing is drawn here — it exists to be pressed and
+   ignored. */
+.place-list-status-zone {
+  display: flex; align-items: center; align-self: stretch;
+  flex-shrink: 0;
+  /* Left inset exactly cancels the row's own 16px padding, so the zone starts
+     on the row's edge rather than 4px outside it, and reaches the thumbnail on
+     the other side. The strip is dead for dragging from edge to edge. */
+  padding: 0 12px 0 16px;
+  margin: 0 -12px 0 -16px;
+}
 .place-list-name {
   /* Takes the slack, so the folded count sits hard right without needing an
      auto margin of its own. */
