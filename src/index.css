@@ -1312,10 +1312,15 @@ select.input {
    .place-list has overflow-y: auto and therefore overflow-x: auto, so that
    turned the ENTIRE list into a horizontal scroller — the trap this file
    already carries two comments about.
-   Pre-existing, but the text column's new left indent spends 24px of the
-   headroom that used to hide it, so it is closed here rather than left to
-   surface later with a shorter name. Measured: a 41-character tag gave the
-   list a scrollWidth of 473 against a 390 client. */
+   Pre-existing, but the row's leading column spends the headroom that used to
+   hide it, so it is closed rather than left to surface later with a shorter
+   name. Measured: a 41-character tag gave the list a scrollWidth of 473
+   against a 390 client.
+
+   That column is the status marker now — 16px plus its 12px gap — where it was
+   once a 24px text indent. Four pixels WORSE, not better, so nothing here has
+   become removable: this guard is what stops a long tag turning the whole list
+   into a sideways scroller. */
 .tag-pill {
   display: inline-flex; align-items: center; gap: 5px;
   min-width: 0; max-width: 100%;
@@ -1577,37 +1582,17 @@ select.input {
   object-fit: cover; flex-shrink: 0;
 }
 
-.place-list-body {
-  flex: 1; min-width: 0;
-  /* The status circle sits in a gutter of its own, and everything in this
-     body lines up with the NAME rather than with the circle — one left edge
-     for the whole text column instead of the name on one axis and the dates
-     and tags on another, which is what it looked like before.
-
-     Both halves are copies, not derivations, and the first one is the
-     dangerous kind: 16px is the icon's size, which is set in JSX as size={16}
-     on the Circle / CheckCircle in PlaceListView, NOT read from here. Change
-     that prop without changing this and the text column shifts by the
-     difference, with nothing to catch it — no lint error, no build error, just
-     a column two pixels out. The 8px at least sits a dozen lines below, on
-     .place-list-top's own gap.
-
-     Left as literals rather than made CSS-authoritative with a width/height on
-     the svg: that would fix the drift by making size={16} do nothing, which
-     trades a silent misalignment for a silently ignored prop. */
-  --row-gutter: calc(16px + 8px);
-}
+.place-list-body { flex: 1; min-width: 0; }
 /* Nothing in the body pushes against its own bottom edge. These margins exist
    to separate lines from each other, and the last line has nothing under it —
    left in, they made the text block sit above the row's optical centre. */
 .place-list-body > :last-child { margin-bottom: 0; }
 .place-list-top { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
-/* The status icon is an <svg> with width/height attributes and a flex item's
-   default flex-shrink of 1, so a crowded row squashed it from 16px to a
-   clipped 6px ring. Kept from when the dates shared this row: the name and the
-   pill can still fill it, and a status marker that is not round reads as a
-   rendering fault. */
-.place-list-top > svg { flex-shrink: 0; }
+/* Leads the row, ahead of the thumbnail. flex-shrink: 0 because an <svg> with
+   width/height attributes is a flex item with the default shrink of 1, and a
+   crowded row squashed it from 16px to a clipped ring — a status marker that
+   is not round reads as a rendering fault. */
+.place-list-status { flex-shrink: 0; }
 .place-list-name {
   /* Takes the slack, so the folded count sits hard right without needing an
      auto margin of its own. */
@@ -1618,7 +1603,6 @@ select.input {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .place-list-dates {
-  padding-left: var(--row-gutter);
   font-size: 12px;
   /* tabular-nums so the dates form a column the eye can run down rather than
      a ragged edge that shifts with the width of each numeral. */
@@ -1630,8 +1614,6 @@ select.input {
 
 .place-list-tags {
   display: flex; flex-wrap: wrap; gap: 4px;
-  /* Indented with the dates: two elements under the name, one text column. */
-  padding-left: var(--row-gutter);
 }
 
 /* ============================================================

@@ -255,15 +255,27 @@ export function PlaceListView({
               className={`place-list-item-content ${!canReorder ? 'place-list-item-content--flush' : ''}`}
               onClick={() => onSelectPlace(place)}
             >
+              {/* The status marker leads the row, ahead of the thumbnail —
+                  it belongs to the place rather than to its name, and out here
+                  it reads down the list as a column of its own. It also frees
+                  the body: with nothing before the name, the name, the dates
+                  and the tags share the body's own left edge and no longer
+                  need an indent to line up. */}
+              {/* Labelled, because shape and colour are the only other cues
+                  it has: a check ring against an empty one, in text ink
+                  against muted. Read aloud, both rows said the same thing, and
+                  the single fact this marker exists to carry was the one thing
+                  missing from it. It sits inside the row's button, so the
+                  label joins that button's own name. */}
+              {isVisited
+                ? <CheckCircle size={16} className="place-list-status" color="var(--color-text)" role="img" aria-label="Visited" />
+                : <Circle size={16} className="place-list-status" color="var(--color-muted)" role="img" aria-label="Not visited" />
+              }
               {place.image_url && (
                 <img src={place.image_url} alt="" className="place-list-thumb" />
               )}
               <div className="place-list-body">
                 <div className="place-list-top">
-                  {isVisited
-                    ? <CheckCircle size={16} color="var(--color-text)" />
-                    : <Circle size={16} color="var(--color-muted)" />
-                  }
                   <span className="place-list-name">{place.name}</span>
                   {folded && children > 0 && (
                     <span className="place-list-folded-count">
