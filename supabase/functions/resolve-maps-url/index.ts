@@ -27,8 +27,17 @@
 // And no response body is ever read. The Location header is all we want, so
 // there is nothing to parse and nothing to be fooled by.
 //
-// verify_jwt stays enabled for this function (see ../../config.toml): only
-// signed-in users can invoke it at all.
+// Access: verify_jwt is enabled (see ../../config.toml), but on its own that
+// only proves the Authorization header carries a JWT signed with the project
+// secret — and the publishable anon key is exactly such a JWT, shipped in
+// every client bundle. The sibling functions get away with treating that as
+// enough because a second gate does the real work behind them (storage RLS
+// under the caller's JWT in persist-photo; the SECURITY DEFINER RPC in
+// invite-collaborator). This function has no such backstop — it spends our
+// egress on outbound requests — so it resolves the caller itself and refuses
+// anyone who isn't a signed-in user.
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -293,6 +302,17 @@ Deno.serve(async (req: Request) => {
 
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return json({ error: 'missing authorization' }, 401);
+
+  // Who is actually asking. Without this the anon key alone opens the door,
+  // and anyone holding it — it is public by design — could drive up to five
+  // authenticated server-side GETs per request out of our egress.
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } },
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return json({ error: 'not signed in' }, 401);
 
   let raw: string;
   try {

@@ -117,7 +117,6 @@ export function PlaceSearch({ onSelect }: Props) {
 
   const handleInput = (value: string) => {
     setQuery(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
 
     // A pasted Google Maps link is not a search term — sending it to
     // autocomplete returns nothing at all. Resolve it instead, and take the
@@ -125,7 +124,14 @@ export function PlaceSearch({ onSelect }: Props) {
     // so a late response can't reopen the dropdown over the link's result.
     const mapsUrl = extractMapsUrl(value);
     if (mapsUrl) {
+      // Same link as last time — editing the prose around it, or adding a
+      // trailing space. Leave the pending resolve running. The debounce is
+      // deliberately NOT cleared before this check: doing so cancelled the
+      // timer and then returned without arming a new one, so a keystroke
+      // inside the debounce window left the panel on "Reading that link…"
+      // with nothing scheduled to finish it.
       if (mapsUrl === linkUrlRef.current) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       linkUrlRef.current = mapsUrl;
       const seq = ++requestSeqRef.current;
       setPredictions([]);
@@ -166,10 +172,19 @@ export function PlaceSearch({ onSelect }: Props) {
     }
 
     // Back to being a search — including when the link is edited away, which
-    // has to drop the resolved result rather than leave it hanging under a
-    // query it no longer matches.
-    //
-    // The seq bump is what actually cancels the resolution in flight. Leaving
+    // has to drop the panel rather than leave it hanging under a query it no
+    // longer matches.
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    // Unconditional, and deliberately not folded into the ref check below.
+    // The two are cleared on different schedules — a failed resolve drops the
+    // ref so a re-paste can retry, while the error row stays up to be read —
+    // so gating this on the ref left that row pinned over every later query,
+    // hiding the predictions behind it with only the clear button as a way
+    // out. React bails on a no-op set, so paying this per keystroke is free.
+    setLink(null);
+
+    // The seq bump is what actually cancels a resolution in flight. Leaving
     // it to fetchPredictions is not enough: that runs a debounce later at the
     // earliest, and it returns before bumping when the Maps script hasn't
     // loaded — so a link resolving in the meantime (which needs no Google at
@@ -178,7 +193,6 @@ export function PlaceSearch({ onSelect }: Props) {
     if (linkUrlRef.current !== null) {
       requestSeqRef.current++;
       linkUrlRef.current = null;
-      setLink(null);
     }
 
     if (!value.trim()) {
