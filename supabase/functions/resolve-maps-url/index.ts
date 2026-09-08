@@ -110,18 +110,22 @@ async function expand(startUrl: URL): Promise<URL | null> {
     // the isolate down mid-request.
     res.body?.cancel().catch(() => {});
 
-    // Still standing where we started means the link never expanded at all —
-    // Google answered the shortener with an interstitial or a throttle rather
-    // than a redirect. Returning it would hand the caller a shortlink to
-    // parse, which yields nothing, and the user would be told the link
-    // doesn't point at a place when in truth it was never opened. Null so the
-    // handler can say that instead.
-    const moved = current.href !== startUrl.href;
+    // A shortener that answers without redirecting never expanded — Google
+    // served an interstitial or throttled us. Handing the shortlink back
+    // would have it parsed for a place it cannot contain, and the user told
+    // it points at nothing when the truth is it was never opened. Null, so
+    // the handler says that instead.
+    //
+    // The same non-redirect from a long-form URL means the opposite: it
+    // opened fine and simply doesn't name a place, which a bare `/maps/@…`
+    // camera link genuinely doesn't. Returning it lets that reach the 422 it
+    // deserves rather than a 502 inviting a retry that can never work.
+    const stalled = current.href === startUrl.href && isShortener(startUrl.hostname);
 
-    if (res.status < 300 || res.status >= 400) return moved ? current : null;
+    if (res.status < 300 || res.status >= 400) return stalled ? null : current;
 
     const location = res.headers.get('location');
-    if (!location) return moved ? current : null;
+    if (!location) return stalled ? null : current;
 
     let next: URL;
     try {
@@ -320,8 +324,18 @@ function parseIdentity(url: URL): Identity {
   };
 }
 
-function isEmpty(id: Identity): boolean {
-  return !id.placeId && !id.name && id.latitude === null;
+/**
+ * Can the client actually do something with this?
+ *
+ * A place id, or a location. Deliberately NOT a bare name: the browser half
+ * refuses to act on one, because Find Place answers a name with the most
+ * famous match and there would be nothing left to check it against. Counting
+ * a name as identified is what made `?q=Eiffel+Tower` stop dead — the URL
+ * looked answered, so the redirect that would have produced coordinates was
+ * never followed, and the client then rejected what came back.
+ */
+function isResolvable(id: Identity): boolean {
+  return !!id.placeId || id.latitude !== null;
 }
 
 /**
@@ -341,7 +355,7 @@ function needsExpansion(url: URL): boolean {
   if (isPlaceUrl(url) || isDirectionsUrl(url) || url.pathname.includes('/maps/search/')) {
     return false;
   }
-  return isEmpty(parseIdentity(url));
+  return !isResolvable(parseIdentity(url));
 }
 
 Deno.serve(async (req: Request) => {
@@ -415,7 +429,17 @@ Deno.serve(async (req: Request) => {
   // A Maps *directions* or *search* URL, or a layout we don't read. Saying so
   // is better than returning four nulls the client would have to interpret as
   // failure anyway.
-  if (isEmpty(result)) return json({ error: "That link doesn't point at a place" }, 422);
+  // Two different failures, and the remedies differ: a route or a bare map
+  // view names nothing, while a `?q=Some+Place` that never expanded names
+  // something we couldn't locate. Neither is usable, but saying which is the
+  // difference between "you shared the wrong thing" and "open the place first".
+  if (!isResolvable(result)) {
+    return json({
+      error: result.name
+        ? "Couldn't work out where that place is"
+        : "That link doesn't point at a place",
+    }, 422);
+  }
 
   return json(result);
 });
