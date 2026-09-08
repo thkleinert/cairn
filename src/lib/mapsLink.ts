@@ -126,24 +126,31 @@ async function detailsFor(placeId: string): Promise<LinkedPlace | null> {
  * the place by a hex feature id the Places API won't accept. What they do
  * carry is the name and the pin, which together are enough for Find Place.
  *
+ * The pin is required, not optional. A name alone is not something this can
+ * safely act on: "Central Park" and "Hauptbahnhof" exist in dozens of cities,
+ * Find Place answers with the most famous one, and with no coordinates from
+ * the link there is nothing left to check that answer against. Offering a
+ * confident, photographed, wrong-continent match is worse than declining, so
+ * a name-only link is refused by the caller instead.
+ *
  * Cost note: this is a billed Find Place call, not a free Autocomplete
  * session. It is one per link the user actually pastes and never speculative,
  * which puts it in the same bracket as the map's long-press lookup.
  */
 async function findByName(
   name: string,
-  point: { lat: number; lng: number } | null,
+  point: { lat: number; lng: number },
 ): Promise<LinkedPlace | null> {
   const service = await placesService();
   if (!service) return null;
   const request: google.maps.places.FindPlaceFromQueryRequest = {
     query: name,
     fields: [...DETAIL_FIELDS, 'place_id'],
+    // A tight bias rather than a bounds restriction: the pin is Google's own,
+    // so the place is right there, but a hard restriction would return nothing
+    // at all for anything whose centroid falls just outside.
+    locationBias: { center: point, radius: 1000 },
   };
-  // A tight bias rather than a bounds restriction: the pin is Google's own,
-  // so the place is right there, but a hard restriction would return nothing
-  // at all for anything whose centroid falls just outside.
-  if (point) request.locationBias = { center: point, radius: 1000 };
 
   return new Promise(resolve => {
     service.findPlaceFromQuery(request, (results, status) => {
@@ -158,18 +165,16 @@ async function findByName(
         resolve(null);
         return;
       }
-      if (point) {
-        const away = distanceKm(
-          { latitude: place.latitude, longitude: place.longitude },
-          { latitude: point.lat, longitude: point.lng },
-        );
-        // Matched something, but somewhere else entirely — the same name in
-        // another city. The caller falls back to the link's own name and pin,
-        // which are never wrong, just thinner.
-        if (away > MAX_MATCH_KM) {
-          resolve(null);
-          return;
-        }
+      const away = distanceKm(
+        { latitude: place.latitude, longitude: place.longitude },
+        { latitude: point.lat, longitude: point.lng },
+      );
+      // Matched something, but somewhere else entirely — the same name in
+      // another city. The caller falls back to the link's own name and pin,
+      // which are never wrong, just thinner.
+      if (away > MAX_MATCH_KM) {
+        resolve(null);
+        return;
       }
       resolve(place);
     });
@@ -187,10 +192,13 @@ function addressHead(address: string): string {
  * Degrades one step at a time rather than failing outright, because each
  * fallback is still a place worth adding: a full Google record if we can get
  * one, otherwise the link's own name and pin as a custom place, otherwise the
- * reverse-geocoded address of a dropped pin. Only a link with nothing
- * identifying in it — a directions route, a bare search — comes back as an
- * error.
+ * reverse-geocoded address of a dropped pin. What comes back as an error is a
+ * link with nothing identifying in it — a directions route, a bare search —
+ * or one that names a place without saying where it is, which is the one case
+ * where guessing would be worse than declining.
  */
+const UNREADABLE = 'Could not read that link';
+
 export async function resolveMapsLink(url: string): Promise<LinkResult> {
   let link: LinkIdentity;
   try {
@@ -198,11 +206,15 @@ export async function resolveMapsLink(url: string): Promise<LinkResult> {
       'resolve-maps-url',
       { body: { url } },
     );
-    if (error) return { ok: false, reason: await edgeFunctionMessage(error) };
-    if (!data || data.error) return { ok: false, reason: data?.error ?? 'Could not read that link' };
+    // With a fallback, because invoke reports a network failure or an
+    // undeployed function as an error in the tuple rather than throwing — the
+    // catch below never sees those, and their SDK wording ("Failed to send a
+    // request to the Edge Function") is not something to show a user.
+    if (error) return { ok: false, reason: await edgeFunctionMessage(error, UNREADABLE) };
+    if (!data || data.error) return { ok: false, reason: data?.error ?? UNREADABLE };
     link = data;
   } catch {
-    return { ok: false, reason: 'Could not read that link' };
+    return { ok: false, reason: UNREADABLE };
   }
 
   const point =
@@ -215,15 +227,15 @@ export async function resolveMapsLink(url: string): Promise<LinkResult> {
     if (place) return { ok: true, place };
   }
 
-  if (link.name) {
+  // Both halves required: without the pin there is no way to tell the right
+  // "Central Park" from the famous one (see findByName).
+  if (link.name && point) {
     const place = await findByName(link.name, point);
     if (place) return { ok: true, place };
-    if (point) {
-      return {
-        ok: true,
-        place: { name: link.name, address: '', latitude: point.lat, longitude: point.lng },
-      };
-    }
+    return {
+      ok: true,
+      place: { name: link.name, address: '', latitude: point.lat, longitude: point.lng },
+    };
   }
 
   if (point) {
@@ -242,5 +254,5 @@ export async function resolveMapsLink(url: string): Promise<LinkResult> {
     };
   }
 
-  return { ok: false, reason: 'Could not read that link' };
+  return { ok: false, reason: UNREADABLE };
 }

@@ -10,13 +10,22 @@
 // can't read the Location header — the request fails before the redirect is
 // visible. Server-side there is no such restriction.
 //
-// What this deliberately is NOT: a general-purpose URL fetcher. Only Google's
-// own map hosts are accepted, and every hop of the redirect chain is checked
-// against the same allowlist rather than trusting `redirect: 'follow'` — an
-// open redirect anywhere in Google's estate would otherwise turn this into an
-// SSRF probe against the function's own network. For the same reason the
-// response body is never read: the Location header is all we want, so there
-// is nothing to parse and nothing to be fooled by.
+// What this deliberately is NOT: a general-purpose URL fetcher. Three things
+// hold that line.
+//
+// The URL the client submits must be a shortener or carry a /maps path, so
+// the reachable surface is Google's map hosts rather than everything Google
+// runs. The host allowlist itself is wider than that on purpose — a consent
+// gate isn't on a map host — so it alone would leave this a blind
+// authenticated GET across the estate.
+//
+// Every hop of the redirect chain is then re-checked against that allowlist
+// rather than trusting `redirect: 'follow'`: an open redirect anywhere in
+// Google's estate would otherwise turn this into an SSRF probe against the
+// function's own network.
+//
+// And no response body is ever read. The Location header is all we want, so
+// there is nothing to parse and nothing to be fooled by.
 //
 // verify_jwt stays enabled for this function (see ../../config.toml): only
 // signed-in users can invoke it at all.
@@ -34,16 +43,17 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// The shortener, plus Google's map hosts in any country domain — a link
-// copied in Austria arrives as google.at/maps, one from the iOS app as
-// maps.app.goo.gl. `consent.google.com` is on the list because that is where
-// an EU device's shortlink lands first; it is unwrapped rather than followed
-// (see below).
+// What the iOS and Android share sheets hand out.
 function isShortener(hostname: string): boolean {
   const h = hostname.toLowerCase();
   return h === 'maps.app.goo.gl' || h === 'goo.gl';
 }
 
+// Which hosts this may talk to at all — any Google country domain, because a
+// link copied in Austria arrives as google.at and an EU device's shortlink
+// lands on consent.google.com before it ever reaches a map. That breadth is
+// why the entry URL is separately held to a /maps path (see the handler): the
+// two checks together are what keep this to map links.
 function isAllowedHost(hostname: string): boolean {
   if (isShortener(hostname)) return true;
   // google.com, google.co.uk, maps.google.de, www.google.fr, consent.google.com…
@@ -257,6 +267,26 @@ function isEmpty(id: Identity): boolean {
   return !id.placeId && !id.name && id.latitude === null;
 }
 
+/**
+ * Is a round trip to Google worth making?
+ *
+ * Only for a shortener, or a long-form URL that identifies nothing by itself
+ * and isn't already saying what it is. A `/maps?cid=…` link is the case that
+ * earns the fetch: it carries no place data and does redirect to one.
+ *
+ * A URL that already declares itself a place, a route or a search has said
+ * everything it is going to say — fetching it can only waste an upstream
+ * request before the same answer, and Google serves a non-browser client a
+ * JavaScript shell with no place data in it regardless.
+ */
+function needsExpansion(url: URL): boolean {
+  if (isShortener(url.hostname)) return true;
+  if (isPlaceUrl(url) || isDirectionsUrl(url) || url.pathname.includes('/maps/search/')) {
+    return false;
+  }
+  return isEmpty(parseIdentity(url));
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
@@ -279,24 +309,22 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'invalid url' }, 400);
   }
   if (start.protocol !== 'https:' || !isAllowedHost(start.hostname)) {
-    return json({ error: 'not a Google Maps link' }, 400);
+    return json({ error: 'Not a Google Maps link' }, 400);
+  }
+  // The host allowlist deliberately covers all of google.<tld>, because the
+  // redirect chain needs it — an EU consent gate is not on a map host. The
+  // URL the client *submits* is held to more than that: without a /maps path
+  // this is a blind authenticated GET across everything Google runs, rather
+  // than the map-hosts-only fetcher it is documented to be. A shortener has
+  // no path worth checking; anything else has to say /maps.
+  if (!isShortener(start.hostname) && !start.pathname.startsWith('/maps')) {
+    return json({ error: 'Not a Google Maps link' }, 400);
   }
 
-  // A link copied from the desktop address bar already carries everything, so
-  // fetching it would be a round trip that can only lose: Google answers a
-  // non-browser client with a JavaScript shell that has no place data in it
-  // at all. Expand only what actually needs expanding — a shortener, or a
-  // long-form URL (`/maps?cid=…`) that turned out to say nothing.
   let target: URL | null = start;
-  // A directions URL is excluded from the "empty, so try expanding it" case:
-  // it is already fully expanded and says nothing, so the fetch could only
-  // waste a round trip before the 422 below.
-  if (
-    isShortener(start.hostname) ||
-    (isEmpty(parseIdentity(start)) && !isDirectionsUrl(start))
-  ) {
+  if (needsExpansion(start)) {
     target = await expand(start);
-    if (!target) return json({ error: 'could not expand link' }, 502);
+    if (!target) return json({ error: 'Could not open that link' }, 502);
   }
 
   const result = parseIdentity(target);
@@ -304,7 +332,7 @@ Deno.serve(async (req: Request) => {
   // A Maps *directions* or *search* URL, or a layout we don't read. Saying so
   // is better than returning four nulls the client would have to interpret as
   // failure anyway.
-  if (isEmpty(result)) return json({ error: 'no place in that link' }, 422);
+  if (isEmpty(result)) return json({ error: "That link doesn't point at a place" }, 422);
 
   return json(result);
 });

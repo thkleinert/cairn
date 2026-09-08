@@ -4,6 +4,10 @@ import type { GooglePlacePrediction } from '../types';
 import { spanFromViewport } from '../lib/anchor';
 import { extractMapsUrl, resolveMapsLink, type LinkedPlace } from '../lib/mapsLink';
 
+// Shared by both things the field can be doing — an autocomplete query and a
+// pasted link — so neither fires while someone is still typing.
+const DEBOUNCE_MS = 250;
+
 declare global {
   interface Window {
     google: typeof google;
@@ -38,10 +42,12 @@ export function PlaceSearch({ onSelect }: Props) {
   const [predictions, setPredictions] = useState<GooglePlacePrediction[]>([]);
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState<LinkState | null>(null);
-  // The URL currently resolved or resolving, so that typing on either side of
-  // a pasted link doesn't re-run it. Resolution costs a billed Find Place
-  // call, and onChange fires on every keystroke — without this, nudging the
-  // cursor after a paste would bill for the same link again.
+  // The URL currently resolved or resolving, so that editing the text around
+  // a link doesn't re-run it. Resolution costs a billed Find Place call, and
+  // the field often holds more than the URL — "Café Central https://…" is
+  // what sharing to Notes first produces — so typing in the prose either side
+  // of it would otherwise bill again for a link that hasn't changed. Cleared
+  // on failure, so a re-paste can retry.
   const linkUrlRef = useRef<string | null>(null);
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
@@ -124,22 +130,38 @@ export function PlaceSearch({ onSelect }: Props) {
       const seq = ++requestSeqRef.current;
       setPredictions([]);
       setOpen(false);
+      // Shown at once, while the call itself waits out the same debounce
+      // autocomplete uses. Resolving costs a billed Find Place, and a link in
+      // the field is still editable: one backspace truncates the URL into a
+      // different (broken) one, and retyping the character makes a third.
+      // linkUrlRef alone doesn't cover that — it only suppresses a value
+      // identical to the last.
       setLink({ status: 'resolving' });
-      resolveMapsLink(mapsUrl)
-        .then(result => {
-          if (seq !== requestSeqRef.current) return;
-          setLink(result.ok
-            ? { status: 'ready', place: result.place }
-            : { status: 'error', reason: result.reason });
-        })
-        // resolveMapsLink guards its own network call, but the Google SDK
-        // path behind it can still reject — getServices memoises a rejected
-        // promise for the rest of the session if a constructor throws. Without
-        // this the panel sits on "Reading that link…" forever.
-        .catch(() => {
-          if (seq !== requestSeqRef.current) return;
-          setLink({ status: 'error', reason: 'Could not read that link' });
-        });
+      const failed = () => {
+        if (seq !== requestSeqRef.current) return;
+        // Drop the memo so re-pasting the same link retries it. Without this
+        // an error is terminal for that exact text, and the only way out is
+        // the clear button.
+        linkUrlRef.current = null;
+        setLink({ status: 'error', reason: 'Could not read that link' });
+      };
+      debounceRef.current = setTimeout(() => {
+        resolveMapsLink(mapsUrl)
+          .then(result => {
+            if (seq !== requestSeqRef.current) return;
+            if (!result.ok) {
+              linkUrlRef.current = null;
+              setLink({ status: 'error', reason: result.reason });
+              return;
+            }
+            setLink({ status: 'ready', place: result.place });
+          })
+          // resolveMapsLink guards its own network call, but the Google SDK
+          // path behind it can still reject — getServices memoises a rejected
+          // promise for the rest of the session if a constructor throws.
+          // Without this the panel sits on "Reading that link…" forever.
+          .catch(failed);
+      }, DEBOUNCE_MS);
       return;
     }
 
@@ -148,7 +170,7 @@ export function PlaceSearch({ onSelect }: Props) {
     // query it no longer matches.
     //
     // The seq bump is what actually cancels the resolution in flight. Leaving
-    // it to fetchPredictions is not enough: that runs 250ms later at the
+    // it to fetchPredictions is not enough: that runs a debounce later at the
     // earliest, and it returns before bumping when the Maps script hasn't
     // loaded — so a link resolving in the meantime (which needs no Google at
     // all to reach its name-and-pin fallback) would reopen the panel over an
@@ -167,7 +189,7 @@ export function PlaceSearch({ onSelect }: Props) {
       setOpen(false);
       return;
     }
-    debounceRef.current = setTimeout(() => fetchPredictions(value), 250);
+    debounceRef.current = setTimeout(() => fetchPredictions(value), DEBOUNCE_MS);
   };
 
   const handleSelect = (prediction: GooglePlacePrediction) => {
