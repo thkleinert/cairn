@@ -12,31 +12,19 @@
 // visible. Server-side there is no such restriction.
 //
 // What this deliberately is NOT: a general-purpose URL fetcher. Three things
-// hold that line.
+// hold that line. The submitted URL must be a shortener or carry a /maps
+// path — the host allowlist alone is wider, since a consent gate isn't on a
+// map host, and would leave this a blind GET across Google's estate. Every
+// redirect hop is then re-checked against that allowlist rather than trusting
+// `redirect: 'follow'`, or an open redirect anywhere in that estate turns
+// this into an SSRF probe. And no response body is ever read.
 //
-// The URL the client submits must be a shortener or carry a /maps path, so
-// the reachable surface is Google's map hosts rather than everything Google
-// runs. The host allowlist itself is wider than that on purpose — a consent
-// gate isn't on a map host — so it alone would leave this a blind
-// authenticated GET across the estate.
-//
-// Every hop of the redirect chain is then re-checked against that allowlist
-// rather than trusting `redirect: 'follow'`: an open redirect anywhere in
-// Google's estate would otherwise turn this into an SSRF probe against the
-// function's own network.
-//
-// And no response body is ever read. The Location header is all we want, so
-// there is nothing to parse and nothing to be fooled by.
-//
-// Access: verify_jwt is enabled (see ../../config.toml), but on its own that
-// only proves the Authorization header carries a JWT signed with the project
-// secret — and the publishable anon key is exactly such a JWT, shipped in
-// every client bundle. The sibling functions get away with treating that as
-// enough because a second gate does the real work behind them (storage RLS
-// under the caller's JWT in persist-photo; the SECURITY DEFINER RPC in
-// invite-collaborator). This function has no such backstop — it spends our
-// egress on outbound requests — so it resolves the caller itself and refuses
-// anyone who isn't a signed-in user.
+// Access: verify_jwt alone does NOT mean "signed in" — it checks the JWT's
+// signature, and the publishable anon key is such a JWT, shipped in every
+// client bundle. The sibling functions can rely on it because a second gate
+// backs them (storage RLS in persist-photo, the SECURITY DEFINER RPC in
+// invite-collaborator). This one has none and spends our egress, so it
+// resolves the caller itself.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -57,15 +45,6 @@ function json(body: unknown, status = 200) {
 function isShortener(hostname: string): boolean {
   const h = hostname.toLowerCase();
   return h === 'maps.app.goo.gl' || h === 'goo.gl';
-}
-
-// A host that is only ever maps, whatever its path — the legacy deep-link
-// form "maps.google.com/?q=48.2,16.3" carries its place in the query string
-// and nothing in the path, which is the shape most third-party "view on
-// Google Maps" links still use. Exempt from the /maps path check below for
-// that reason, and no wider for it: the hostname already says maps.
-function isMapsHost(hostname: string): boolean {
-  return /^maps\.google\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(hostname.toLowerCase());
 }
 
 // Which hosts this may talk to at all — any Google country domain, because a
@@ -120,20 +99,12 @@ async function expand(startUrl: URL): Promise<URL | null> {
     // the isolate down mid-request.
     res.body?.cancel().catch(() => {});
 
-    // Standing on a shortener when the redirects stop means the link never
-    // expanded — Google served an interstitial or throttled us. Handing the
-    // shortlink back would have it parsed for a place it cannot contain, and
-    // the user told it points at nothing when the truth is it was never
-    // opened. Null, so the handler can say that instead.
-    //
-    // The same non-redirect from a long-form URL means the opposite: it
-    // opened fine and simply doesn't name a place, which a bare `/maps/@…`
-    // camera link genuinely doesn't. Returning it reaches the 422 that
-    // deserves, rather than a 502 inviting a retry that can never work.
-    //
-    // Asked of where we are standing rather than of whether we have moved: a
-    // chain can move and still be on the shortener — a self-redirect adding a
-    // tracking parameter — and a "did it move" test would call that expanded.
+    // Redirects stopped. Still on a shortener means the link never expanded
+    // (an interstitial, or a throttle) — a different thing from a long-form
+    // URL that opened fine and simply names no place, and it deserves a
+    // different message. Asked of where we stand, not of whether we moved: a
+    // shortener can self-redirect to add a tracking parameter and still be a
+    // shortener.
     const stalled = isShortener(current.hostname);
 
     if (res.status < 300 || res.status >= 400) return stalled ? null : current;
@@ -150,14 +121,10 @@ async function expand(startUrl: URL): Promise<URL | null> {
     if (next.protocol !== 'https:' || !isAllowedHost(next.hostname)) return null;
 
     // An EU consent gate carries the real destination in `continue`. Reading
-    // it is what keeps this working outside the US — following the gate
-    // itself just lands on a cookie wall that never redirects onward, and
-    // fetch keeps no cookie jar between hops to get past it.
-    //
-    // Matched on the prefix, not the exact host: the wall is served from the
-    // country domains too (consent.google.de, consent.google.fr, …), and an
-    // exact test missed every one of them — which is to say it missed most of
-    // the case this branch exists for.
+    // it is what keeps this working outside the US: following the gate lands
+    // on a cookie wall that never redirects onward, and fetch keeps no cookie
+    // jar between hops. Prefix-matched, because the wall is served from the
+    // country domains too (consent.google.de, .fr, …).
     if (/^consent\.google\./.test(next.hostname.toLowerCase())) {
       const onward = next.searchParams.get('continue');
       if (!onward) return null;
@@ -169,35 +136,30 @@ async function expand(startUrl: URL): Promise<URL | null> {
       if (next.protocol !== 'https:' || !isAllowedHost(next.hostname)) return null;
     }
 
-    // Stop the moment the URL identifies a place, rather than fetching it to
-    // learn what we can already read. That fetch is a round trip against a
-    // heavy Maps page whose body we cancel unread — and if it fails, which is
-    // a timeout or Google throttling this User-Agent away, the catch above
-    // would throw away an answer that was complete after hop 0 and turn it
-    // into a 502. It also halves the useful redirect budget.
+    // Stop once the URL identifies a place rather than fetching it to learn
+    // what we can already read. That fetch is a round trip against a heavy
+    // page we cancel unread, and if it fails the catch above would discard an
+    // answer that was already complete and call it a 502.
     if (!needsExpansion(next)) return next;
 
     current = next;
   }
-  // Out of hops. Same rule as above: a shortlink is not an answer.
-  return isShortener(current.hostname) ? null : current;
+  // Out of hops, and `current` is here only because it was known NOT to
+  // identify a place — that is what kept the loop going. Returning it would
+  // reach the handler's "doesn't point at a place" when the truth is the
+  // chain was longer than we would follow.
+  return null;
 }
 
 /**
- * A Google place id, if the expanded URL happens to carry one.
- *
- * Three shapes, in descending order of how much we trust them:
- *
- *   ?query_place_id=ChIJ…   an explicit parameter — unambiguous
- *   ?q=place_id:ChIJ…       the documented Maps URL form
- *   !1sChIJ…                inside the `data=` blob
+ * A Google place id, if the expanded URL happens to carry one:
+ * ?query_place_id=ChIJ…, ?q=place_id:ChIJ…, or !1sChIJ… in the `data=` blob.
  *
  * That last one needs care. `!1s` is a *slot*, not a type: for many places it
- * holds a hex feature id ("0x476d07…:0x2e83…"), which is a different
- * identifier space that the Places API will not accept. So it is only read
- * when it looks like a place id — Google's own opaque base64url form — and a
- * hex id is left to fall through to the name-and-coordinates path below,
- * which resolves it properly.
+ * holds a hex feature id ("0x476d07…:0x2e83…"), an identifier space the
+ * Places API will not accept. So it is read only when it looks like a place
+ * id, and a hex id falls through to the name-and-coordinates path — which is
+ * why that path is the common one rather than the fallback.
  */
 const PLACE_ID = /^[A-Za-z0-9_-]{20,}$/;
 
@@ -219,16 +181,14 @@ function isPlaceUrl(url: URL): boolean {
   return url.pathname.includes('/maps/place/');
 }
 
-// A route is not a place, and its `data=` blob can carry per-waypoint
-// coordinates in shapes close enough to a pin's to be read as one. Refused by
-// path rather than picked apart.
+// A route is not a place, and its `data=` blob carries per-waypoint
+// coordinates close enough to a pin's to be misread. Refused by path.
 function isDirectionsUrl(url: URL): boolean {
   return url.pathname.includes('/maps/dir/');
 }
 
-// Just a viewport — "copy link" with nothing selected. It names no place and
-// findCoords ignores the camera off a place URL, so there is nothing here to
-// find and, being a final URL already, nothing a fetch could turn it into.
+// Just a viewport — "copy link" with nothing selected. Names no place, and
+// already final, so there is nothing a fetch could turn it into.
 function isCameraUrl(url: URL): boolean {
   return url.pathname.startsWith('/maps/@');
 }
@@ -253,35 +213,16 @@ function findPlaceId(url: URL): string | null {
 /**
  * The pin's coordinates.
  *
- * Three shapes, in descending order of precision. `!8m2!3d<lat>!4d<lng>` is
- * the place itself. `?q=`/`?ll=` is a coordinate someone wrote down, so it is
- * the place too. `/@lat,lng,zoom` is where the *camera* sits, which for a
- * place opened from a search result is often offset — Maps leaves room for
- * the info card — so it is a last resort, and only on a place URL at that.
- *
- * That order is what keeps a pasted link landing on the restaurant rather
- * than half a block up the street.
+ * `!8m2!3d<lat>!4d<lng>` is the place itself. `/@lat,lng,zoom` is where the
+ * *camera* sits, often offset to leave room for the info card, so it is a
+ * last resort and only on a place URL. That order is what keeps a pasted link
+ * landing on the restaurant rather than half a block up the street.
  */
 const COORD_PAIR = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/;
 
-// The documented `?q=48.21,16.36` and `?ll=48.21,16.36` forms, which are what
-// third-party "view on Google Maps" links and shared coordinates use. They
-// carry no data blob and no `@`, so without this they read as empty and a
-// link whose coordinates are sitting in plain sight was refused as pointing
-// at no place.
-function findParamCoords(url: URL): RegExpMatchArray | null {
-  for (const key of ['q', 'll']) {
-    const value = url.searchParams.get(key);
-    const hit = value?.match(COORD_PAIR);
-    if (hit) return hit;
-  }
-  return null;
-}
-
 function findCoords(url: URL): { latitude: number; longitude: number; fromCamera: boolean } | null {
   const blob = decodedBlob(url);
-  const pin = blob.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
-    ?? findParamCoords(url);
+  const pin = blob.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
   // The camera is only meaningful on a URL that is *about* a place. Every
   // Maps URL has an `@lat,lng` in it, including a route and a search, and
   // reading those as a location is worse than reading nothing: a directions
@@ -295,9 +236,8 @@ function findCoords(url: URL): { latitude: number; longitude: number; fromCamera
   const longitude = Number(hit[2]);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
-  // Reported, because the difference matters downstream: a pin is where the
-  // place is, a camera is only roughly near it. The client widens its
-  // sanity check and refuses to drop a marker on a bare camera position.
+  // Reported because it matters downstream: a pin is where the place is, a
+  // camera only roughly near it, so the client widens its match tolerance.
   return { latitude, longitude, fromCamera: !pin };
 }
 
@@ -307,21 +247,10 @@ function findCoords(url: URL): { latitude: number; longitude: number; fromCamera
 // so they are rejected here and the caller falls back to reverse geocoding
 // the coordinates, which at least yields a street address.
 function isCoordinateLabel(name: string): boolean {
-  // The same pattern findParamCoords reads, deliberately: when the two
-  // disagreed about spacing, "48.85 , 2.29" was taken as coordinates *and*
-  // kept as a name, so the client spent a Find Place on the literal string
-  // and, failing, added a place called "48.85 , 2.29" — never reaching the
-  // reverse geocode this guard exists to force.
   return COORD_PAIR.test(name) || /\d+°\d+'/.test(name);
 }
 
 function findName(url: URL): string | null {
-  // `?q=Some+Place` is the other half of the query-parameter form — a name
-  // rather than a coordinate pair. `place_id:` lives in the same parameter
-  // and is findPlaceId's to read, never a name.
-  const q = url.searchParams.get('q')?.trim();
-  if (q && !q.startsWith('place_id:') && !isCoordinateLabel(q)) return q;
-
   const match = url.pathname.match(/\/maps\/place\/([^/@]+)/);
   if (!match) return null;
   let name: string;
@@ -360,30 +289,22 @@ function parseIdentity(url: URL): Identity {
 }
 
 /**
- * Can the client actually do something with this?
- *
- * A place id, or a location. Deliberately NOT a bare name: the browser half
- * refuses to act on one, because Find Place answers a name with the most
- * famous match and there would be nothing left to check it against. Counting
- * a name as identified is what made `?q=Eiffel+Tower` stop dead — the URL
- * looked answered, so the redirect that would have produced coordinates was
- * never followed, and the client then rejected what came back.
+ * Can the client actually do something with this? A place id, or a location.
+ * Deliberately NOT a bare name: the browser half refuses to act on one, since
+ * Find Place answers a name with the most famous match and nothing would be
+ * left to check it against. Counting a name as identified also stops a URL
+ * expanding, so the redirect that would have produced coordinates is missed.
  */
 function isResolvable(id: Identity): boolean {
   return !!id.placeId || id.latitude !== null;
 }
 
 /**
- * Is a round trip to Google worth making?
- *
- * Only for a shortener, or a long-form URL that identifies nothing by itself
- * and isn't already saying what it is. A `/maps?cid=…` link is the case that
- * earns the fetch: it carries no place data and does redirect to one.
- *
- * A URL that already declares itself a place, a route or a search has said
- * everything it is going to say — fetching it can only waste an upstream
- * request before the same answer, and Google serves a non-browser client a
- * JavaScript shell with no place data in it regardless.
+ * Is a round trip to Google worth making? Only for a shortener, or a
+ * long-form URL that identifies nothing and isn't already declaring what it
+ * is. `/maps?cid=…` is the case that earns it. A URL that already says it is
+ * a place, a route, a search or a camera view has said everything it will —
+ * and Google serves a non-browser client a JS shell with no place data anyway.
  */
 function needsExpansion(url: URL): boolean {
   if (isShortener(url.hostname)) return true;
@@ -405,21 +326,17 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return json({ error: 'You need to be signed in' }, 401);
 
-  // Who is actually asking. Without this the anon key alone opens the door,
-  // and anyone holding it — it is public by design — could drive up to five
-  // authenticated server-side GETs per request out of our egress.
+  // Who is actually asking. Without this the public anon key opens the door,
+  // and anyone holding it could drive five server-side GETs per request.
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: authHeader } } },
   );
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  // The error half matters, because auth-js does not throw for a flaky auth
-  // server — it returns { user: null, error } just as it does for a caller
-  // who really is anonymous. Told apart by status: a retryable fetch failure
-  // carries 0, a rejected token carries 401/403. Without this the check now
-  // sitting on the critical path of every paste answers "you're not signed
-  // in" to a signed-in user whose blip we caused.
+  // The error half matters: auth-js does not throw for a flaky auth server,
+  // it returns { user: null, error } exactly as for a genuinely anonymous
+  // caller. Told apart by status — 0 or 5xx is ours to retry, 401/403 theirs.
   if (authError) {
     const status = (authError as { status?: number }).status ?? 0;
     if (status === 0 || status >= 500) {
@@ -445,16 +362,12 @@ Deno.serve(async (req: Request) => {
   if (start.protocol !== 'https:' || !isAllowedHost(start.hostname)) {
     return json({ error: 'Not a Google Maps link' }, 400);
   }
-  // The host allowlist deliberately covers all of google.<tld>, because the
-  // redirect chain needs it — an EU consent gate is not on a map host. The
-  // URL the client *submits* is held to more than that: without a /maps path
-  // this is a blind authenticated GET across everything Google runs, rather
-  // than the map-hosts-only fetcher it is documented to be. A shortener has
-  // no path worth checking; anything else has to say /maps.
-  // A segment test, not a prefix one: `startsWith('/maps')` also lets through
-  // /mapsanything, which is precisely the breadth this is here to deny.
+  // The allowlist covers all of google.<tld> because the redirect chain needs
+  // it; the URL the client *submits* is held to more, or this is a blind
+  // authenticated GET across everything Google runs. A segment test, not a
+  // prefix one — `startsWith('/maps')` would admit /mapsanything.
   const onMapsPath = start.pathname === '/maps' || start.pathname.startsWith('/maps/');
-  if (!isShortener(start.hostname) && !isMapsHost(start.hostname) && !onMapsPath) {
+  if (!isShortener(start.hostname) && !onMapsPath) {
     return json({ error: 'Not a Google Maps link' }, 400);
   }
 
@@ -469,10 +382,9 @@ Deno.serve(async (req: Request) => {
   // A Maps *directions* or *search* URL, or a layout we don't read. Saying so
   // is better than returning four nulls the client would have to interpret as
   // failure anyway.
-  // Two different failures, and the remedies differ: a route or a bare map
-  // view names nothing, while a `?q=Some+Place` that never expanded names
-  // something we couldn't locate. Neither is usable, but saying which is the
-  // difference between "you shared the wrong thing" and "open the place first".
+  // Two failures with different remedies: a route or bare map view names
+  // nothing, while a link that named a place we couldn't locate is a
+  // different conversation.
   if (!isResolvable(result)) {
     return json({
       error: result.name

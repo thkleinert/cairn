@@ -51,12 +51,8 @@ interface LinkIdentity {
 // "Copy Link" is not the only route in — sharing to Notes or Messages first
 // yields "Café Central\nhttps://maps.app.goo.gl/…", and that text pasted into
 // an input arrives as one line with the URL somewhere in the middle.
-// The last alternative is the legacy deep link, "maps.google.com/?q=48.2,16.3"
-// — its place is in the query string and its path is bare, so the /maps
-// requirement the other Google hosts carry would miss it. That host is only
-// ever maps, so the path needn't say so again.
 const MAPS_URL =
-  /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:[a-z0-9-]+\.)*google\.[a-z]{2,3}(?:\.[a-z]{2,3})?\/maps|maps\.google\.[a-z]{2,3}(?:\.[a-z]{2,3})?\/)\S*/i;
+  /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:[a-z0-9-]+\.)*google\.[a-z]{2,3}(?:\.[a-z]{2,3})?\/maps)\S*/i;
 
 export function extractMapsUrl(text: string): string | null {
   const match = text.match(MAPS_URL);
@@ -165,10 +161,18 @@ async function findByName(
   const request: google.maps.places.FindPlaceFromQueryRequest = {
     query: name,
     fields: [...DETAIL_FIELDS, 'place_id'],
-    // A tight bias rather than a bounds restriction: the pin is Google's own,
-    // so the place is right there, but a hard restriction would return nothing
-    // at all for anything whose centroid falls just outside.
-    locationBias: { center: point, radius: 1000 },
+    // A bias rather than a bounds restriction: the pin is Google's own, so the
+    // place is right there, but a hard restriction would return nothing at all
+    // for anything whose centroid falls just outside.
+    //
+    // Scaled with the tolerance below, not fixed. Leaving a 1km bias against a
+    // 25km camera allowance made the guard hollow at metro scale: the bias
+    // never took, Find Place answered unbiased, and a same-named station 20km
+    // away passed the check with a confident name and photo.
+    locationBias: {
+      center: point,
+      radius: (fromCamera ? MAX_CAMERA_MATCH_KM : MAX_MATCH_KM) * 1000,
+    },
   };
 
   return new Promise(resolve => {
@@ -251,21 +255,24 @@ export async function resolveMapsLink(url: string): Promise<LinkResult> {
   if (link.name && point) {
     const place = await findByName(link.name, point, link.fromCamera);
     if (place) return { ok: true, place };
-    // Google couldn't confirm it, so the link's own coordinates are all that
-    // is left — and if they are a camera position, the marker is going down
-    // on a viewport centre that may not be the place at all. Nothing can fix
-    // that here, but the address at that spot can be put in front of the
-    // person about to accept it: a confirm row reading "Khao Sok National
-    // Park" over a suburban street is one they can decline, where a row with
-    // no address at all looks exactly like a good result.
-    const address = link.fromCamera ? await reverseGeocode(point) : null;
+    // Deliberately no address, even for a camera position where one would say
+    // something useful about where the marker is going. Filling it in reads as
+    // a free improvement and is not: with no types and no spanKm, `address` is
+    // the only signal kindFor has left, and a street-shaped one makes
+    // looksSpecific true — so a national park shared zoomed out was filed as a
+    // spot inside whichever town lay within 15km, which is worse than the
+    // vagueness it was trying to fix. An empty address keeps both fallbacks
+    // classifying alike, and both land a stop.
     return {
       ok: true,
       place: {
         name: link.name,
-        address: address ?? '',
+        address: '',
         latitude: point.lat,
         longitude: point.lng,
+        // Kept when we had one: getDetails can fail transiently, and the
+        // id is the only key later enrichment has.
+        google_place_id: link.placeId ?? undefined,
       },
     };
   }
