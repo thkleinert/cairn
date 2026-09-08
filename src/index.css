@@ -794,6 +794,16 @@ select.input {
 .prediction-main { font-size: 15px; font-weight: 600; }
 .prediction-sub { font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
 
+/* A pasted Maps link while it resolves, or the reason it didn't. Padded to
+   match .prediction-item so the row the result lands in doesn't shift when
+   "Reading that link…" is replaced by the place itself. */
+.prediction-status {
+  padding: 12px 16px;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+.prediction-status--error { color: var(--color-danger); }
+
 /* ============================================================
    BOTTOM SHEETS
    ============================================================ */

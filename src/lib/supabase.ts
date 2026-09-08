@@ -35,3 +35,19 @@ export function signupsEnabled(): Promise<boolean> {
   }
   return signupsPromise;
 }
+
+// A non-2xx from an edge function surfaces as FunctionsHttpError whose
+// message is the useless generic "Edge Function returned a non-2xx status
+// code" — the real reason is in the unread response body our functions all
+// answer with as `{ error }`. Dig it out, falling back to the generic message
+// when the body isn't there or isn't JSON.
+export async function edgeFunctionMessage(fnError: { message: string }): Promise<string> {
+  const ctx = (fnError as { context?: Response }).context;
+  if (!ctx || typeof ctx.json !== 'function') return fnError.message;
+  try {
+    const body = await ctx.json();
+    return body?.error ?? fnError.message;
+  } catch {
+    return fnError.message;
+  }
+}

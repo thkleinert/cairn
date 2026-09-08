@@ -16,3 +16,9 @@ verify_jwt = true
 # running under the caller's JWT.
 [functions.invite-collaborator]
 verify_jwt = true
+
+# Signed-in users only. The function reaches out to Google's own map hosts and
+# nothing else, so the JWT is what keeps it from being a public redirect
+# follower for anyone who finds the URL.
+[functions.resolve-maps-url]
+verify_jwt = true

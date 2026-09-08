@@ -226,6 +226,15 @@ lands on the map with its name, address, coordinates, and photo already
 filled in. A quick-add sheet also lets you paste a link or a photo straight
 onto a place.
 
+**Or paste a Google Maps link into that same field.** Places are usually
+found where the reviews and the photos are, so: Share → Copy Link in Google
+Maps, then paste — Cairn expands the shortlink, works out which place it
+points at, and shows it as a single result to confirm. The place lands with
+the same name, address, photo and type information a searched-for one gets.
+(This is the flow rather than a share-sheet button because iOS has no such
+button to offer: Safari has never implemented the Web Share Target API, so no
+installed web app can appear in the system share sheet.)
+
 <br clear="right" />
 
 ### 👥 Built for Planning Together
@@ -279,8 +288,9 @@ option, and a trip invite is the only way an account ever gets made.
 
 **No custom backend server.** The React app talks directly to Supabase and
 the map/places APIs; all server-side logic lives in Postgres — Row Level
-Security policies and a set of `SECURITY DEFINER` RPCs — plus three small edge
-functions (collaborator invites, photo persistence, and the GeoJSON export).
+Security policies and a set of `SECURITY DEFINER` RPCs — plus four small edge
+functions (collaborator invites, photo persistence, Google Maps link
+expansion, and the GeoJSON export).
 
 ```mermaid
 flowchart LR
@@ -500,7 +510,7 @@ Deploy `dist/` to any static host:
 
 ### 9. Edge Functions
 
-All three functions live in `supabase/functions/` and are deployed with the
+All four functions live in `supabase/functions/` and are deployed with the
 [Supabase CLI](https://supabase.com/docs/guides/functions); their JWT
 settings are pinned in [`supabase/config.toml`](supabase/config.toml) so a
 plain deploy does the right thing:
@@ -510,7 +520,7 @@ npm install -g supabase        # or: npx supabase <command>
 supabase login                 # opens a browser
 supabase link --project-ref <your-project-ref>
 
-supabase functions deploy invite-collaborator persist-photo trip-geojson
+supabase functions deploy invite-collaborator persist-photo resolve-maps-url trip-geojson
 supabase secrets set APP_ORIGINS="https://your-domain.example,http://localhost:5173"
 supabase secrets set MAPBOX_TOKEN=pk.your-unrestricted-server-token
 ```
@@ -545,6 +555,17 @@ permanent URL (server-side because Google's photo CDN has no CORS headers).
 The upload runs under the *caller's* JWT, so the bucket's own RLS decides
 what's writable — the function holds no elevated storage privileges. Without
 it deployed, the app degrades gracefully and keeps the temporary Google URL.
+
+**`resolve-maps-url`** — expands a pasted Google Maps share link
+(`maps.app.goo.gl/…`) far enough for the search field to finish the job in the
+browser. It exists because the browser cannot: Google's shortener sends no
+CORS headers, so the redirect that holds the real URL is unreadable from a
+page. It follows that redirect server-side, re-checking every hop against an
+allowlist of Google's own map hosts rather than trusting `redirect: 'follow'`,
+and never reads a response body — the `Location` header is the whole point, so
+there is nothing to parse and no way for it to become a general-purpose
+fetcher. Without it deployed, pasting a link fails with a message and search
+carries on working.
 
 **`trip-geojson`** — exports a trip's visited route as GeoJSON (road-snapped
 legs + stop markers), authorized by the trip's share token:
@@ -686,10 +707,10 @@ src/
                   useSwipeToDelete, useFoldState, usePersistentSet,
                   useHistoryLayer, …
   lib/            Supabase client, Mapbox routing, Google photo helpers,
-                  storage cleanup, toasts; and the pure rules — outline.ts
-                  (bullet depth and where a dropped subtree lands),
-                  placeTree.ts (stops and spots), anchor.ts (which kind a new
-                  place is), mentions.ts
+                  mapsLink.ts (pasted Google Maps links), storage cleanup,
+                  toasts; and the pure rules — outline.ts (bullet depth and
+                  where a dropped subtree lands), placeTree.ts (stops and
+                  spots), anchor.ts (which kind a new place is), mentions.ts
   types/          Shared TypeScript types
 supabase/
   schema.sql      The entire backend: tables, RLS, RPCs, storage bucket,
@@ -698,6 +719,7 @@ supabase/
   functions/
     invite-collaborator/  Creates invites; provisions accounts for new invitees
     persist-photo/        Copies expiring Google photos into your own bucket
+    resolve-maps-url/     Expands pasted Google Maps share links
     trip-geojson/         Share-token-gated GeoJSON export of the visited route
 infra/
   supabase-keepalive/  Cron Worker that stops a Free-Plan project pausing
