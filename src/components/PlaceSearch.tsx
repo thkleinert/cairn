@@ -125,20 +125,39 @@ export function PlaceSearch({ onSelect }: Props) {
       setPredictions([]);
       setOpen(false);
       setLink({ status: 'resolving' });
-      resolveMapsLink(mapsUrl).then(result => {
-        if (seq !== requestSeqRef.current) return;
-        setLink(result.ok
-          ? { status: 'ready', place: result.place }
-          : { status: 'error', reason: result.reason });
-      });
+      resolveMapsLink(mapsUrl)
+        .then(result => {
+          if (seq !== requestSeqRef.current) return;
+          setLink(result.ok
+            ? { status: 'ready', place: result.place }
+            : { status: 'error', reason: result.reason });
+        })
+        // resolveMapsLink guards its own network call, but the Google SDK
+        // path behind it can still reject — getServices memoises a rejected
+        // promise for the rest of the session if a constructor throws. Without
+        // this the panel sits on "Reading that link…" forever.
+        .catch(() => {
+          if (seq !== requestSeqRef.current) return;
+          setLink({ status: 'error', reason: 'Could not read that link' });
+        });
       return;
     }
 
     // Back to being a search — including when the link is edited away, which
     // has to drop the resolved result rather than leave it hanging under a
     // query it no longer matches.
-    linkUrlRef.current = null;
-    setLink(null);
+    //
+    // The seq bump is what actually cancels the resolution in flight. Leaving
+    // it to fetchPredictions is not enough: that runs 250ms later at the
+    // earliest, and it returns before bumping when the Maps script hasn't
+    // loaded — so a link resolving in the meantime (which needs no Google at
+    // all to reach its name-and-pin fallback) would reopen the panel over an
+    // unrelated query, offering a place that a tap would add.
+    if (linkUrlRef.current !== null) {
+      requestSeqRef.current++;
+      linkUrlRef.current = null;
+      setLink(null);
+    }
 
     if (!value.trim()) {
       // Invalidate any in-flight request too — its late response would

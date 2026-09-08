@@ -79,14 +79,23 @@ const MAX_MATCH_KM = 5;
 function toPlace(
   result: google.maps.places.PlaceResult,
   location: google.maps.LatLng,
-  fallbackName: string,
-): LinkedPlace {
+  known: { name: string; placeId?: string },
+): LinkedPlace | null {
+  const name = result.name ?? known.name;
+  // Nothing to show in a list, and nothing the confirm row could label.
+  if (!name) return null;
   return {
-    name: result.name ?? fallbackName,
+    name,
     address: result.formatted_address ?? '',
     latitude: location.lat(),
     longitude: location.lng(),
-    google_place_id: result.place_id,
+    // Falls back to the id we already had, because PlacesService returns only
+    // the fields that were asked for and `place_id` is not among
+    // DETAIL_FIELDS on the getDetails path. Losing it is not cosmetic: the
+    // cover-photo self-heal in usePlaces gives up on any place without a
+    // google_place_id, so a photo that failed to persist could never be
+    // re-resolved and the place would keep a dead image for good.
+    google_place_id: result.place_id ?? known.placeId,
     // Ephemeral session URL, same as the search field's — addPlace re-hosts
     // it to our own storage right after the insert.
     image_url: result.photos?.[0]?.getUrl({ maxWidth: 800 }),
@@ -107,7 +116,7 @@ async function detailsFor(placeId: string): Promise<LinkedPlace | null> {
         resolve(null);
         return;
       }
-      resolve(toPlace(result, location, ''));
+      resolve(toPlace(result, location, { name: '', placeId }));
     });
   });
 }
@@ -144,7 +153,11 @@ async function findByName(
         resolve(null);
         return;
       }
-      const place = toPlace(result, location, name);
+      const place = toPlace(result, location, { name });
+      if (!place) {
+        resolve(null);
+        return;
+      }
       if (point) {
         const away = distanceKm(
           { latitude: place.latitude, longitude: place.longitude },

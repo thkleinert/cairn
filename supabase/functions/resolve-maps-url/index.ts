@@ -51,7 +51,11 @@ function isAllowedHost(hostname: string): boolean {
 }
 
 const MAX_HOPS = 5;
-const FETCH_TIMEOUT_MS = 8000;
+const HOP_TIMEOUT_MS = 8000;
+// One deadline for the whole chain, not per hop. Five hops at eight seconds
+// each is forty seconds of a caller staring at "Reading that link…" with no
+// way to cancel; the timeout that matters is how long the *user* waits.
+const TOTAL_TIMEOUT_MS = 10000;
 
 /**
  * Follows the shortlink by hand until a non-redirect answers.
@@ -64,13 +68,16 @@ const FETCH_TIMEOUT_MS = 8000;
  */
 async function expand(startUrl: URL): Promise<URL | null> {
   let current = startUrl;
+  const deadline = Date.now() + TOTAL_TIMEOUT_MS;
   for (let hop = 0; hop < MAX_HOPS; hop++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
     let res: Response;
     try {
       res = await fetch(current.toString(), {
         method: 'GET',
         redirect: 'manual',
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        signal: AbortSignal.timeout(Math.min(HOP_TIMEOUT_MS, remaining)),
         // Google serves a different (JS-only, redirect-free) page to clients
         // it doesn't recognise as a browser, and that page has no Location
         // header at all — the chain then dead-ends on the first hop.
@@ -79,7 +86,10 @@ async function expand(startUrl: URL): Promise<URL | null> {
     } catch {
       return null;
     }
-    res.body?.cancel();
+    // Caught, not floating: a body already disturbed by an errored hop
+    // rejects here, and an unhandled rejection in the edge runtime can take
+    // the isolate down mid-request.
+    res.body?.cancel().catch(() => {});
 
     if (res.status < 300 || res.status >= 400) return current;
 
@@ -145,6 +155,17 @@ function decodedBlob(url: URL): string {
   }
 }
 
+function isPlaceUrl(url: URL): boolean {
+  return url.pathname.includes('/maps/place/');
+}
+
+// A route is not a place, and its `data=` blob can carry per-waypoint
+// coordinates in shapes close enough to a pin's to be read as one. Refused by
+// path rather than picked apart.
+function isDirectionsUrl(url: URL): boolean {
+  return url.pathname.includes('/maps/dir/');
+}
+
 function findPlaceId(url: URL): string | null {
   const explicit = url.searchParams.get('query_place_id');
   if (explicit && PLACE_ID.test(explicit)) return explicit;
@@ -174,7 +195,13 @@ function findPlaceId(url: URL): string | null {
 function findCoords(url: URL): { latitude: number; longitude: number } | null {
   const blob = decodedBlob(url);
   const pin = blob.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
-  const camera = blob.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  // The camera is only meaningful on a URL that is *about* a place. Every
+  // Maps URL has an `@lat,lng` in it, including a route and a search, and
+  // reading those as a location is worse than reading nothing: a directions
+  // link from Vienna to Graz would resolve to whatever address happens to sit
+  // halfway between them, and be offered as a place to add. With no camera to
+  // fall back on, such a link yields nothing and is refused outright.
+  const camera = isPlaceUrl(url) ? blob.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) : null;
   const hit = pin ?? camera;
   if (!hit) return null;
   const latitude = Number(hit[1]);
@@ -213,7 +240,10 @@ interface Identity {
   longitude: number | null;
 }
 
+const NOTHING: Identity = { placeId: null, name: null, latitude: null, longitude: null };
+
 function parseIdentity(url: URL): Identity {
+  if (isDirectionsUrl(url)) return NOTHING;
   const coords = findCoords(url);
   return {
     placeId: findPlaceId(url),
@@ -258,7 +288,13 @@ Deno.serve(async (req: Request) => {
   // at all. Expand only what actually needs expanding — a shortener, or a
   // long-form URL (`/maps?cid=…`) that turned out to say nothing.
   let target: URL | null = start;
-  if (isShortener(start.hostname) || isEmpty(parseIdentity(start))) {
+  // A directions URL is excluded from the "empty, so try expanding it" case:
+  // it is already fully expanded and says nothing, so the fetch could only
+  // waste a round trip before the 422 below.
+  if (
+    isShortener(start.hostname) ||
+    (isEmpty(parseIdentity(start)) && !isDirectionsUrl(start))
+  ) {
     target = await expand(start);
     if (!target) return json({ error: 'could not expand link' }, 502);
   }
