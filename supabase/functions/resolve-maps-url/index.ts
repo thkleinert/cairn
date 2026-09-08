@@ -110,10 +110,18 @@ async function expand(startUrl: URL): Promise<URL | null> {
     // the isolate down mid-request.
     res.body?.cancel().catch(() => {});
 
-    if (res.status < 300 || res.status >= 400) return current;
+    // Still standing where we started means the link never expanded at all —
+    // Google answered the shortener with an interstitial or a throttle rather
+    // than a redirect. Returning it would hand the caller a shortlink to
+    // parse, which yields nothing, and the user would be told the link
+    // doesn't point at a place when in truth it was never opened. Null so the
+    // handler can say that instead.
+    const moved = current.href !== startUrl.href;
+
+    if (res.status < 300 || res.status >= 400) return moved ? current : null;
 
     const location = res.headers.get('location');
-    if (!location) return current;
+    if (!location) return moved ? current : null;
 
     let next: URL;
     try {
@@ -125,8 +133,14 @@ async function expand(startUrl: URL): Promise<URL | null> {
 
     // An EU consent gate carries the real destination in `continue`. Reading
     // it is what keeps this working outside the US — following the gate
-    // itself just lands on a cookie wall that never redirects onward.
-    if (next.hostname.toLowerCase() === 'consent.google.com') {
+    // itself just lands on a cookie wall that never redirects onward, and
+    // fetch keeps no cookie jar between hops to get past it.
+    //
+    // Matched on the prefix, not the exact host: the wall is served from the
+    // country domains too (consent.google.de, consent.google.fr, …), and an
+    // exact test missed every one of them — which is to say it missed most of
+    // the case this branch exists for.
+    if (/^consent\.google\./.test(next.hostname.toLowerCase())) {
       const onward = next.searchParams.get('continue');
       if (!onward) return null;
       try {
@@ -213,15 +227,35 @@ function findPlaceId(url: URL): string | null {
 /**
  * The pin's coordinates.
  *
- * `!8m2!3d<lat>!4d<lng>` is the place itself; `/@lat,lng,zoom` is where the
- * *camera* sits, which for a place opened from a search result is often
- * offset — Maps leaves room for the info card. Preferring the former is what
- * keeps a pasted link landing on the restaurant rather than half a block up
- * the street, so `/@` is only a fallback for links that carry nothing better.
+ * Three shapes, in descending order of precision. `!8m2!3d<lat>!4d<lng>` is
+ * the place itself. `?q=`/`?ll=` is a coordinate someone wrote down, so it is
+ * the place too. `/@lat,lng,zoom` is where the *camera* sits, which for a
+ * place opened from a search result is often offset — Maps leaves room for
+ * the info card — so it is a last resort, and only on a place URL at that.
+ *
+ * That order is what keeps a pasted link landing on the restaurant rather
+ * than half a block up the street.
  */
+const COORD_PAIR = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/;
+
+// The documented `?q=48.21,16.36` and `?ll=48.21,16.36` forms, which are what
+// third-party "view on Google Maps" links and shared coordinates use. They
+// carry no data blob and no `@`, so without this they read as empty and a
+// link whose coordinates are sitting in plain sight was refused as pointing
+// at no place.
+function findParamCoords(url: URL): RegExpMatchArray | null {
+  for (const key of ['q', 'll']) {
+    const value = url.searchParams.get(key);
+    const hit = value?.match(COORD_PAIR);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function findCoords(url: URL): { latitude: number; longitude: number } | null {
   const blob = decodedBlob(url);
-  const pin = blob.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+  const pin = blob.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
+    ?? findParamCoords(url);
   // The camera is only meaningful on a URL that is *about* a place. Every
   // Maps URL has an `@lat,lng` in it, including a route and a search, and
   // reading those as a location is worse than reading nothing: a directions
@@ -248,6 +282,12 @@ function isCoordinateLabel(name: string): boolean {
 }
 
 function findName(url: URL): string | null {
+  // `?q=Some+Place` is the other half of the query-parameter form — a name
+  // rather than a coordinate pair. `place_id:` lives in the same parameter
+  // and is findPlaceId's to read, never a name.
+  const q = url.searchParams.get('q')?.trim();
+  if (q && !q.startsWith('place_id:') && !isCoordinateLabel(q)) return q;
+
   const match = url.pathname.match(/\/maps\/place\/([^/@]+)/);
   if (!match) return null;
   let name: string;
@@ -309,7 +349,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
   const authHeader = req.headers.get('Authorization');
-  if (!authHeader) return json({ error: 'missing authorization' }, 401);
+  if (!authHeader) return json({ error: 'You need to be signed in' }, 401);
 
   // Who is actually asking. Without this the anon key alone opens the door,
   // and anyone holding it — it is public by design — could drive up to five
@@ -319,8 +359,20 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: authHeader } } },
   );
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return json({ error: 'not signed in' }, 401);
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  // The error half matters, because auth-js does not throw for a flaky auth
+  // server — it returns { user: null, error } just as it does for a caller
+  // who really is anonymous. Told apart by status: a retryable fetch failure
+  // carries 0, a rejected token carries 401/403. Without this the check now
+  // sitting on the critical path of every paste answers "you're not signed
+  // in" to a signed-in user whose blip we caused.
+  if (authError) {
+    const status = (authError as { status?: number }).status ?? 0;
+    if (status === 0 || status >= 500) {
+      return json({ error: 'Could not check your sign-in — try again' }, 503);
+    }
+  }
+  if (!user) return json({ error: 'You need to be signed in' }, 401);
 
   let raw: string;
   try {
@@ -334,7 +386,7 @@ Deno.serve(async (req: Request) => {
   try {
     start = new URL(raw);
   } catch {
-    return json({ error: 'invalid url' }, 400);
+    return json({ error: "That doesn't look like a link" }, 400);
   }
   if (start.protocol !== 'https:' || !isAllowedHost(start.hostname)) {
     return json({ error: 'Not a Google Maps link' }, 400);
