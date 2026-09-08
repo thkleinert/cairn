@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, edgeFunctionMessage } from '../lib/supabase';
 
 export interface Collaborator {
   id: string;
@@ -74,20 +74,7 @@ export function useCollaborators(tripId: string) {
       'invite-collaborator',
       { body: { tripId, email, role, origin: window.location.origin } },
     );
-    // A non-2xx from an edge function surfaces as FunctionsHttpError with the
-    // body unread, so dig the real message out rather than showing the
-    // generic "Edge Function returned a non-2xx status code".
-    if (fnError) {
-      const ctx = (fnError as { context?: Response }).context;
-      let message = fnError.message;
-      if (ctx && typeof ctx.json === 'function') {
-        try {
-          const body = await ctx.json();
-          if (body?.error) message = body.error;
-        } catch { /* keep the generic message */ }
-      }
-      throw new Error(message);
-    }
+    if (fnError) throw new Error(await edgeFunctionMessage(fnError));
     if (!data || data.error) throw new Error(data?.error ?? 'Could not create the invite');
     await loadInvites();
     return data;

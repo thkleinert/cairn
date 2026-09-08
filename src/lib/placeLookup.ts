@@ -76,7 +76,17 @@ async function initServices() {
   return services;
 }
 
-function reverseGeocode(point: { lat: number; lng: number }): Promise<string | null> {
+/**
+ * The shared PlacesService, once the Maps script is up — null if it never
+ * arrives. Exported so callers outside this file don't need a third copy of
+ * the wait-for-Google dance (PlaceSearch and googlePhotos already have one
+ * each) or a third detached PlacesService element.
+ */
+export function placesService(): Promise<google.maps.places.PlacesService | null> {
+  return getServices().then(svc => svc?.places ?? null);
+}
+
+export function reverseGeocode(point: { lat: number; lng: number }): Promise<string | null> {
   return getServices().then(svc => {
     if (!svc) return null;
     return new Promise<string | null>(resolve => {

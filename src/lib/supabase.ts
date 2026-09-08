@@ -35,3 +35,28 @@ export function signupsEnabled(): Promise<boolean> {
   }
   return signupsPromise;
 }
+
+// A non-2xx from an edge function surfaces as FunctionsHttpError whose
+// message is the useless generic "Edge Function returned a non-2xx status
+// code" — the real reason is in the unread response body our functions all
+// answer with as `{ error }`. Dig it out.
+//
+// `fallback` is for callers that show this to a user directly. Two failures
+// never produce an `{ error }` body and so would otherwise surface raw SDK
+// wording: a network failure or an undeployed function (FunctionsFetchError —
+// "Failed to send a request to the Edge Function"), and the gateway's own
+// 404/401, whose body is `{ code, message }` rather than ours. Callers that
+// only log, or that throw for a caller upstream to phrase, can leave it off.
+export async function edgeFunctionMessage(
+  fnError: { message: string },
+  fallback?: string,
+): Promise<string> {
+  const ctx = (fnError as { context?: Response }).context;
+  if (ctx && typeof ctx.json === 'function') {
+    try {
+      const body = await ctx.json();
+      if (body?.error) return body.error;
+    } catch { /* not our JSON shape — fall through */ }
+  }
+  return fallback ?? fnError.message;
+}

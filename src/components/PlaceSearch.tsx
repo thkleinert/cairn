@@ -2,6 +2,11 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import type { GooglePlacePrediction } from '../types';
 import { spanFromViewport } from '../lib/anchor';
+import { extractMapsUrl, resolveMapsLink, type LinkedPlace } from '../lib/mapsLink';
+
+// Shared by both things the field can be doing — an autocomplete query and a
+// pasted link — so neither fires while someone is still typing.
+const DEBOUNCE_MS = 250;
 
 declare global {
   interface Window {
@@ -15,17 +20,35 @@ interface Props {
     address: string;
     latitude: number;
     longitude: number;
-    google_place_id: string;
+    // Optional because a pasted Maps link doesn't always resolve to one — a
+    // place Google can't match by name still arrives with a name and a pin,
+    // which is exactly the custom place the map's long-press path creates.
+    google_place_id?: string;
     image_url?: string;
     types?: string[];
     spanKm?: number;
   }) => void;
 }
 
+// What a pasted Google Maps link is doing right now. Null means the field
+// holds an ordinary search, which is the only state that talks to autocomplete.
+type LinkState =
+  | { status: 'resolving' }
+  | { status: 'error'; reason: string }
+  | { status: 'ready'; place: LinkedPlace };
+
 export function PlaceSearch({ onSelect }: Props) {
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<GooglePlacePrediction[]>([]);
   const [open, setOpen] = useState(false);
+  const [link, setLink] = useState<LinkState | null>(null);
+  // The URL currently resolved or resolving, so that editing the text around
+  // a link doesn't re-run it. Resolution costs a billed Find Place call, and
+  // the field often holds more than the URL — "Café Central https://…" is
+  // what sharing to Notes first produces — so typing in the prose either side
+  // of it would otherwise bill again for a link that hasn't changed. Held
+  // across a failure too; see the note at the resolve below.
+  const linkUrlRef = useRef<string | null>(null);
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
   const sessionToken = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
@@ -94,7 +117,85 @@ export function PlaceSearch({ onSelect }: Props) {
 
   const handleInput = (value: string) => {
     setQuery(value);
+
+    // A pasted Google Maps link is not a search term — sending it to
+    // autocomplete returns nothing at all. Resolve it instead, and take the
+    // in-flight autocomplete down with the same seq bump the clear path uses
+    // so a late response can't reopen the dropdown over the link's result.
+    const mapsUrl = extractMapsUrl(value);
+    if (mapsUrl) {
+      // Same link as last time — editing the prose around it, or adding a
+      // trailing space. Leave the pending resolve running. The debounce is
+      // deliberately NOT cleared before this check: doing so cancelled the
+      // timer and then returned without arming a new one, so a keystroke
+      // inside the debounce window left the panel on "Reading that link…"
+      // with nothing scheduled to finish it.
+      if (mapsUrl === linkUrlRef.current) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      linkUrlRef.current = mapsUrl;
+      const seq = ++requestSeqRef.current;
+      setPredictions([]);
+      setOpen(false);
+      // Shown at once, while the call itself waits out the same debounce
+      // autocomplete uses. Resolving costs a billed Find Place, and a link in
+      // the field is still editable: one backspace truncates the URL into a
+      // different (broken) one, and retyping the character makes a third.
+      // linkUrlRef alone doesn't cover that — it only suppresses a value
+      // identical to the last.
+      setLink({ status: 'resolving' });
+      // A failure deliberately leaves linkUrlRef holding this URL. Clearing
+      // it — to let an identical re-paste retry — meant every later keystroke
+      // took the "changed link" branch instead, so someone typing a note
+      // around a link that failed re-invoked the function on each one,
+      // flapping the panel between the error and "Reading that link…" and
+      // billing a Place Details call per retry on the paths that reach
+      // Google. The gesture that was supposed to buy back cannot happen
+      // anyway: React only fires onChange when the field's value actually
+      // changes, so select-all-and-paste-the-same-text is silent here. The
+      // retry that does work is the clear button, or any edit that genuinely
+      // changes the URL.
+      debounceRef.current = setTimeout(() => {
+        resolveMapsLink(mapsUrl)
+          .then(result => {
+            if (seq !== requestSeqRef.current) return;
+            setLink(result.ok
+              ? { status: 'ready', place: result.place }
+              : { status: 'error', reason: result.reason });
+          })
+          // resolveMapsLink guards its own network call, but the Google SDK
+          // path behind it can still reject — getServices memoises a rejected
+          // promise for the rest of the session if a constructor throws.
+          // Without this the panel sits on "Reading that link…" forever.
+          .catch(() => {
+            if (seq !== requestSeqRef.current) return;
+            setLink({ status: 'error', reason: 'Could not read that link' });
+          });
+      }, DEBOUNCE_MS);
+      return;
+    }
+
+    // Back to being a search — including when the link is edited away, which
+    // has to drop the panel rather than leave it hanging under a query it no
+    // longer matches.
     if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    // Unconditional, and deliberately not folded into the ref check below:
+    // gating the panel on the ref is what once left a stale error row pinned
+    // over every later query, hiding the predictions behind it. React bails
+    // on a no-op set, so paying this per keystroke is free.
+    setLink(null);
+
+    // The seq bump is what actually cancels a resolution in flight. Leaving
+    // it to fetchPredictions is not enough: that runs a debounce later at the
+    // earliest, and it returns before bumping when the Maps script hasn't
+    // loaded — so a link resolving in the meantime (which needs no Google at
+    // all to reach its name-and-pin fallback) would reopen the panel over an
+    // unrelated query, offering a place that a tap would add.
+    if (linkUrlRef.current !== null) {
+      requestSeqRef.current++;
+      linkUrlRef.current = null;
+    }
+
     if (!value.trim()) {
       // Invalidate any in-flight request too — its late response would
       // otherwise re-open the dropdown over an empty input.
@@ -103,7 +204,7 @@ export function PlaceSearch({ onSelect }: Props) {
       setOpen(false);
       return;
     }
-    debounceRef.current = setTimeout(() => fetchPredictions(value), 250);
+    debounceRef.current = setTimeout(() => fetchPredictions(value), DEBOUNCE_MS);
   };
 
   const handleSelect = (prediction: GooglePlacePrediction) => {
@@ -147,12 +248,26 @@ export function PlaceSearch({ onSelect }: Props) {
   const clear = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     requestSeqRef.current++;
+    linkUrlRef.current = null;
     setQuery('');
     setPredictions([]);
+    setLink(null);
     setOpen(false);
   };
 
+  // Everything a resolved link already carries, handed over exactly as a
+  // picked suggestion is — the shapes are the same by construction, so both
+  // entry points land a place identically.
+  const handleSelectLink = (place: LinkedPlace) => {
+    onSelect(place);
+    clear();
+  };
+
   const showPredictions = open && predictions.length > 0;
+  // The link panel takes over the dropdown whenever a link is in the field:
+  // it is the only thing the field can act on at that moment, so there is
+  // never anything to show alongside it.
+  const showPanel = showPredictions || link !== null;
 
   return (
     <div className="place-search">
@@ -162,9 +277,31 @@ export function PlaceSearch({ onSelect }: Props) {
           (which has no fixed height of its own beyond a min-height) can
           grow to fit this in normal layout flow — no separate floating
           card, no manual alignment against the bar below. */}
-      <div className={`predictions-grid ${showPredictions ? 'predictions-grid--open' : ''}`}>
+      <div className={`predictions-grid ${showPanel ? 'predictions-grid--open' : ''}`}>
         <div className="predictions-grid-inner">
-          {showPredictions && (
+          {link ? (
+            <ul className="predictions-list">
+              {link.status === 'resolving' && (
+                <li className="prediction-status">Reading that link…</li>
+              )}
+              {link.status === 'error' && (
+                <li className="prediction-status prediction-status--error">{link.reason}</li>
+              )}
+              {link.status === 'ready' && (
+                <li>
+                  <button className="prediction-item" onClick={() => handleSelectLink(link.place)}>
+                    <span className="prediction-main">{link.place.name}</span>
+                    {link.place.address && (
+                      <span className="prediction-sub">{link.place.address}</span>
+                    )}
+                  </button>
+                </li>
+              )}
+              {link.status !== 'error' && (
+                <li className="predictions-attribution">powered by Google</li>
+              )}
+            </ul>
+          ) : showPredictions && (
             <ul className="predictions-list">
               {predictions.map(p => (
                 <li key={p.place_id}>
@@ -185,7 +322,7 @@ export function PlaceSearch({ onSelect }: Props) {
           ref={inputRef}
           type="text"
           className="search-input"
-          placeholder="Search places…"
+          placeholder="Search or paste a link…"
           value={query}
           onChange={e => handleInput(e.target.value)}
           onFocus={() => predictions.length > 0 && setOpen(true)}

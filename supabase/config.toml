@@ -16,3 +16,11 @@ verify_jwt = true
 # running under the caller's JWT.
 [functions.invite-collaborator]
 verify_jwt = true
+
+# Signed-in users only — but note that this setting alone does not achieve
+# that: it verifies the JWT's signature, and the public anon key is a valid
+# JWT. The function resolves the caller itself and refuses anyone who isn't a
+# real user, because unlike its siblings it has no RLS or RPC behind it to do
+# that job.
+[functions.resolve-maps-url]
+verify_jwt = true
