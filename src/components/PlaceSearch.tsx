@@ -46,8 +46,8 @@ export function PlaceSearch({ onSelect }: Props) {
   // a link doesn't re-run it. Resolution costs a billed Find Place call, and
   // the field often holds more than the URL — "Café Central https://…" is
   // what sharing to Notes first produces — so typing in the prose either side
-  // of it would otherwise bill again for a link that hasn't changed. Cleared
-  // on failure, so a re-paste can retry.
+  // of it would otherwise bill again for a link that hasn't changed. Held
+  // across a failure too; see the note at the resolve below.
   const linkUrlRef = useRef<string | null>(null);
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
@@ -143,30 +143,33 @@ export function PlaceSearch({ onSelect }: Props) {
       // linkUrlRef alone doesn't cover that — it only suppresses a value
       // identical to the last.
       setLink({ status: 'resolving' });
-      const failed = () => {
-        if (seq !== requestSeqRef.current) return;
-        // Drop the memo so re-pasting the same link retries it. Without this
-        // an error is terminal for that exact text, and the only way out is
-        // the clear button.
-        linkUrlRef.current = null;
-        setLink({ status: 'error', reason: 'Could not read that link' });
-      };
+      // A failure deliberately leaves linkUrlRef holding this URL. Clearing
+      // it — to let an identical re-paste retry — meant every later keystroke
+      // took the "changed link" branch instead, so someone typing a note
+      // around a link that failed re-invoked the function on each one,
+      // flapping the panel between the error and "Reading that link…" and
+      // billing a Place Details call per retry on the paths that reach
+      // Google. The gesture that was supposed to buy back cannot happen
+      // anyway: React only fires onChange when the field's value actually
+      // changes, so select-all-and-paste-the-same-text is silent here. The
+      // retry that does work is the clear button, or any edit that genuinely
+      // changes the URL.
       debounceRef.current = setTimeout(() => {
         resolveMapsLink(mapsUrl)
           .then(result => {
             if (seq !== requestSeqRef.current) return;
-            if (!result.ok) {
-              linkUrlRef.current = null;
-              setLink({ status: 'error', reason: result.reason });
-              return;
-            }
-            setLink({ status: 'ready', place: result.place });
+            setLink(result.ok
+              ? { status: 'ready', place: result.place }
+              : { status: 'error', reason: result.reason });
           })
           // resolveMapsLink guards its own network call, but the Google SDK
           // path behind it can still reject — getServices memoises a rejected
           // promise for the rest of the session if a constructor throws.
           // Without this the panel sits on "Reading that link…" forever.
-          .catch(failed);
+          .catch(() => {
+            if (seq !== requestSeqRef.current) return;
+            setLink({ status: 'error', reason: 'Could not read that link' });
+          });
       }, DEBOUNCE_MS);
       return;
     }
@@ -176,12 +179,10 @@ export function PlaceSearch({ onSelect }: Props) {
     // longer matches.
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    // Unconditional, and deliberately not folded into the ref check below.
-    // The two are cleared on different schedules — a failed resolve drops the
-    // ref so a re-paste can retry, while the error row stays up to be read —
-    // so gating this on the ref left that row pinned over every later query,
-    // hiding the predictions behind it with only the clear button as a way
-    // out. React bails on a no-op set, so paying this per keystroke is free.
+    // Unconditional, and deliberately not folded into the ref check below:
+    // gating the panel on the ref is what once left a stale error row pinned
+    // over every later query, hiding the predictions behind it. React bails
+    // on a no-op set, so paying this per keystroke is free.
     setLink(null);
 
     // The seq bump is what actually cancels a resolution in flight. Leaving

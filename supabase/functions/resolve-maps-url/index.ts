@@ -137,6 +137,14 @@ async function expand(startUrl: URL): Promise<URL | null> {
       if (next.protocol !== 'https:' || !isAllowedHost(next.hostname)) return null;
     }
 
+    // Stop the moment the URL identifies a place, rather than fetching it to
+    // learn what we can already read. That fetch is a round trip against a
+    // heavy Maps page whose body we cancel unread — and if it fails, which is
+    // a timeout or Google throttling this User-Agent away, the catch above
+    // would throw away an answer that was complete after hop 0 and turn it
+    // into a 502. It also halves the useful redirect budget.
+    if (!needsExpansion(next)) return next;
+
     current = next;
   }
   return current;
@@ -337,7 +345,10 @@ Deno.serve(async (req: Request) => {
   // this is a blind authenticated GET across everything Google runs, rather
   // than the map-hosts-only fetcher it is documented to be. A shortener has
   // no path worth checking; anything else has to say /maps.
-  if (!isShortener(start.hostname) && !start.pathname.startsWith('/maps')) {
+  // A segment test, not a prefix one: `startsWith('/maps')` also lets through
+  // /mapsanything, which is precisely the breadth this is here to deny.
+  const onMapsPath = start.pathname === '/maps' || start.pathname.startsWith('/maps/');
+  if (!isShortener(start.hostname) && !onMapsPath) {
     return json({ error: 'Not a Google Maps link' }, 400);
   }
 
