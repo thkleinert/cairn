@@ -2,7 +2,8 @@
 // place search can finish resolving in the browser.
 //
 //   POST /functions/v1/resolve-maps-url   { url }
-//   → { placeId, name, latitude, longitude }   (every field nullable)
+//   → { placeId, name, latitude, longitude, fromCamera }
+//     (every field but fromCamera nullable)
 //
 // Why this can't be done client-side: a shared link is almost always a
 // maps.app.goo.gl shortlink, and the only thing that expands it is following
@@ -58,6 +59,15 @@ function isShortener(hostname: string): boolean {
   return h === 'maps.app.goo.gl' || h === 'goo.gl';
 }
 
+// A host that is only ever maps, whatever its path — the legacy deep-link
+// form "maps.google.com/?q=48.2,16.3" carries its place in the query string
+// and nothing in the path, which is the shape most third-party "view on
+// Google Maps" links still use. Exempt from the /maps path check below for
+// that reason, and no wider for it: the hostname already says maps.
+function isMapsHost(hostname: string): boolean {
+  return /^maps\.google\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(hostname.toLowerCase());
+}
+
 // Which hosts this may talk to at all — any Google country domain, because a
 // link copied in Austria arrives as google.at and an EU device's shortlink
 // lands on consent.google.com before it ever reaches a map. That breadth is
@@ -110,17 +120,21 @@ async function expand(startUrl: URL): Promise<URL | null> {
     // the isolate down mid-request.
     res.body?.cancel().catch(() => {});
 
-    // A shortener that answers without redirecting never expanded — Google
-    // served an interstitial or throttled us. Handing the shortlink back
-    // would have it parsed for a place it cannot contain, and the user told
-    // it points at nothing when the truth is it was never opened. Null, so
-    // the handler says that instead.
+    // Standing on a shortener when the redirects stop means the link never
+    // expanded — Google served an interstitial or throttled us. Handing the
+    // shortlink back would have it parsed for a place it cannot contain, and
+    // the user told it points at nothing when the truth is it was never
+    // opened. Null, so the handler can say that instead.
     //
     // The same non-redirect from a long-form URL means the opposite: it
     // opened fine and simply doesn't name a place, which a bare `/maps/@…`
-    // camera link genuinely doesn't. Returning it lets that reach the 422 it
-    // deserves rather than a 502 inviting a retry that can never work.
-    const stalled = current.href === startUrl.href && isShortener(startUrl.hostname);
+    // camera link genuinely doesn't. Returning it reaches the 422 that
+    // deserves, rather than a 502 inviting a retry that can never work.
+    //
+    // Asked of where we are standing rather than of whether we have moved: a
+    // chain can move and still be on the shortener — a self-redirect adding a
+    // tracking parameter — and a "did it move" test would call that expanded.
+    const stalled = isShortener(current.hostname);
 
     if (res.status < 300 || res.status >= 400) return stalled ? null : current;
 
@@ -165,7 +179,8 @@ async function expand(startUrl: URL): Promise<URL | null> {
 
     current = next;
   }
-  return current;
+  // Out of hops. Same rule as above: a shortlink is not an answer.
+  return isShortener(current.hostname) ? null : current;
 }
 
 /**
@@ -209,6 +224,13 @@ function isPlaceUrl(url: URL): boolean {
 // path rather than picked apart.
 function isDirectionsUrl(url: URL): boolean {
   return url.pathname.includes('/maps/dir/');
+}
+
+// Just a viewport — "copy link" with nothing selected. It names no place and
+// findCoords ignores the camera off a place URL, so there is nothing here to
+// find and, being a final URL already, nothing a fetch could turn it into.
+function isCameraUrl(url: URL): boolean {
+  return url.pathname.startsWith('/maps/@');
 }
 
 function findPlaceId(url: URL): string | null {
@@ -256,7 +278,7 @@ function findParamCoords(url: URL): RegExpMatchArray | null {
   return null;
 }
 
-function findCoords(url: URL): { latitude: number; longitude: number } | null {
+function findCoords(url: URL): { latitude: number; longitude: number; fromCamera: boolean } | null {
   const blob = decodedBlob(url);
   const pin = blob.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
     ?? findParamCoords(url);
@@ -273,7 +295,10 @@ function findCoords(url: URL): { latitude: number; longitude: number } | null {
   const longitude = Number(hit[2]);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
-  return { latitude, longitude };
+  // Reported, because the difference matters downstream: a pin is where the
+  // place is, a camera is only roughly near it. The client widens its
+  // sanity check and refuses to drop a marker on a bare camera position.
+  return { latitude, longitude, fromCamera: !pin };
 }
 
 // A dropped pin has no name, so Maps writes the coordinates where the name
@@ -282,7 +307,12 @@ function findCoords(url: URL): { latitude: number; longitude: number } | null {
 // so they are rejected here and the caller falls back to reverse geocoding
 // the coordinates, which at least yields a street address.
 function isCoordinateLabel(name: string): boolean {
-  return /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(name) || /\d+°\d+'/.test(name);
+  // The same pattern findParamCoords reads, deliberately: when the two
+  // disagreed about spacing, "48.85 , 2.29" was taken as coordinates *and*
+  // kept as a name, so the client spent a Find Place on the literal string
+  // and, failing, added a place called "48.85 , 2.29" — never reaching the
+  // reverse geocode this guard exists to force.
+  return COORD_PAIR.test(name) || /\d+°\d+'/.test(name);
 }
 
 function findName(url: URL): string | null {
@@ -309,9 +339,13 @@ interface Identity {
   name: string | null;
   latitude: number | null;
   longitude: number | null;
+  /** True when the coordinates are a viewport centre, not the place itself. */
+  fromCamera: boolean;
 }
 
-const NOTHING: Identity = { placeId: null, name: null, latitude: null, longitude: null };
+const NOTHING: Identity = {
+  placeId: null, name: null, latitude: null, longitude: null, fromCamera: false,
+};
 
 function parseIdentity(url: URL): Identity {
   if (isDirectionsUrl(url)) return NOTHING;
@@ -321,6 +355,7 @@ function parseIdentity(url: URL): Identity {
     name: findName(url),
     latitude: coords?.latitude ?? null,
     longitude: coords?.longitude ?? null,
+    fromCamera: coords?.fromCamera ?? false,
   };
 }
 
@@ -352,7 +387,12 @@ function isResolvable(id: Identity): boolean {
  */
 function needsExpansion(url: URL): boolean {
   if (isShortener(url.hostname)) return true;
-  if (isPlaceUrl(url) || isDirectionsUrl(url) || url.pathname.includes('/maps/search/')) {
+  if (
+    isPlaceUrl(url) ||
+    isDirectionsUrl(url) ||
+    isCameraUrl(url) ||
+    url.pathname.includes('/maps/search/')
+  ) {
     return false;
   }
   return !isResolvable(parseIdentity(url));
@@ -414,7 +454,7 @@ Deno.serve(async (req: Request) => {
   // A segment test, not a prefix one: `startsWith('/maps')` also lets through
   // /mapsanything, which is precisely the breadth this is here to deny.
   const onMapsPath = start.pathname === '/maps' || start.pathname.startsWith('/maps/');
-  if (!isShortener(start.hostname) && !onMapsPath) {
+  if (!isShortener(start.hostname) && !isMapsHost(start.hostname) && !onMapsPath) {
     return json({ error: 'Not a Google Maps link' }, 400);
   }
 

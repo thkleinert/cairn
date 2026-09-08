@@ -39,6 +39,8 @@ interface LinkIdentity {
   name: string | null;
   latitude: number | null;
   longitude: number | null;
+  /** The coordinates are a viewport centre, not the place — see MAX_MATCH_KM. */
+  fromCamera: boolean;
 }
 
 // Matches what Google actually hands out: maps.app.goo.gl from the mobile
@@ -49,8 +51,12 @@ interface LinkIdentity {
 // "Copy Link" is not the only route in — sharing to Notes or Messages first
 // yields "Café Central\nhttps://maps.app.goo.gl/…", and that text pasted into
 // an input arrives as one line with the URL somewhere in the middle.
+// The last alternative is the legacy deep link, "maps.google.com/?q=48.2,16.3"
+// — its place is in the query string and its path is bare, so the /maps
+// requirement the other Google hosts carry would miss it. That host is only
+// ever maps, so the path needn't say so again.
 const MAPS_URL =
-  /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:[a-z0-9-]+\.)*google\.[a-z]{2,3}(?:\.[a-z]{2,3})?\/maps)\S*/i;
+  /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:[a-z0-9-]+\.)*google\.[a-z]{2,3}(?:\.[a-z]{2,3})?\/maps|maps\.google\.[a-z]{2,3}(?:\.[a-z]{2,3})?\/)\S*/i;
 
 export function extractMapsUrl(text: string): string | null {
   const match = text.match(MAPS_URL);
@@ -75,6 +81,18 @@ const DETAIL_FIELDS = ['name', 'formatted_address', 'geometry', 'photos', 'types
  * slack, not a few hundred metres.
  */
 const MAX_MATCH_KM = 5;
+
+/**
+ * The same check when all we have is where the map was pointing.
+ *
+ * A camera position is a viewport centre at whatever zoom the sharer was at,
+ * so for anything large it is legitimately kilometres from the place's own
+ * centroid — Khao Sok shared at zoom 10 lands well outside five. Holding a
+ * camera to the pin's tolerance rejected exactly the matches most worth
+ * having, and dropped them onto the map centre instead. Still tight enough to
+ * catch the failure this is for, which is a different city.
+ */
+const MAX_CAMERA_MATCH_KM = 25;
 
 function toPlace(
   result: google.maps.places.PlaceResult,
@@ -140,6 +158,7 @@ async function detailsFor(placeId: string): Promise<LinkedPlace | null> {
 async function findByName(
   name: string,
   point: { lat: number; lng: number },
+  fromCamera: boolean,
 ): Promise<LinkedPlace | null> {
   const service = await placesService();
   if (!service) return null;
@@ -172,7 +191,7 @@ async function findByName(
       // Matched something, but somewhere else entirely — the same name in
       // another city. The caller falls back to the link's own name and pin,
       // which are never wrong, just thinner.
-      if (away > MAX_MATCH_KM) {
+      if (away > (fromCamera ? MAX_CAMERA_MATCH_KM : MAX_MATCH_KM)) {
         resolve(null);
         return;
       }
@@ -230,11 +249,24 @@ export async function resolveMapsLink(url: string): Promise<LinkResult> {
   // Both halves required: without the pin there is no way to tell the right
   // "Central Park" from the famous one (see findByName).
   if (link.name && point) {
-    const place = await findByName(link.name, point);
+    const place = await findByName(link.name, point, link.fromCamera);
     if (place) return { ok: true, place };
+    // Google couldn't confirm it, so the link's own coordinates are all that
+    // is left — and if they are a camera position, the marker is going down
+    // on a viewport centre that may not be the place at all. Nothing can fix
+    // that here, but the address at that spot can be put in front of the
+    // person about to accept it: a confirm row reading "Khao Sok National
+    // Park" over a suburban street is one they can decline, where a row with
+    // no address at all looks exactly like a good result.
+    const address = link.fromCamera ? await reverseGeocode(point) : null;
     return {
       ok: true,
-      place: { name: link.name, address: '', latitude: point.lat, longitude: point.lng },
+      place: {
+        name: link.name,
+        address: address ?? '',
+        latitude: point.lat,
+        longitude: point.lng,
+      },
     };
   }
 
