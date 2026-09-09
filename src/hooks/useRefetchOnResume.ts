@@ -91,7 +91,14 @@ export function useRefetchOnResume(
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        hiddenAtRef.current = Date.now();
+        // The EARLIEST unserviced departure, not the latest. A stamp survives
+        // a foregrounding only when that foregrounding owed a refetch and
+        // could not do it (no radio, below), and overwriting it there is how
+        // a long absence gets forgotten: away ten minutes, foregrounded with
+        // no signal, pocketed again for eight seconds — the ten minutes would
+        // become eight seconds and the next return would decide it had
+        // nothing to catch up on.
+        if (!hiddenAtRef.current) hiddenAtRef.current = Date.now();
         return;
       }
       // No recorded departure: this is the tab being revealed rather than the

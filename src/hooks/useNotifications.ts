@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import { useRefetchOnResume } from './useRefetchOnResume';
 
 export type ActivityType = 'place_added' | 'comment_added';
 
@@ -23,12 +24,18 @@ export interface Notification {
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  // The stale-response guard every other data hook carries, needed here for
+  // the same reason useTrips needed one: a mount fetch and a resume fetch can
+  // now overlap on a slow connection, and the last to RESOLVE must not win.
+  const seqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++seqRef.current;
     setLoading(true);
     // Unread, non-dismissed activity across every trip the user belongs to,
     // newest first, excluding the user's own actions.
     const { data, error } = await supabase.rpc('get_activity');
+    if (seq !== seqRef.current) return;
     // On failure keep whatever was already shown — an error must not render
     // as an empty ("all caught up") inbox.
     if (!error) setNotifications((data as Notification[]) ?? []);
@@ -36,6 +43,12 @@ export function useNotifications() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // No realtime channel here either, and this sits on the same screen as the
+  // trip list: without it, an invite or a comment that arrived while the app
+  // was backgrounded leaves the bell showing its launch-time count for the
+  // rest of the session, next to a list that has just refreshed itself.
+  useRefetchOnResume(load);
 
   // Everything in the list is active — dismissing removes it.
   const unreadCount = notifications.length;
