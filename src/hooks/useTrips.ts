@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { updateTrip as updateTripRow, deleteTrip as deleteTripRow, TRIP_COLUMNS } from '../lib/trips';
@@ -20,15 +20,28 @@ function sortTrips(list: Trip[]): Trip[] {
 export function useTrips(userId: string | undefined) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
+  // The stale-response guard the other data hooks carry, which this list did
+  // without while a mount was its only fetch. Resuming is a second trigger at
+  // a moment the user is also touching the screen, so a fetch issued on
+  // foregrounding can still be in flight when they tap New Trip — and with no
+  // realtime channel here, a response that lands afterwards and replaces the
+  // whole list takes the new trip off screen with nothing to put it back.
+  // Every local write below bumps the sequence for that reason: it is not only
+  // a newer FETCH that supersedes an older one.
+  const fetchSeqRef = useRef(0);
 
   const fetchTrips = useCallback(async () => {
     if (!userId) { setLoading(false); return; }
+    const seq = ++fetchSeqRef.current;
     // Embed a member count so the list can flag shared trips. Under the
     // trip_members RLS a member sees every member of their trips, so the count
     // is the true membership size.
     const { data, error } = await supabase
       .from('trips')
       .select(`${TRIP_COLUMNS}, trip_members(count)`);
+
+    if (seq !== fetchSeqRef.current) return;
+
     if (error) {
       toast('Could not load trips');
       setLoading(false);
@@ -63,7 +76,16 @@ export function useTrips(userId: string | undefined) {
     });
     if (error) throw error;
     // A brand-new trip has only its owner — not shared yet.
-    if (data) setTrips(prev => sortTrips([{ ...data, is_shared: false }, ...prev]));
+    if (data) {
+      fetchSeqRef.current++;
+      setTrips(prev => sortTrips([{ ...data, is_shared: false }, ...prev]));
+      // The + button sits in the header, live while the skeleton cards are
+      // still showing, so this is reachable before the first fetch has landed
+      // — and that fetch was just superseded, so nothing else will lower the
+      // flag. Without this the list sits on skeletons forever, hiding the trip
+      // it has in hand.
+      setLoading(false);
+    }
     return data;
   };
 
@@ -74,13 +96,17 @@ export function useTrips(userId: string | undefined) {
     if (!data) return null;
     // Preserve the derived is_shared flag (the update row doesn't carry it) and
     // re-sort in case the dates changed.
+    fetchSeqRef.current++;
     setTrips(prev => sortTrips(prev.map(t => t.id === id ? { ...data, is_shared: t.is_shared } : t)));
     return data;
   };
 
   const deleteTrip = async (id: string) => {
     const ok = await deleteTripRow(id);
-    if (ok) setTrips(prev => prev.filter(t => t.id !== id));
+    if (ok) {
+      fetchSeqRef.current++;
+      setTrips(prev => prev.filter(t => t.id !== id));
+    }
     return ok;
   };
 
