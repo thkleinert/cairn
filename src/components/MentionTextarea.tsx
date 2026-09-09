@@ -193,13 +193,6 @@ export function MentionTextarea({
         onChange={e => { onChange(e.target.value); setCaret(e.target.selectionStart ?? 0); }}
         onKeyUp={sync}
         onClick={sync}
-        // Fires on a selection the code made as well as one the user made,
-        // which the three above do not. NoteList moves the caret to the front
-        // of a bullet that has just been handed the tail of a split, and
-        // without this the popup would go on matching against the offset the
-        // caret was at before — Enter would then insert a suggestion instead
-        // of splitting the line again.
-        onSelect={sync}
         onKeyDown={onKeyDown}
         onBlur={onBlur}
       />

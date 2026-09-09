@@ -26,6 +26,13 @@ interface Draft {
    * row that has nothing above it.
    */
   atTop?: boolean;
+  /**
+   * Opened holding the tail of a bullet Enter has just cut in half. That text
+   * is not something typed into this draft — it was saved a keystroke ago and
+   * this is now the only copy of it, which changes what the caret and Escape
+   * do with it.
+   */
+  splitTail?: boolean;
 }
 
 interface Props {
@@ -241,26 +248,38 @@ export function NoteList({
   ) => {
     const text = opts.text ?? '';
     draftCommitted.current = false;
-    setDraftState({ afterId, depth, atTop: opts.atTop });
+    setDraftState({ afterId, depth, atTop: opts.atTop, splitTail: text.length > 0 });
     setFocusId(DRAFT);
     setBody(text);
-    if (!text) return;
-    // Neither route into the field lands the caret there on its own. Arriving
-    // from a bullet's own editor the draft's textarea MOUNTS, and autoFocus
-    // deliberately jumps to the end — right for a bullet you opened to carry
-    // on writing, wrong for one whose text you are standing in front of.
-    // Arriving from another draft — a second Enter, where the draft row is
-    // reused rather than remounted — the browser parks the caret at the end of
-    // the replaced value for the same reason. Both happen when React flushes
-    // the state set above, which is after this handler has returned, so this
-    // waits for the frame rather than racing it.
-    requestAnimationFrame(() => {
-      const el = inputRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(0, 0);
-    });
   }, []);
+
+  /**
+   * The caret goes in FRONT of a tail a split has just handed to the draft.
+   *
+   * Neither way into the field puts it there. Arriving from a bullet's own
+   * editor the draft's textarea MOUNTS and autoFocus jumps to the end — right
+   * for a bullet you opened to carry on writing, wrong for one whose text you
+   * are standing in front of. Arriving from another draft the row is reused
+   * rather than remounted, autoFocus does not run at all, and the browser
+   * parks the caret at the end of the replaced value.
+   *
+   * An effect rather than a frame callback: React runs a child's effects
+   * before its parent's, so this is ordered AFTER the autoFocus it is
+   * correcting, where a requestAnimationFrame only usually is — and when it
+   * lost that race it moved the caret in the textarea that was on its way out.
+   *
+   * Keyed on which draft is holding a tail, not on the draft object, so
+   * Tabbing the bullet a level in or out does not yank the caret back out of
+   * the middle of a word.
+   */
+  const splitTailKey = draft?.splitTail ? (draft.afterId ?? '') : null;
+  useEffect(() => {
+    if (splitTailKey === null) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(0, 0);
+  }, [splitTailKey]);
 
   // Opening a bullet because the heading asked for one. Keyed on the flag
   // going true rather than on its value, so the parent can leave it set for a
@@ -435,9 +454,19 @@ export function NoteList({
         try {
           await onReorder([created.id, ...itemsRef.current.map(n => n.id).filter(nid => nid !== created.id)]);
         } catch {
-          // Deliberately not the insert's catch above: this bullet IS saved,
-          // and clearing the latch for it would let the next blur write the
-          // same text a second time. Only where it sits has failed.
+          // Deliberately not the insert's catch above, and deliberately not
+          // reported back either. A failed hoist is a bullet that saved and
+          // landed at the end of its scope instead of the front: there is
+          // nothing to undo, nothing to retry, and clearing the committed-latch
+          // for it would let the next blur write the same text a second time.
+          // The next bullet opens after it, which is still where it sits.
+          //
+          // The catch is only for a rejection: reorderNotes answers a failed
+          // write with `false`, having toasted and refetched it itself, but the
+          // RPC underneath it rejects outright on a dead network — and an
+          // exception escaping this latched region leaves the draft on screen
+          // holding text that is already saved, with the latch raised so it can
+          // never be cleared.
           toast('Could not save the new order');
         }
       }
@@ -770,7 +799,15 @@ export function NoteList({
       atOuterLevel={focusId === DRAFT
         ? (draft?.depth ?? 0) === 0
         : focusedIndex === -1 || !canOutdent(items, focusedIndex)}
-      onCancel={() => { movingFocus.current = true; setFocusId(null); setDraftState(null); setBody(''); movingFocus.current = false; }}
+      // Escape gives up the EDIT. A draft holding the tail of a split has no
+      // edit in it to give up: that text was on a saved row a keystroke ago,
+      // Enter cut it out, and this draft is the only copy left — throwing it
+      // away would delete text the user never typed, with the head already
+      // written. So that one commits instead, exactly as tapping away does.
+      onCancel={() => {
+        if (focusId === DRAFT && draft?.splitTail) { void blur(DRAFT); return; }
+        movingFocus.current = true; setFocusId(null); setDraftState(null); setBody(''); movingFocus.current = false;
+      }}
       places={places}
       autoFocus={autoFocus}
       ariaLabel={ariaLabel}
