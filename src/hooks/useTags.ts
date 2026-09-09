@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import { useRefetchOnResume } from './useRefetchOnResume';
 import type { Tag } from '../types';
 
 export function useTags(tripId: string | undefined) {
@@ -34,6 +35,8 @@ export function useTags(tripId: string | undefined) {
 
     return () => { channel.unsubscribe(); };
   }, [tripId, fetchTags]);
+
+  useRefetchOnResume(fetchTags, !!tripId);
 
   const createTag = async (name: string, color: string, icon?: string) => {
     if (!tripId) return null;

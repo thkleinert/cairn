@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { updateTrip as updateTripRow, deleteTrip as deleteTripRow, TRIP_COLUMNS } from '../lib/trips';
+import { useRefetchOnResume } from './useRefetchOnResume';
 import type { Trip } from '../types';
 
 // A trip's sort key: its travel date, falling back to when it was created for
@@ -45,6 +46,12 @@ export function useTrips(userId: string | undefined) {
   useEffect(() => {
     fetchTrips();
   }, [fetchTrips]);
+
+  // The one hook here with no realtime channel at all: a trip renamed, dated
+  // or deleted elsewhere — or a trip someone just invited this user to — never
+  // reached this list within a session, background or no background. Resuming
+  // is the only moment we get to notice.
+  useRefetchOnResume(fetchTrips, !!userId);
 
   const createTrip = async (name: string, description?: string, start_date?: string, end_date?: string) => {
     if (!userId) return null;

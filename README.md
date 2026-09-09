@@ -248,7 +248,8 @@ they didn't opt into. Invites expire after 30 days and can be revoked while
 pending.
 
 Everything — places, tags, photos, reorderings — updates live for the whole
-group via Supabase Realtime.
+group via Supabase Realtime, and reopening a backgrounded app catches up on
+whatever changed while its connection was gone.
 
 <br clear="left" />
 
@@ -705,7 +706,7 @@ src/
                   useCollaborators, useAuth; plus the interaction hooks
                   useDragReorder (places), useOutlineDrag (bullets),
                   useSwipeToDelete, useFoldState, usePersistentSet,
-                  useHistoryLayer, …
+                  useHistoryLayer, useRefetchOnResume, …
   lib/            Supabase client, Mapbox routing, Google photo helpers,
                   mapsLink.ts (pasted Google Maps links), storage cleanup,
                   toasts; and the pure rules — outline.ts (bullet depth and

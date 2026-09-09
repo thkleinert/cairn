@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { guardMessage } from '../lib/guards';
 import { insertOnce } from '../lib/rows';
+import { useRefetchOnResume } from './useRefetchOnResume';
 import type { PlaceVisit } from '../types';
 
 // Every dated visit in a trip, in one subscription — the same shape
@@ -64,6 +65,8 @@ export function usePlaceVisits(tripId: string | undefined) {
       .subscribe();
     return () => { channelRef.current?.unsubscribe(); };
   }, [tripId, fetchVisits]);
+
+  useRefetchOnResume(fetchVisits, !!tripId);
 
   visitsRef.current = visits;
 
