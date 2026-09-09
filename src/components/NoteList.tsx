@@ -239,7 +239,8 @@ export function NoteList({
    * save, which is a worse bug than the duplicate it guards against.
    *
    * `text` is the tail of a bullet Enter has just cut in half. It arrives
-   * already written, so the caret goes in FRONT of it rather than after it.
+   * already written, so the caret goes in FRONT of it rather than after it —
+   * the effect below, which is also what `splitTail` is latched for.
    */
   const openDraft = useCallback((
     afterId: string | null,
@@ -264,9 +265,11 @@ export function NoteList({
    * parks the caret at the end of the replaced value.
    *
    * An effect rather than a frame callback: React runs a child's effects
-   * before its parent's, so this is ordered AFTER the autoFocus it is
-   * correcting, where a requestAnimationFrame only usually is — and when it
-   * lost that race it moved the caret in the textarea that was on its way out.
+   * before its parent's, so this is ordered AFTER the autoFocus it corrects.
+   * A requestAnimationFrame is only usually ordered that way — Enter awaits
+   * the write first, so the re-render is scheduled as a task, and a frame that
+   * gets in before it would move the caret in the textarea on its way out and
+   * leave the real one at the end of the tail.
    *
    * Keyed on which draft is holding a tail, not on the draft object, so
    * Tabbing the bullet a level in or out does not yank the caret back out of
