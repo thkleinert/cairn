@@ -540,10 +540,41 @@ export function NoteList({
    * caret at the end of the one above — how every outliner walks back up a
    * list. Only when it's empty: at the start of a bullet with text it would
    * eat the previous bullet's content.
+   *
+   * The one exception is a draft holding the tail of a split, below.
    */
   const handleBackspaceAtStart = useCallback(async () => {
     const id = focusId;
-    if (!id || body.length > 0) return false;
+    if (!id) return false;
+
+    // At the front of a tail, Backspace takes the split back. The head is on
+    // the row above and the tail has never been written anywhere else, so the
+    // two go back together in a single write with nothing to delete and
+    // nothing to promote.
+    //
+    // It earns its own path because a split leaves the caret at offset 0 by
+    // construction — where a mistimed Enter is taken back — and the keystroke
+    // is swallowed whatever this returns, so without it the obvious way to
+    // undo a split does nothing at all.
+    //
+    // It does not generalise to the guard below: at the front of a SAVED
+    // bullet the same key would eat into a row with its own text and its own
+    // children, and no undo behind it.
+    if (id === DRAFT && draft?.splitTail && draft.afterId) {
+      const head = items.find(n => n.id === draft.afterId);
+      if (head) {
+        const joined = head.body + body;
+        await withFocusMove(async () => {
+          await onUpdate(head.id, joined);
+          setDraftState(null);
+          setFocusId(head.id);
+          setBody(joined);
+        });
+        return true;
+      }
+    }
+
+    if (body.length > 0) return false;
 
     // The bullet above ON SCREEN, not the one above in the outline. With a
     // folded bullet between them the outline's predecessor is hidden, and
@@ -580,7 +611,7 @@ export function NoteList({
       else { setFocusId(null); setBody(''); }
     });
     return true;
-  }, [focusId, body, focusedIndex, draft, items, visible, removeBullet, withFocusMove]);
+  }, [focusId, body, focusedIndex, draft, items, visible, onUpdate, removeBullet, withFocusMove]);
 
   /**
    * Enter: cut the bullet at the caret. What is in front of it stays on this
