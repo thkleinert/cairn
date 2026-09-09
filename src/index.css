@@ -2404,6 +2404,28 @@ textarea.mention-input {
 }
 .note-link:active { background: var(--color-bg); }
 
+/* Inline emphasis in a note body. <strong>, <em> and <s> get no rules on
+   purpose — the browser's own bold, italic and line-through are already the
+   right thing, and a note is prose, so the less this section invents the
+   better it ages against the rest of the type scale.
+   Code is the exception, because "monospace at the same size" reads as a
+   different size: the drop to 0.92em is what keeps a `code` run on the same
+   optical line as the words around it. The tint is neutral rather than the
+   primary used by .mention-chip, since a code span is not a link to anywhere
+   and should not compete with one; mixing --color-text into transparent keeps
+   it legible over both the page and a surface, in both palettes, without a
+   second variable. box-decoration-break for the same reason as the chip: a
+   span that wraps mid-note must keep its background on every line. */
+.note-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 .mention-suggestions {
   position: absolute;
   left: 0; right: 0;
