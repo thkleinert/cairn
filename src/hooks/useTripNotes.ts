@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { insertOnce, restoreRow, applyOrder } from '../lib/rows';
+import { useRefetchOnResume } from './useRefetchOnResume';
 import type { TripNote } from '../types';
 
 // Every bullet for a trip, both the trip-wide ones (place_id null) and the
@@ -58,6 +59,8 @@ export function useTripNotes(tripId: string | undefined) {
       .subscribe();
     return () => { channelRef.current?.unsubscribe(); };
   }, [tripId, fetchNotes]);
+
+  useRefetchOnResume(fetchNotes, !!tripId);
 
   notesRef.current = notes;
 

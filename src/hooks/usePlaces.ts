@@ -5,6 +5,7 @@ import { insertOnce, applyOrder } from '../lib/rows';
 import { guardMessage } from '../lib/guards';
 import { isEphemeralGoogleUrl, fetchFreshGooglePhotoUrl, persistGooglePhoto } from '../lib/googlePhotos';
 import { kindFor } from '../lib/anchor';
+import { useRefetchOnResume } from './useRefetchOnResume';
 import { removeStorageUrls } from '../lib/storage';
 import type { Place, PlaceImage } from '../types';
 
@@ -117,6 +118,10 @@ export function usePlaces(tripId: string | undefined) {
       channelRef.current?.unsubscribe();
     };
   }, [tripId, fetchPlaces]);
+
+  // Everything above is delivered by a socket iOS kills when the app goes to
+  // the background, and nothing replays what it missed.
+  useRefetchOnResume(fetchPlaces, !!tripId);
 
   const addPlace = async (place: {
     name: string;

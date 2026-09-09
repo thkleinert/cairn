@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
 import { updateTrip as updateTripRow, deleteTrip as deleteTripRow, TRIP_COLUMNS } from '../lib/trips';
+import { useRefetchOnResume } from './useRefetchOnResume';
 import type { Trip } from '../types';
 
 // A trip's sort key: its travel date, falling back to when it was created for
@@ -19,15 +20,25 @@ function sortTrips(list: Trip[]): Trip[] {
 export function useTrips(userId: string | undefined) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
+  // The stale-response guard the other data hooks carry, which this list could
+  // do without while a mount was its only fetch. Resuming is a second trigger,
+  // so on a slow connection the foregrounding fetch can be issued while the
+  // mount's is still in flight — and the last to RESOLVE would win, replacing
+  // the list with the older of the two snapshots.
+  const fetchSeqRef = useRef(0);
 
   const fetchTrips = useCallback(async () => {
     if (!userId) { setLoading(false); return; }
+    const seq = ++fetchSeqRef.current;
     // Embed a member count so the list can flag shared trips. Under the
     // trip_members RLS a member sees every member of their trips, so the count
     // is the true membership size.
     const { data, error } = await supabase
       .from('trips')
       .select(`${TRIP_COLUMNS}, trip_members(count)`);
+
+    if (seq !== fetchSeqRef.current) return;
+
     if (error) {
       toast('Could not load trips');
       setLoading(false);
@@ -45,6 +56,12 @@ export function useTrips(userId: string | undefined) {
   useEffect(() => {
     fetchTrips();
   }, [fetchTrips]);
+
+  // The one hook here with no realtime channel at all: a trip renamed, dated
+  // or deleted elsewhere — or a trip someone just invited this user to — never
+  // reached this list within a session, background or no background. Resuming
+  // is the only moment we get to notice.
+  useRefetchOnResume(fetchTrips, !!userId);
 
   const createTrip = async (name: string, description?: string, start_date?: string, end_date?: string) => {
     if (!userId) return null;
