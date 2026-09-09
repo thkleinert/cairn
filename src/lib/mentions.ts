@@ -139,10 +139,20 @@ function codeEnd(part: string, i: number): number | null {
   return end > i + 1 ? end : null;
 }
 
-/** Length of the run of `ch` starting at `i`. */
-function runLength(part: string, i: number, ch: string): number {
+/**
+ * Length of the run of `ch` starting at `i`, counting no further than `max`.
+ *
+ * The cap is what keeps a long run of one marker from being quadratic.
+ * openerAt is asked at every position of a run and only ever needs to know
+ * "one, or two or more" — so without a cap, 80,000 asterisks measured the same
+ * run 80,000 times and took 23 seconds, and 200,000 tildes took over two
+ * minutes of blocked main thread on a note anyone can paste. findCloser needs
+ * the true length and asks for it, but it consumes the whole run each time it
+ * measures one, so there it is linear.
+ */
+function runLength(part: string, i: number, ch: string, max = Infinity): number {
   let run = 1;
-  while (part[i + run] === ch) run += 1;
+  while (run < max && part[i + run] === ch) run += 1;
   return run;
 }
 
@@ -210,18 +220,31 @@ const PUNCT = /[^\p{L}\p{N}\s]/u;
  * " 3 = 6 " — without it any two asterisks in a line find each other. It is
  * also why "the answer is *" at the end of a line stays an asterisk.
  *
- * A marker followed by PUNCTUATION only opens if what precedes it is
- * whitespace, punctuation, or the start of the run being scanned — CommonMark's
- * left-flanking rule, and it earns its keep. Without it a stray marker earlier
- * in the line eats the emphasis the writer actually meant:
+ * A marker must START at a boundary: what precedes it has to be whitespace,
+ * punctuation, or the beginning of the span being scanned. Without that, a
+ * marker buried in a word pairs with the OPENING marker of the span the writer
+ * actually meant, the emphasis lands on text nobody wrote, and the characters
+ * the user typed go missing:
  *
- *     Bring adapters*, and *do not* forget      → "adapters, and *do not forget"
- *     Save as IMG*.jpg then *print* it          → "IMG.jpg then *print it"
+ *     Bring adapters*, and *do not* forget  → "adapters, and *do not forget"
+ *     Save as IMG*.jpg then *print* it      → "IMG.jpg then *print it"
+ *     Terrace 3*4 m, room 5*6 m             → "Terrace 3" + em("4 m, room 5")
+ *     Print 4*6 photos, screen 1920*1080    → two multiplications, one italic
  *
- * In both the first asterisk pairs with the OPENING one of the real span, the
- * emphasis lands on text nobody wrote, and a character the user typed goes
- * missing. Requiring a boundary before a punctuation-facing marker says what a
- * writer means: "adapters*," is the tail of a word, "*do" starts something.
+ * CommonMark only applies this when the marker faces punctuation, and would
+ * emphasise the last two — intraword '*' is allowed there. Dimensions and
+ * print sizes written "3*4" are ordinary in a trip note, and this module
+ * promises more than CommonMark does about a note reading as it was typed, so
+ * the rule applies whatever follows. What it costs is "a**b**c", which no
+ * longer bolds the b; nobody writes that, and it fails safe when they do.
+ *
+ * The preceding character is read as it stands rather than looked past a run
+ * of markers, which is why "a**b**c" degrades to an italic "b*" instead of to
+ * plain text: the scanner retries at the run's second '*', whose neighbour is
+ * a marker rather than the 'a' that disqualified the first. Looking past the
+ * run would be tidier and costs a scan per position, which is exactly the
+ * quadratic this function just stopped paying — and every character still
+ * survives either way, so it buys nothing worth that.
  *
  * '~' only counts in pairs. A single one is a tilde, which appears in prose
  * as "~20 minutes" far more often than it appears as an intended marker.
@@ -229,20 +252,19 @@ const PUNCT = /[^\p{L}\p{N}\s]/u;
 function openerAt(part: string, i: number): { mark: NoteMark; width: number } | null {
   const c = part[i];
   if (c !== '*' && c !== '~') return null;
-  const run = runLength(part, i, c);
-  // A run of three or more is "***both***": two characters open bold here and
+  // Two is all this needs to know — "one, or two or more" — and asking for no
+  // more than that is what keeps a long run from costing a scan per position.
+  const run = runLength(part, i, c, 2);
+  // A run of two or more is "***both***": two characters open bold here and
   // the leftovers are handed back to the scanner, which reads them as the
   // italic opener they are.
-  const width = c === '~' ? 2 : Math.min(run, 2);
+  const width = c === '~' ? 2 : run;
   if (run < width) return null;
   const next = part[i + width];
   if (next === undefined || /\s/.test(next)) return null;
-  if (PUNCT.test(next)) {
-    // undefined means the start of the span being scanned, which is a boundary
-    // — otherwise "***x***" could not open, its own second '*' being punctuation.
-    const prev = part[i - 1];
-    if (prev !== undefined && !/\s/.test(prev) && !PUNCT.test(prev)) return null;
-  }
+  // undefined means the start of the span being scanned, which is a boundary.
+  const prev = part[i - 1];
+  if (prev !== undefined && !/\s/.test(prev) && !PUNCT.test(prev)) return null;
   return { mark: c === '~' ? 'strike' : width === 2 ? 'bold' : 'italic', width };
 }
 
