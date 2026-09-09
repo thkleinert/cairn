@@ -133,6 +133,14 @@ function urlAt(text: string, i: number): string | null {
  * working link's label — the pill only ever shows the host, so the user has no
  * way to see that it now points somewhere else.
  *
+ * What this does NOT do is stop a link from absorbing a whole span that abuts
+ * it with no space: "www.example.com*bold*" is one link with a garbled href,
+ * exactly as it was before emphasis existed, because URL_PATTERN takes every
+ * non-space character and nothing here second-guesses it. Left alone on
+ * purpose — nobody writes a link and an emphasis run with no space between
+ * them, and the case that people DO write, a link wrapped in emphasis, is the
+ * one this function exists to make work.
+ *
  * Cannot return 0, because a URL always begins with 'h' or 'w'.
  */
 function skipPastLink(url: string): number {
