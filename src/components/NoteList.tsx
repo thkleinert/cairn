@@ -745,6 +745,12 @@ export function NoteList({
       // children would silently re-parent themselves under the bullet that just
       // appeared — pressing Enter on a heading would steal everything under it.
       // Every outliner does it this way for the same reason.
+      //
+      // The tail rides along into that first child, which is the same rule and
+      // not a second decision: half a sentence becoming a child of the other
+      // half reads oddly, but the alternative — leaving the tail on the row
+      // that owns the children and inserting the head above it — rewrites the
+      // row the caret is in and adds a second write to fail at.
       const nests = at !== -1 && hasChildren(items, at);
       openDraft(id, Math.min((note?.depth ?? 0) + (nests ? 1 : 0), MAX_DEPTH), { text: tail });
     } finally {
