@@ -478,6 +478,9 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
           onRestoreNote={restoreNote}
           onSetNoteDepths={setNoteDepths}
           onReorderNotes={reorderNotes}
+          isNoteFolded={isNoteFolded}
+          toggleNoteFold={toggleNoteFold}
+          onExpandNote={expandNote}
         />
       )}
 

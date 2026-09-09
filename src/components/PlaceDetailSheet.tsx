@@ -51,6 +51,15 @@ interface Props {
   onRestoreNote?: (note: TripNote) => Promise<boolean | void> | boolean | void;
   onSetNoteDepths?: (updates: { id: string; depth: number }[]) => Promise<unknown> | void;
   onReorderNotes?: (orderedIds: string[]) => void | boolean | Promise<void | boolean>;
+  // The same fold state the outliner uses, deliberately: it is keyed per trip
+  // rather than per view, so a subtree folded here reads as folded there. A
+  // fold is a statement about that bullet's children, not about the surface
+  // you happened to be looking at when you made it. A second useFoldState here
+  // would give the same bullet two answers and let one view draw the ringed
+  // "there is more here" dot while the other hid the children outright.
+  isNoteFolded?: (id: string) => boolean;
+  toggleNoteFold?: (id: string) => void;
+  onExpandNote?: (id: string) => void;
   onCreateTag?: (name: string, color: string, icon?: string) => Promise<Tag | null>;
   // When this place is. Every visit in the trip, not just this place's — the
   // filtering happens here so the caller cannot hand over a list grouped by a
@@ -71,7 +80,7 @@ export function PlaceDetailSheet({
   visits = [], onAddVisit, onUpdateVisit, onRemoveVisit,
   scrollToComments = false, onCommentsShown,
   notes = [], allPlaces = [], onAddNote, onUpdateNote, onRemoveNote, onRestoreNote,
-  onSetNoteDepths, onReorderNotes,
+  onSetNoteDepths, onReorderNotes, isNoteFolded, toggleNoteFold, onExpandNote,
 }: Props) {
   const [selectedTags, setSelectedTags] = useState<string[]>((place.tags ?? []).map(t => t.id));
   const [dirty, setDirty] = useState(false);
@@ -500,6 +509,9 @@ export function PlaceDetailSheet({
                 onRestore={onRestoreNote}
                 onSetDepths={(updates) => onSetNoteDepths?.(updates)}
                 onReorder={(ids) => onReorderNotes?.(ids)}
+                isCollapsed={isNoteFolded}
+                onToggleCollapse={toggleNoteFold}
+                onExpand={onExpandNote}
                 startDraft={addingNote}
                 onDraftStarted={() => setAddingNote(false)}
                 placeholder="Add a note…"
