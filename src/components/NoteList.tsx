@@ -19,6 +19,20 @@ interface Draft {
   /** The note this one goes after; null appends to the end of the list. */
   afterId: string | null;
   depth: number;
+  /**
+   * Goes in FRONT of everything instead, which `afterId` cannot say — null
+   * there already means "at the end". The one thing that needs it is Enter
+   * pressed at the start of the first bullet: the new bullet belongs above a
+   * row that has nothing above it.
+   */
+  atTop?: boolean;
+  /**
+   * Opened holding the tail of a bullet Enter has just cut in half. That text
+   * is not something typed into this draft — it was saved a keystroke ago and
+   * this is now the only copy of it, which changes what the caret and Escape
+   * do with it.
+   */
+  splitTail?: boolean;
 }
 
 interface Props {
@@ -78,6 +92,11 @@ export function NoteList({
   // shape no outline has, and clamping once here means nothing downstream has
   // to think about it.
   const items = useMemo(() => normaliseDepths(notes), [notes]);
+  // The outline as it stands NOW, for reading after an await. A closure holds
+  // the list as it was when the callback was made, which is a different list
+  // once an insert has been to the server and back.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const [focusId, setFocusId] = useState<string | null>(null);
   // Mirrors focusId synchronously. blur() closes over the focusId of the
@@ -133,6 +152,7 @@ export function NoteList({
   // confirmed diagnosis of it.
   const draftIndex = useMemo(() => {
     if (!draft) return -1;
+    if (draft.atTop) return 0;
     if (draft.afterId === null) return items.length;
     const at = items.findIndex(n => n.id === draft.afterId);
     return at === -1 ? items.length : at + 1;
@@ -213,16 +233,55 @@ export function NoteList({
   }, [items, onRemove, onSetDepths, onRestore]);
 
   /**
+   * Where the caret goes when the editor next opens, for the times the end is
+   * the wrong place.
+   *
+   * autoFocus lands at the END on purpose: a bullet you open by pointing at it
+   * is one you mean to carry on writing. Enter's two moves want otherwise. The
+   * tail of a split opens with the caret in FRONT of text the user has already
+   * written, which is where they cut it; and taking that split back with
+   * Backspace puts the caret at the join, where their finger was — landing at
+   * the end of the rejoined line would mean the next Backspace eating the last
+   * character of the tail instead of the one before the cut.
+   *
+   * A state and an effect rather than a frame callback: React runs a child's
+   * effects before its parent's, so this is ordered AFTER the autoFocus it
+   * corrects, whereas a requestAnimationFrame only usually is — Enter awaits a
+   * write first, so the re-render is scheduled as a task and a frame that got
+   * in ahead of it would move the caret in the textarea on its way out.
+   * Cleared once applied, so that a second bullet asking for the same offset
+   * still gets it, and so that Tabbing a level in or out afterwards does not
+   * yank the caret back out of the middle of a word.
+   */
+  const [caretOnOpen, setCaretOnOpen] = useState<number | null>(null);
+  useEffect(() => {
+    if (caretOnOpen === null) return;
+    const el = inputRef.current;
+    if (el) { el.focus(); el.setSelectionRange(caretOnOpen, caretOnOpen); }
+    setCaretOnOpen(null);
+  }, [caretOnOpen]);
+
+  /**
    * Open a new bullet and put the caret in it. Every way of starting one goes
    * through here so the committed-latch is cleared in exactly one place —
    * forgetting it at a call site would mean a bullet that silently refuses to
    * save, which is a worse bug than the duplicate it guards against.
+   *
+   * `text` is the tail of a bullet Enter has just cut in half. It arrives
+   * already written, so the caret goes in FRONT of it rather than after it —
+   * the effect above, which is also what `splitTail` is latched for.
    */
-  const openDraft = useCallback((afterId: string | null, depth: number) => {
+  const openDraft = useCallback((
+    afterId: string | null,
+    depth: number,
+    opts: { text?: string; atTop?: boolean } = {},
+  ) => {
+    const text = opts.text ?? '';
     draftCommitted.current = false;
-    setDraftState({ afterId, depth });
+    setDraftState({ afterId, depth, atTop: opts.atTop, splitTail: text.length > 0 });
     setFocusId(DRAFT);
-    setBody('');
+    setBody(text);
+    if (text) setCaretOnOpen(0);
   }, []);
 
   // Opening a bullet because the heading asked for one. Keyed on the flag
@@ -339,6 +398,7 @@ export function NoteList({
   /** Where the draft row goes among the visible ones. */
   const draftVisibleIndex = useMemo(() => {
     if (!draft) return -1;
+    if (draft.atTop) return 0;
     if (draft.afterId === null) return visible.length;
     const at = visible.findIndex(n => n.id === draft.afterId);
     return at === -1 ? visible.length : at + 1;
@@ -351,25 +411,30 @@ export function NoteList({
     return above ? Math.min(above.depth + 1, MAX_DEPTH) : 0;
   }, [draftIndex, items]);
 
-  const commit = useCallback(async (): Promise<TripNote | null> => {
+  /**
+   * Write the focused bullet. `text` is what to write, defaulting to what is
+   * in the editor — Enter hands it the part in FRONT of the caret, so the head
+   * of a split is saved while the tail travels on to the new bullet.
+   */
+  const commit = useCallback(async (text: string = body): Promise<TripNote | null> => {
     const id = focusId;
     if (!id) return null;
     if (id === DRAFT) {
-      const trimmed = body.trim();
+      const trimmed = text.trim();
       if (!trimmed || !draft) return null;
       // Latch before awaiting, not after: the insert is in flight for a whole
       // round trip, and a blur arriving during it must find the door shut.
       if (draftCommitted.current) return null;
       draftCommitted.current = true;
+      let created: TripNote | null = null;
       try {
-        const created = await onAdd(trimmed, { depth: draft.depth, afterId: draft.afterId }) ?? null;
+        created = await onAdd(trimmed, { depth: draft.depth, afterId: draft.afterId }) ?? null;
         // …and lift again if nothing was written. The latch exists to stop the
         // same bullet being inserted twice, not to stop it being inserted at
         // all: left raised after a failed insert it made every later attempt a
         // silent no-op, so the row sat there with its text and then vanished
         // when the user tapped away, having shown one toast minutes earlier.
         if (created === null) draftCommitted.current = false;
-        return created;
       } catch {
         // A rejection is a write that did not happen, same as a null — and it
         // has to clear the latch by the same reasoning. It arrives by a
@@ -380,6 +445,35 @@ export function NoteList({
         toast('Could not add note');
         return null;
       }
+      // A bullet meant for the very top arrives at the end of its scope
+      // instead: addNote can only place one AFTER another, and there is
+      // nothing above the first row to name. So the order is written straight
+      // after, and built from the list as it stands NOW rather than from this
+      // closure's copy — a collaborator's bullet that landed during the
+      // insert's round trip would otherwise be missing from it, and
+      // reorder_trip_notes renumbers only the ids it is handed, leaving that
+      // row on a position the rest of the scope has just been renumbered past.
+      if (created && draft.atTop) {
+        try {
+          await onReorder([created.id, ...itemsRef.current.map(n => n.id).filter(nid => nid !== created.id)]);
+        } catch {
+          // Deliberately not the insert's catch above, and deliberately not
+          // reported back either. A failed hoist is a bullet that saved and
+          // landed at the end of its scope instead of the front: there is
+          // nothing to undo, nothing to retry, and clearing the committed-latch
+          // for it would let the next blur write the same text a second time.
+          // The next bullet opens after it, which is still where it sits.
+          //
+          // The catch is only for a rejection: reorderNotes answers a failed
+          // write with `false`, having toasted and refetched it itself, but the
+          // RPC underneath it rejects outright on a dead network — and an
+          // exception escaping this latched region leaves the draft on screen
+          // holding text that is already saved, with the latch raised so it can
+          // never be cleared.
+          toast('Could not save the new order');
+        }
+      }
+      return created;
     }
     const at = items.findIndex(n => n.id === id);
     const note = at === -1 ? undefined : items[at];
@@ -387,19 +481,27 @@ export function NoteList({
     // An emptied bullet deletes itself, through removeBullet like every other
     // deletion, so its children are promoted. Routing a blank body to onUpdate
     // reached the same delete without them.
-    if (!body.trim()) {
+    if (!text.trim()) {
       await removeBullet(note, at, { offerUndo: true });
       return null;
     }
-    if (body.trim() !== note.body) await onUpdate(id, body);
+    if (text.trim() !== note.body) await onUpdate(id, text);
     return note;
-  }, [focusId, body, draft, items, onAdd, onUpdate, removeBullet]);
+  }, [focusId, body, draft, items, onAdd, onUpdate, onReorder, removeBullet]);
 
   const startEdit = useCallback(async (note: TripNote) => {
     if (focusId === note.id) return;
     movingFocus.current = true;
     try {
-      await commit();
+      const saved = await commit();
+      // The same guard blur has: a draft whose insert failed keeps its text
+      // and its row, so it can be tried again rather than disappearing behind
+      // a toast. It was missing here, which mattered little while a draft only
+      // ever held text the user had just typed — after a split it holds the
+      // tail of a saved bullet, with the head already written, and tapping
+      // another bullet was enough to throw away a half-line nothing on screen
+      // could reconstruct.
+      if (focusId === DRAFT && saved === null && body.trim()) return;
       setDraftState(null);
       setFocusId(note.id);
       setBody(note.body);
@@ -412,7 +514,7 @@ export function NoteList({
       // than returning an error when the network is down.
       movingFocus.current = false;
     }
-  }, [commit, focusId]);
+  }, [commit, focusId, body]);
 
   /**
    * `from` is the row the textarea was rendered for. If focus has since moved
@@ -449,10 +551,45 @@ export function NoteList({
    * caret at the end of the one above — how every outliner walks back up a
    * list. Only when it's empty: at the start of a bullet with text it would
    * eat the previous bullet's content.
+   *
+   * The one exception is a draft holding the tail of a split, below.
    */
   const handleBackspaceAtStart = useCallback(async () => {
     const id = focusId;
-    if (!id || body.length > 0) return false;
+    if (!id) return false;
+
+    // At the front of a tail, Backspace takes the split back. The head is on
+    // the row above and the tail has never been written anywhere else, so the
+    // two go back together in a single write with nothing to delete and
+    // nothing to promote.
+    //
+    // It earns its own path because a split leaves the caret at offset 0 by
+    // construction — where a mistimed Enter is taken back — and the keystroke
+    // is swallowed whatever this returns, so without it the obvious way to
+    // undo a split does nothing at all.
+    //
+    // It does not generalise to the guard below: at the front of a SAVED
+    // bullet the same key would eat into a row with its own text and its own
+    // children, and no undo behind it.
+    if (id === DRAFT && draft?.splitTail && draft.afterId) {
+      const head = items.find(n => n.id === draft.afterId);
+      if (head) {
+        const joined = head.body + body;
+        await withFocusMove(async () => {
+          await onUpdate(head.id, joined);
+          setDraftState(null);
+          setFocusId(head.id);
+          setBody(joined);
+          // At the join, not at the end of the line the two halves make. The
+          // caret was sitting on the cut, and the next Backspace is meant for
+          // the character in front of it.
+          setCaretOnOpen(head.body.length);
+        });
+        return true;
+      }
+    }
+
+    if (body.length > 0) return false;
 
     // The bullet above ON SCREEN, not the one above in the outline. With a
     // folded bullet between them the outline's predecessor is hidden, and
@@ -463,8 +600,12 @@ export function NoteList({
     // a collapsed bullet's child. Falling back to the last visible row keeps
     // Backspace stepping up instead of dismissing the keyboard.
     const visibleAt = visible.findIndex(n => n.id === (id === DRAFT ? draft?.afterId : id));
+    // Nothing is above a draft that is going in at the very top, and its
+    // afterId is null — which the fallback reads as "anchored off screen" and
+    // answers with the LAST visible row, sending the caret to the bottom of
+    // the list. Backspace there closes the draft instead.
     const previous = id === DRAFT
-      ? (visibleAt === -1 ? visible[visible.length - 1] : visible[visibleAt])
+      ? (draft?.atTop ? undefined : (visibleAt === -1 ? visible[visible.length - 1] : visible[visibleAt]))
       : (visibleAt === -1 ? undefined : visible[visibleAt - 1]);
 
     if (id === DRAFT) {
@@ -485,13 +626,28 @@ export function NoteList({
       else { setFocusId(null); setBody(''); }
     });
     return true;
-  }, [focusId, body, focusedIndex, draft, items, visible, removeBullet, withFocusMove]);
+  }, [focusId, body, focusedIndex, draft, items, visible, onUpdate, removeBullet, withFocusMove]);
 
-  /** Enter: close this bullet and open the next one at the same level. */
-  const handleEnter = useCallback(async () => {
+  /**
+   * Enter: cut the bullet at the caret. What is in front of it stays on this
+   * row, what is behind it moves into the new bullet below — the difference
+   * between adding a thought after this one and adding one in the middle of
+   * it. Pressed at the end of the text, which is the common case, the tail is
+   * empty and this is just "close this bullet and open the next one".
+   */
+  const handleEnter = useCallback(async (caret: number) => {
     if (busy.current) return;
     const id = focusId;
     if (!id) return;
+
+    const head = body.slice(0, caret);
+    const tail = body.slice(caret);
+    // A blank head means the caret is in front of everything — at offset 0, or
+    // inside the whitespace before the first word. That is not a split, because
+    // the head cannot be written at all: trip_notes rejects a blank body, and
+    // both addNote and updateNote turn one into a delete. Each branch below
+    // says what it does instead.
+    const splitting = tail.length > 0 && head.trim().length > 0;
 
     if (id === DRAFT) {
       if (!draft) return;
@@ -505,12 +661,19 @@ export function NoteList({
       busy.current = true;
       movingFocus.current = true;
       try {
-        const created = await commit();
+        // A draft cut at its very start does NOT get an empty bullet above it
+        // the way a saved bullet does: that bullet would have to be a second
+        // unsaved row, and there is only ever one draft. The whole line commits
+        // and the next bullet opens after it, as before — the row above a draft
+        // is a saved bullet, and Enter at the end of that one is the way to
+        // open a bullet there.
+        const created = await commit(splitting ? head : body);
         // Nothing was written — keep the bullet, its text and the caret where
         // they are so it can simply be tried again. Opening the next bullet
-        // here would discard what was typed on the strength of a toast.
+        // here would discard what was typed on the strength of a toast, and
+        // with a split it would discard the head as well as the tail.
         if (!created) return;
-        openDraft(created.id, draft.depth);
+        openDraft(created.id, draft.depth, { text: splitting ? tail : '' });
       } finally {
         movingFocus.current = false;
         busy.current = false;
@@ -541,21 +704,77 @@ export function NoteList({
     busy.current = true;
     movingFocus.current = true;
     try {
-    const at = items.findIndex(n => n.id === id);
-    const note = items[at];
-    // The new bullet is inserted directly after this one, which is inside its
-    // folded subtree — so unfold first, or you would be typing into a row that
-    // isn't on screen.
-    if (folded(id)) onExpand?.(id);
-    await commit();
-    // A bullet with children takes the new one as its FIRST CHILD, not as a
-    // sibling. A sibling is inserted directly after this row and therefore
-    // *above* the children, and since the tree is implied by depth those
-    // children would silently re-parent themselves under the empty bullet that
-    // just appeared — pressing Enter on a heading would steal everything under
-    // it. Every outliner does it this way for the same reason.
-    const nests = at !== -1 && hasChildren(items, at);
-    openDraft(id, Math.min((note?.depth ?? 0) + (nests ? 1 : 0), MAX_DEPTH));
+      const at = items.findIndex(n => n.id === id);
+      const note = items[at];
+
+      // Caret in front of everything: the text stays exactly where it is,
+      // keeping this row's id, its children and its place in the outline, and
+      // the new bullet is the EMPTY one — opened ABOVE, so nothing is left
+      // sitting below the text the way Enter at the end would leave it. It has
+      // to be this way round rather than moving the text down into a new
+      // bullet: an empty head cannot be saved, so writing one would delete this
+      // row and strand the new bullet on a dead id at the bottom of the list.
+      if (!splitting && tail.length > 0) {
+        // Committed unchanged rather than skipped. Where the caret is says
+        // nothing about whether the line has been edited since it was opened,
+        // and openDraft replaces `body` — an uncommitted edit left here would
+        // simply be dropped.
+        if (!(await commit())) return;
+        // Read the outline again rather than from `items`, which is the list
+        // as it was when the key was pressed and the write has been to the
+        // server and back since. A bullet that arrived in that window — a
+        // collaborator's, or one the write's own refetch carried — changes
+        // what "the row above" is, and anchoring to the old neighbour would
+        // put the new bullet above the wrong row, or hoist it to the very top
+        // of a list it is no longer the first row of.
+        const fresh = itemsRef.current;
+        const now = fresh.findIndex(n => n.id === id);
+        if (now === -1) return;
+        const before = now > 0 ? fresh[now - 1] : undefined;
+        // The row above in the OUTLINE is what the new bullet has to be
+        // anchored to in order to land immediately above this one, and it can
+        // be hidden inside a folded subtree — a draft anchored to a row that
+        // is not on screen falls back to the end of the list, so the new
+        // bullet would appear at the bottom. Unfold what is holding it closed:
+        // every ancestor of it, because folds nest and opening the outermost
+        // one alone can leave it hidden under an inner one.
+        let level = before?.depth ?? 0;
+        for (let i = now - 2; i >= 0 && level > 0; i--) {
+          if (fresh[i].depth < level) {
+            level = fresh[i].depth;
+            if (folded(fresh[i].id)) onExpand?.(fresh[i].id);
+          }
+        }
+        openDraft(before?.id ?? null, fresh[now].depth, { atTop: !before });
+        return;
+      }
+
+      // The new bullet is inserted directly after this one, which is inside its
+      // folded subtree — so unfold first, or you would be typing into a row that
+      // isn't on screen.
+      if (folded(id)) onExpand?.(id);
+      // Only once the head is safely written. A null here is a row that is no
+      // longer in the outline, and openDraft is about to replace `body` with
+      // the tail alone — so returning is what keeps the half in front of the
+      // caret on screen, where it can be tried again. A write that fails on the
+      // network is a different matter: onUpdate reports nothing back, so the
+      // row keeps its whole line while the tail moves on — duplicated rather
+      // than lost, which is the right way round for a failure to land.
+      if (!(await commit(head))) return;
+      // A bullet with children takes the new one as its FIRST CHILD, not as a
+      // sibling. A sibling is inserted directly after this row and therefore
+      // *above* the children, and since the tree is implied by depth those
+      // children would silently re-parent themselves under the bullet that just
+      // appeared — pressing Enter on a heading would steal everything under it.
+      // Every outliner does it this way for the same reason.
+      //
+      // The tail rides along into that first child, which is the same rule and
+      // not a second decision: half a sentence becoming a child of the other
+      // half reads oddly, but the alternative — leaving the tail on the row
+      // that owns the children and inserting the head above it — rewrites the
+      // row the caret is in and adds a second write to fail at.
+      const nests = at !== -1 && hasChildren(items, at);
+      openDraft(id, Math.min((note?.depth ?? 0) + (nests ? 1 : 0), MAX_DEPTH), { text: tail });
     } finally {
       movingFocus.current = false;
       busy.current = false;
@@ -642,7 +861,15 @@ export function NoteList({
       atOuterLevel={focusId === DRAFT
         ? (draft?.depth ?? 0) === 0
         : focusedIndex === -1 || !canOutdent(items, focusedIndex)}
-      onCancel={() => { movingFocus.current = true; setFocusId(null); setDraftState(null); setBody(''); movingFocus.current = false; }}
+      // Escape gives up the EDIT. A draft holding the tail of a split has no
+      // edit in it to give up: that text was on a saved row a keystroke ago,
+      // Enter cut it out, and this draft is the only copy left — throwing it
+      // away would delete text the user never typed, with the head already
+      // written. So that one commits instead, exactly as tapping away does.
+      onCancel={() => {
+        if (focusId === DRAFT && draft?.splitTail) { void blur(DRAFT); return; }
+        movingFocus.current = true; setFocusId(null); setDraftState(null); setBody(''); movingFocus.current = false;
+      }}
       places={places}
       autoFocus={autoFocus}
       ariaLabel={ariaLabel}
