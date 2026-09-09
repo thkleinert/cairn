@@ -174,9 +174,15 @@ function findCloser(part: string, from: number, ch: string, width: number): numb
   let i = from;
   while (i < part.length) {
     const c = part[i];
-    // A link is opaque to emphasis, exactly as it is to mentions: an asterisk
-    // inside a path must not be able to close a span opened outside it, or
-    // "2*3 and http://x.example/*a*" italicises across the link and splits it.
+    // A link's interior is opaque to emphasis, exactly as it is to mentions.
+    // Without this step-over, "2*3 and http://x.example/*a/b" closes the
+    // italic on the asterisk in the path, and the link is cut in half.
+    //
+    // The one marker that CAN still close is one sitting at a link's very
+    // end, because trimTrailingPunctuation has already handed it back — a
+    // trailing '*' is treated as the sentence's, the same way a trailing '.'
+    // always has been. That is what makes "*book www.example.com*" italic
+    // prose around a whole link rather than two literal asterisks.
     if (c === 'h' || c === 'H' || c === 'w' || c === 'W') {
       const url = urlAt(part, i);
       if (url) { i += url.length; continue; }
