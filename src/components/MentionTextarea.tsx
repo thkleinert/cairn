@@ -6,8 +6,15 @@ import type { Place } from '../types';
 interface Props {
   value: string;
   onChange: (value: string) => void;
-  /** Enter (without the suggestion popup open) — Shift+Enter still newlines. */
-  onSubmit?: () => void;
+  /**
+   * Enter (without the suggestion popup open) — Shift+Enter still newlines.
+   *
+   * Carries the caret offset, because in an outliner Enter SPLITS the line:
+   * what is in front of the caret stays where it is, what is behind it moves
+   * to the new bullet. A handler that is only told "Enter" has no choice but
+   * to assume the caret was at the end.
+   */
+  onSubmit?: (caret: number) => void;
   onBlur?: () => void;
   onCancel?: () => void;
   /**
@@ -155,7 +162,17 @@ export function MentionTextarea({
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && onSubmit) {
       e.preventDefault();
-      onSubmit();
+      // Read off the DOM rather than from the `caret` state above. That state
+      // is kept for the suggestion popup and is only refreshed on change,
+      // keyup and click, so it misses every other way a caret moves — dragging
+      // it with a long-press on iOS's spacebar being the one people actually
+      // use to get back into the middle of a line. Splitting on it would cut
+      // the text wherever the last keystroke happened to land.
+      //
+      // selectionStart, not selectionEnd: with a selection open the line is cut
+      // in FRONT of it, so the selected text travels on to the new bullet
+      // rather than being swallowed by a key that has no undo behind it.
+      onSubmit(e.currentTarget.selectionStart ?? value.length);
       return;
     }
     if (e.key === 'Escape' && onCancel) { e.preventDefault(); e.stopPropagation(); onCancel(); }
@@ -176,6 +193,13 @@ export function MentionTextarea({
         onChange={e => { onChange(e.target.value); setCaret(e.target.selectionStart ?? 0); }}
         onKeyUp={sync}
         onClick={sync}
+        // Fires on a selection the code made as well as one the user made,
+        // which the three above do not. NoteList moves the caret to the front
+        // of a bullet that has just been handed the tail of a split, and
+        // without this the popup would go on matching against the offset the
+        // caret was at before — Enter would then insert a suggestion instead
+        // of splitting the line again.
+        onSelect={sync}
         onKeyDown={onKeyDown}
         onBlur={onBlur}
       />
