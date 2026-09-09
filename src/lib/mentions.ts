@@ -109,13 +109,41 @@ function byMatchPriority(places: Place[]): Place[] {
  * The link starting exactly at `i`, or null. Shared by the two passes that
  * need to know where a URL ends: the one that emits it, and the emphasis
  * closer scan, which has to step over links rather than into them.
+ *
+ * The first-character test is the gate both callers used to repeat: a link can
+ * only begin 'h' or 'w', so the common position costs a char compare rather
+ * than a regex attempt.
  */
 function urlAt(text: string, i: number): string | null {
+  const c = text[i];
+  if (c !== 'h' && c !== 'H' && c !== 'w' && c !== 'W') return null;
   URL_PATTERN.lastIndex = i;
   const link = URL_PATTERN.exec(text);
   if (!link) return null;
   const url = trimTrailingPunctuation(link[0]);
   return URL_VALID.test(url) ? url : null;
+}
+
+/**
+ * Where the code span opened at `i` ends, or null if it never closes.
+ *
+ * Both the scanner and the closer scan need this, and they must agree to the
+ * character: the scan steps OVER a span that the scanner will later step INTO,
+ * so a disagreement means one of them sees a marker the other has already
+ * spoken for. Sharing the function is what makes that agreement structural
+ * rather than a promise in a comment.
+ */
+function codeEnd(part: string, i: number): number | null {
+  const end = part.indexOf('`', i + 1);
+  // `end > i + 1` rejects an empty span, so "``" is two backticks.
+  return end > i + 1 ? end : null;
+}
+
+/** Length of the run of `ch` starting at `i`. */
+function runLength(part: string, i: number, ch: string): number {
+  let run = 1;
+  while (part[i + run] === ch) run += 1;
+  return run;
 }
 
 /**
@@ -168,15 +196,32 @@ function withMark(marks: ReadonlySet<NoteMark>, mark: NoteMark): ReadonlySet<Not
   return next;
 }
 
+// Anything that is neither a letter, a digit nor whitespace. Used only by the
+// flanking rule below, where "is this a word character?" is the real question.
+const PUNCT = /[^\p{L}\p{N}\s]/u;
+
 /**
  * The emphasis this marker would open, or null if it opens nothing.
  *
- * Two rules, and both exist to keep ordinary prose ordinary:
+ * Three rules, and all of them exist to keep ordinary prose ordinary:
  *
  * A marker must be followed by something that isn't whitespace. That single
  * condition is what keeps "2 * 3 = 6 * 2" arithmetic rather than an italic
  * " 3 = 6 " — without it any two asterisks in a line find each other. It is
  * also why "the answer is *" at the end of a line stays an asterisk.
+ *
+ * A marker followed by PUNCTUATION only opens if what precedes it is
+ * whitespace, punctuation, or the start of the run being scanned — CommonMark's
+ * left-flanking rule, and it earns its keep. Without it a stray marker earlier
+ * in the line eats the emphasis the writer actually meant:
+ *
+ *     Bring adapters*, and *do not* forget      → "adapters, and *do not forget"
+ *     Save as IMG*.jpg then *print* it          → "IMG.jpg then *print it"
+ *
+ * In both the first asterisk pairs with the OPENING one of the real span, the
+ * emphasis lands on text nobody wrote, and a character the user typed goes
+ * missing. Requiring a boundary before a punctuation-facing marker says what a
+ * writer means: "adapters*," is the tail of a word, "*do" starts something.
  *
  * '~' only counts in pairs. A single one is a tilde, which appears in prose
  * as "~20 minutes" far more often than it appears as an intended marker.
@@ -184,8 +229,7 @@ function withMark(marks: ReadonlySet<NoteMark>, mark: NoteMark): ReadonlySet<Not
 function openerAt(part: string, i: number): { mark: NoteMark; width: number } | null {
   const c = part[i];
   if (c !== '*' && c !== '~') return null;
-  let run = 1;
-  while (part[i + run] === c) run += 1;
+  const run = runLength(part, i, c);
   // A run of three or more is "***both***": two characters open bold here and
   // the leftovers are handed back to the scanner, which reads them as the
   // italic opener they are.
@@ -193,6 +237,12 @@ function openerAt(part: string, i: number): { mark: NoteMark; width: number } | 
   if (run < width) return null;
   const next = part[i + width];
   if (next === undefined || /\s/.test(next)) return null;
+  if (PUNCT.test(next)) {
+    // undefined means the start of the span being scanned, which is a boundary
+    // — otherwise "***x***" could not open, its own second '*' being punctuation.
+    const prev = part[i - 1];
+    if (prev !== undefined && !/\s/.test(prev) && !PUNCT.test(prev)) return null;
+  }
   return { mark: c === '~' ? 'strike' : width === 2 ? 'bold' : 'italic', width };
 }
 
@@ -214,6 +264,16 @@ function openerAt(part: string, i: number): { mark: NoteMark; width: number } | 
  */
 function findCloser(part: string, from: number, ch: string, width: number): number | null {
   let fallback: number | null = null;
+  // End of the link most recently stepped over, so the markers this scan hands
+  // back off a link's tail can be read as CLOSERS but never as openers of
+  // anything — `walk` keeps those characters inside the URL, and only this
+  // scan ever sees them on their own. Without the distinction the two passes
+  // disagree about where a code span is: in "*hi www.x.com` there* ok `q` end*"
+  // this scan would take the link's trailing backtick for a code opener, skip
+  // to the next backtick further down the note, and step straight over the
+  // perfectly good closer after "there". Links cannot overlap, so one variable
+  // is enough for a scan that only ever moves forwards.
+  let linkTail = from;
   let i = from;
   while (i < part.length) {
     const c = part[i];
@@ -226,24 +286,23 @@ function findCloser(part: string, from: number, ch: string, width: number): numb
     // trailing '*' is treated as the sentence's, the same way a trailing '.'
     // always has been. That is what makes "*book www.example.com*" italic
     // prose around a whole link rather than two literal asterisks.
-    if (c === 'h' || c === 'H' || c === 'w' || c === 'W') {
-      const url = urlAt(part, i);
-      if (url) { i += skipPastLink(url); continue; }
+    const url = urlAt(part, i);
+    if (url) {
+      linkTail = i + url.length;
+      i += skipPastLink(url);
+      continue;
     }
     // A code span is opaque for the same reason, and this scan has to know it
     // before `walk` does: without the step-over, "*price `2*3` here*" closes
     // the italic on the asterisk between the backticks, and the code span the
     // user asked for is gone — its backticks render as literal characters and
-    // an emphasis run appears across a boundary nobody wrote. The bounds match
-    // walk's own code branch exactly, so the two always agree on where a span
-    // starts and ends.
-    if (c === '`') {
-      const end = part.indexOf('`', i + 1);
-      if (end > i + 1) { i = end + 1; continue; }
+    // an emphasis run appears across a boundary nobody wrote.
+    if (c === '`' && i >= linkTail) {
+      const end = codeEnd(part, i);
+      if (end !== null) { i = end + 1; continue; }
     }
     if (c !== ch) { i += 1; continue; }
-    let run = 1;
-    while (part[i + run] === ch) run += 1;
+    const run = runLength(part, i, ch);
     // `i > from` rejects an empty span, which is what makes "****" and "~~~~"
     // four and four characters of literal text rather than an empty <strong>.
     if (i > from && !/\s/.test(part[i - 1])) {
@@ -277,6 +336,10 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
   const walk = (part: string, marks: ReadonlySet<NoteMark>, depth: number) => {
     let buffer = '';
     let i = 0;
+    // Marker kinds ("*1", "**2", "~~2") already proven to have no partner
+    // anywhere in `part`. Scoped to this call, since a different `part` is a
+    // different question.
+    const hopeless = new Set<string>();
 
     const flush = () => {
       if (buffer) { push({ type: 'text', value: buffer }, marks); buffer = ''; }
@@ -290,21 +353,17 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
       // ordering "www.example.com/a*b*c" loses its middle to an <em> and stops
       // being one link. (Underscores would be the common case, which is why
       // _emphasis_ is not supported at all — see the note at the top.)
-      // Gated on the only two characters a link can start with, so the common
-      // case is a char compare rather than a regex attempt per position.
       const c = part[i];
-      if (c === 'h' || c === 'H' || c === 'w' || c === 'W') {
-        const url = urlAt(part, i);
-        if (url) {
-          flush();
-          push({
-            type: 'url',
-            value: url,
-            href: /^https?:\/\//i.test(url) ? url : `https://${url}`,
-          }, marks);
-          i += url.length;
-          continue;
-        }
+      const url = urlAt(part, i);
+      if (url) {
+        flush();
+        push({
+          type: 'url',
+          value: url,
+          href: /^https?:\/\//i.test(url) ? url : `https://${url}`,
+        }, marks);
+        i += url.length;
+        continue;
       }
 
       // Code is the one span that does not re-enter the scanner: its contents
@@ -312,8 +371,8 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
       // an example of a mention rather than a mention, and `**` is two
       // asterisks. That is the whole point of having it.
       if (c === '`') {
-        const close = part.indexOf('`', i + 1);
-        if (close > i + 1) {
+        const close = codeEnd(part, i);
+        if (close !== null) {
           flush();
           push({ type: 'text', value: part.slice(i + 1, close) }, withMark(marks, 'code'));
           i = close + 1;
@@ -323,12 +382,28 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
 
       const open = depth < MAX_DEPTH ? openerAt(part, i) : null;
       if (open) {
-        const close = findCloser(part, i + open.width, c, open.width);
-        if (close !== null) {
-          flush();
-          walk(part.slice(i + open.width, close), withMark(marks, open.mark), depth + 1);
-          i = close + open.width;
-          continue;
+        // Every failed search costs a walk to the end of the string, so a line
+        // dense in unpaired markers was quadratic: 'x' + '*y '.repeat(10000)
+        // took 3.8 seconds, and 40000 took a minute of blocked main thread.
+        // Bodies are unbounded text, the shared trip page renders bodies other
+        // people wrote, and NoteBody parses on every render — so this is worth
+        // not leaving to chance.
+        //
+        // One failure settles it for the rest of the string. A later opener of
+        // the same kind searches a SUFFIX of the range that just came back
+        // empty, and every test findCloser applies is positional — the run
+        // width, the character before — so a range with no closer in it cannot
+        // acquire one by being entered later.
+        const key = `${c}${open.width}`;
+        if (!hopeless.has(key)) {
+          const close = findCloser(part, i + open.width, c, open.width);
+          if (close !== null) {
+            flush();
+            walk(part.slice(i + open.width, close), withMark(marks, open.mark), depth + 1);
+            i = close + open.width;
+            continue;
+          }
+          hopeless.add(key);
         }
         // No partner: fall through and let the marker land in the buffer as
         // the character it is.
