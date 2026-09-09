@@ -248,8 +248,8 @@ they didn't opt into. Invites expire after 30 days and can be revoked while
 pending.
 
 Everything — places, tags, photos, reorderings — updates live for the whole
-group via Supabase Realtime, and reopening a backgrounded app catches up on
-whatever changed while its connection was gone.
+group via Supabase Realtime, and reopening a backgrounded app refetches the
+trip so it catches up on what the dropped connection missed.
 
 <br clear="left" />
 

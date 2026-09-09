@@ -79,46 +79,47 @@ export function useRefetchOnResume(
   // changed.
   const hiddenAtRef = useRef(0);
   const lastRefetchRef = useRef(0);
+  // A debt, kept separately from both, because the moment we LEARN there is a
+  // gap and the moment we can close it are often not the same one. Two ways to
+  // learn it: a foregrounding that owed a refetch and had no radio to do it
+  // with, and the network coming back at a moment this cannot act on. Without
+  // somewhere to write that down, a foreground outage followed by a pocketing
+  // shorter than the threshold loses both signals — the departure clock never
+  // saw the outage, and the `online` event that did was thrown away.
+  const owedRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return;
 
     const run = () => {
       hiddenAtRef.current = 0;
+      owedRef.current = false;
       lastRefetchRef.current = Date.now();
       refetchRef.current();
     };
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        // The EARLIEST unserviced departure, not the latest. A stamp survives
-        // a foregrounding only when that foregrounding owed a refetch and
-        // could not do it (no radio, below), and overwriting it there is how
-        // a long absence gets forgotten: away ten minutes, foregrounded with
-        // no signal, pocketed again for eight seconds — the ten minutes would
-        // become eight seconds and the next return would decide it had
-        // nothing to catch up on.
-        if (!hiddenAtRef.current) hiddenAtRef.current = Date.now();
+        hiddenAtRef.current = Date.now();
         return;
       }
-      // No recorded departure: this is the tab being revealed rather than the
-      // app coming back, and there is nothing to catch up on.
-      if (!hiddenAtRef.current) return;
-      if (Date.now() - hiddenAtRef.current < MIN_REFETCH_GAP_MS) {
-        hiddenAtRef.current = 0;
-        return;
-      }
+      // A departure of zero is the tab being revealed rather than the app
+      // coming back, and reads as no absence at all.
+      const awayLongEnough = hiddenAtRef.current !== 0
+        && Date.now() - hiddenAtRef.current >= MIN_REFETCH_GAP_MS;
+      hiddenAtRef.current = 0;
+      if (!awayLongEnough && !owedRef.current) return;
       // Foregrounded before the radio is back — the iOS PWA reliably wins that
       // race — or opened somewhere with no data at all. Every fetcher here
       // toasts its own failure and postgrest resolves rather than throws, so
-      // going ahead means four stacked red toasts and no retry. The departure
-      // stamp is deliberately left standing: the `online` handler below, or
-      // the next foregrounding, still owes this refetch.
+      // going ahead means four stacked red toasts and no retry. Carried
+      // forward instead: the `online` handler below, or the next
+      // foregrounding, still owes this.
       //
-      // Only the false answer is trusted. navigator.onLine says true for a
-      // captive portal with no route out, which is why this is a bail-out and
-      // not a precondition.
-      if (!navigator.onLine) return;
+      // Only the false answer is read. navigator.onLine says true for a
+      // captive portal with no route out, so this is a bail-out and not a
+      // precondition — a fetch that fails anyway is left to its own toast.
+      if (!navigator.onLine) { owedRef.current = true; return; }
       run();
     };
 
@@ -126,11 +127,19 @@ export function useRefetchOnResume(
     // a tunnel, a lift, a hotel dead zone with the screen still on. The socket
     // drops and reconnects, the changes in between are not replayed, and
     // without this the list stays silently stale until the app happens to be
-    // backgrounded for half a minute. Rate-limited like everything else — a
-    // weak signal flapping on a train fires this repeatedly.
+    // backgrounded for half a minute.
+    //
+    // Suppressed here means deferred, never dropped. Fetching straight away is
+    // wrong twice over — the app may not be on screen to fetch for, and a weak
+    // signal flapping on a train would fire this over and over — but both of
+    // those still mean events were missed, so the debt is recorded and the
+    // next foregrounding pays it.
     const onOnline = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (Date.now() - lastRefetchRef.current < MIN_REFETCH_GAP_MS) return;
+      if (document.visibilityState !== 'visible'
+        || Date.now() - lastRefetchRef.current < MIN_REFETCH_GAP_MS) {
+        owedRef.current = true;
+        return;
+      }
       run();
     };
 

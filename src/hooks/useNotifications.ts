@@ -27,6 +27,14 @@ export function useNotifications() {
   // The stale-response guard every other data hook carries, needed here for
   // the same reason useTrips needed one: a mount fetch and a resume fetch can
   // now overlap on a slow connection, and the last to RESOLVE must not win.
+  //
+  // Dismissing bumps it too, and here that is not theoretical the way it is on
+  // the trip list. The inbox stays on screen and is fully tappable while a
+  // resume fetch is in flight — foregrounding the app BECAUSE of the bell and
+  // tapping an item a moment later is the ordinary way this list gets used —
+  // and get_activity answers from before the dismissal committed. Without the
+  // bump the item reappears, which is exactly the "dismiss doesn't work"
+  // resurrection the note on dismissNotification is about.
   const seqRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -58,6 +66,7 @@ export function useNotifications() {
   // underlying activity row stays for other trip members.)
   const dismissNotification = async (id: string) => {
     const item = notifications.find(n => n.id === id);
+    seqRef.current++;
     setNotifications(prev => prev.filter(n => n.id !== id));
     const { error } = await supabase.rpc('dismiss_activity', { p_activity_id: id });
     if (error && item) {
@@ -72,6 +81,7 @@ export function useNotifications() {
   // Clear the whole list at once — the "Mark all read" button.
   const markAllRead = async () => {
     const before = notifications;
+    seqRef.current++;
     setNotifications([]);
     const { error } = await supabase.rpc('mark_activity_seen');
     if (error) {
