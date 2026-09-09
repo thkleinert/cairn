@@ -17,9 +17,11 @@ import type { Place } from '../types';
 // Inline emphasis — *italic*, **bold**, ~~strike~~, `code` — is stored the
 // same way, and inherits the same guarantee: an unmatched marker is not an
 // error, it is the character the user typed. "2 * 3 = 6" is arithmetic, a
-// lone asterisk is an asterisk, and "****" is four asterisks. Nothing here
-// can turn a note into something that no longer reads as what was typed, so
-// the textarea and the rendered row always agree about the text.
+// lone asterisk is an asterisk, and "****" is four asterisks. The precise
+// guarantee is that the only characters the renderer ever removes are markers
+// that found a partner — every other character of the note survives, in order,
+// so a malformed marker degrades to something visible rather than to silent
+// corruption or to text that has gone missing.
 //
 // Deliberately absent: _underscore_ emphasis, and every block-level construct
 // (#, -, >). Underscores are load-bearing inside URLs and identifiers —
@@ -60,12 +62,11 @@ const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s<>"']+/iy;
 const URL_VALID = /^(?:https?:\/\/[^\s<>"']+|www\.[^\s<>"'.]+\.[^\s<>"']+)$/i;
 
 // Sentence punctuation that follows a URL far more often than it ends one.
-// The emphasis markers are in here for the same reason, and they have to be:
-// URL_PATTERN takes everything that isn't whitespace, so in "*book
-// www.example.com*" the link swallows the closing '*', no closer is found, and
-// the whole span degrades to literal asterisks around a link. A URL that
-// genuinely ends in one of these characters is a price worth not paying for.
-const TRAILING = '.,;:!?*~`';
+const TRAILING = '.,;:!?';
+
+// The emphasis markers, which are deliberately NOT in TRAILING — see
+// skipPastLink, which is the one place that needs them trimmed.
+const MARKERS = '*~`';
 
 /**
  * Trim what a writer's sentence contributed rather than the URL.
@@ -117,7 +118,41 @@ function urlAt(text: string, i: number): string | null {
   return URL_VALID.test(url) ? url : null;
 }
 
+/**
+ * How far past a link the emphasis closer scan should jump.
+ *
+ * URL_PATTERN takes everything that isn't whitespace, so in
+ * "*book www.example.com*" the link match swallows the closing marker, no
+ * closer is found, and the span degrades to two literal asterisks around a
+ * link. Stopping short of a trailing marker is what lets that closer be seen.
+ *
+ * The trim lives here rather than in trimTrailingPunctuation on purpose. A
+ * note with no emphasis anywhere in it must go on rendering "www.example.com*"
+ * exactly as it always has, marker and all: there is nothing for that marker
+ * to pair with, and a silently shortened href is a broken link wearing a
+ * working link's label — the pill only ever shows the host, so the user has no
+ * way to see that it now points somewhere else.
+ *
+ * Cannot return 0, because a URL always begins with 'h' or 'w'.
+ */
+function skipPastLink(url: string): number {
+  let end = url.length;
+  while (MARKERS.includes(url[end - 1])) end -= 1;
+  return end;
+}
+
 const EMPTY_MARKS: ReadonlySet<NoteMark> = new Set();
+
+// Emphasis is parsed by re-entering the scanner, so a note is only ever as
+// deep as its markers nest — three or four in anything a person writes. The
+// cap exists for what a person PASTES: `parseNoteBody('*'.repeat(12000) + 'x'
+// + '*'.repeat(12000))` overflows the stack without it, and since NoteBody
+// renders inside the React tree, one such note takes the page down for every
+// viewer of the trip rather than only its author. Past the cap markers simply
+// stop being markers, which lands on the same answer everything else here
+// gives when a marker cannot be honoured: it stays the character that was
+// typed.
+const MAX_DEPTH = 8;
 
 function withMark(marks: ReadonlySet<NoteMark>, mark: NoteMark): ReadonlySet<NoteMark> {
   const next = new Set(marks);
@@ -185,7 +220,18 @@ function findCloser(part: string, from: number, ch: string, width: number): numb
     // prose around a whole link rather than two literal asterisks.
     if (c === 'h' || c === 'H' || c === 'w' || c === 'W') {
       const url = urlAt(part, i);
-      if (url) { i += url.length; continue; }
+      if (url) { i += skipPastLink(url); continue; }
+    }
+    // A code span is opaque for the same reason, and this scan has to know it
+    // before `walk` does: without the step-over, "*price `2*3` here*" closes
+    // the italic on the asterisk between the backticks, and the code span the
+    // user asked for is gone — its backticks render as literal characters and
+    // an emphasis run appears across a boundary nobody wrote. The bounds match
+    // walk's own code branch exactly, so the two always agree on where a span
+    // starts and ends.
+    if (c === '`') {
+      const end = part.indexOf('`', i + 1);
+      if (end > i + 1) { i = end + 1; continue; }
     }
     if (c !== ch) { i += 1; continue; }
     let run = 1;
@@ -220,7 +266,7 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
   // a bold run is parsed for mentions and links like any other text. What
   // comes back out is still one flat list — the recursion only accumulates
   // marks, it never nests segments.
-  const walk = (part: string, marks: ReadonlySet<NoteMark>) => {
+  const walk = (part: string, marks: ReadonlySet<NoteMark>, depth: number) => {
     let buffer = '';
     let i = 0;
 
@@ -267,12 +313,12 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
         }
       }
 
-      const open = openerAt(part, i);
+      const open = depth < MAX_DEPTH ? openerAt(part, i) : null;
       if (open) {
         const close = findCloser(part, i + open.width, c, open.width);
         if (close !== null) {
           flush();
-          walk(part.slice(i + open.width, close), withMark(marks, open.mark));
+          walk(part.slice(i + open.width, close), withMark(marks, open.mark), depth + 1);
           i = close + open.width;
           continue;
         }
@@ -298,7 +344,7 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
     flush();
   };
 
-  walk(text, EMPTY_MARKS);
+  walk(text, EMPTY_MARKS, 0);
   return segments;
 }
 
