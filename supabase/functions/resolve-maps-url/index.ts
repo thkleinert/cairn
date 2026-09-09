@@ -459,9 +459,6 @@ Deno.serve(async (req: Request) => {
 
   const result = parseIdentity(target);
 
-  // A Maps *directions* or *search* URL, or a layout we don't read. Saying so
-  // is better than returning four nulls the client would have to interpret as
-  // failure anyway.
   // Two failures with different remedies: a route or bare map view names
   // nothing, while a link that named a place we couldn't locate is a
   // different conversation.
