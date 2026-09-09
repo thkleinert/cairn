@@ -4,11 +4,11 @@ import { useEffect, useRef } from 'react';
  * How long the app has to have been away before returning to it is worth a
  * round trip. Thirty seconds.
  *
- * The cost being bounded here is a burst, not a request: five hooks use this,
- * so every foregrounding is five queries. Flicking out to Maps to copy an
- * address and straight back — which on iOS is a couple of taps and happens
- * several times while planning a single stop — would otherwise fire that burst
- * each way.
+ * The cost being bounded here is a burst, not a request: an open trip has four
+ * of these mounted at once (places, tags, notes, visits), so every
+ * foregrounding is four queries. Flicking out to Maps to copy an address and
+ * straight back — which on iOS is a couple of taps and happens several times
+ * while planning a single stop — would otherwise fire that burst each way.
  *
  * Thirty rather than a number derived from when iOS actually suspends a
  * backgrounded PWA, because that is undocumented and varies with memory
