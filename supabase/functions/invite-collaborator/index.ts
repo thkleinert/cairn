@@ -21,9 +21,11 @@
 //   status 'existing' — the email already has an account; the link is the
 //                       plain /invite/<token>, which they open while signed in.
 //
-// verify_jwt is on (../../config.toml): only signed-in users can call this,
-// and the trip-owner check is enforced by create_trip_invite itself, which
-// runs under the *caller's* JWT — no authorization logic is duplicated here.
+// verify_jwt is on (../../config.toml), which verifies the JWT's signature
+// and no more — the publishable anon key is such a JWT, so it is not by
+// itself what keeps strangers out. The trip-owner check is: create_trip_invite
+// runs under the *caller's* JWT and refuses anyone who isn't the owner, so no
+// authorization logic is duplicated here.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 

@@ -11,8 +11,11 @@
 // first segment — decides whether the write is allowed. No service role, so a
 // forged `path` can't land anywhere the caller couldn't already write.
 //
-// verify_jwt stays enabled for this function (see ../../config.toml): only
-// signed-in users can invoke it at all.
+// verify_jwt stays enabled (see ../../config.toml), but note what it does and
+// does not buy: it verifies the JWT's signature, and the publishable anon key
+// is itself such a JWT, shipped in every client bundle — so on its own it
+// stops nobody. What actually authorizes this call is the paragraph above:
+// the upload runs under the caller's own JWT, and storage RLS refuses anon.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
