@@ -14,20 +14,15 @@ import type { Place } from '../types';
 // name both resolve to the first. Both are visible to the user rather than
 // silent corruption, which is the right way round for a notes field.
 //
-// Inline emphasis — *italic*, **bold**, ~~strike~~, `code` — is stored the
-// same way, and inherits the same guarantee: an unmatched marker is not an
-// error, it is the character the user typed. "2 * 3 = 6" is arithmetic, a
-// lone asterisk is an asterisk, and "****" is four asterisks. The precise
-// guarantee is that the only characters the renderer ever removes are markers
-// that found a partner — every other character of the note survives, in order,
-// so a malformed marker degrades to something visible rather than to silent
-// corruption or to text that has gone missing.
+// Inline emphasis — *italic*, **bold**, ~~strike~~, `code` — inherits the same
+// guarantee: the only characters ever removed are markers that found a
+// partner. Everything else survives in order, so "2 * 3 = 6" is arithmetic and
+// "****" is four asterisks.
 //
-// Deliberately absent: _underscore_ emphasis, and every block-level construct
-// (#, -, >). Underscores are load-bearing inside URLs and identifiers —
-// "example.com/a_b_c", "snake_case" — and the notes ARE an outline, with the
-// row's own depth carrying the structure, so a heading or a list marker inside
-// one would be a second, contradictory hierarchy.
+// Deliberately absent: _underscore_ emphasis, load-bearing inside URLs and
+// identifiers ("example.com/a_b_c"), and every block construct (#, -, >) —
+// the notes ARE an outline, so a heading inside one is a second, contradictory
+// hierarchy.
 
 /** Emphasis in force over a segment. */
 export type NoteMark = 'bold' | 'italic' | 'strike' | 'code';
@@ -41,12 +36,10 @@ export interface NoteSegment {
   /**
    * Emphasis wrapping this run, omitted when there is none.
    *
-   * Flat rather than a tree, and a set rather than a single value, because
-   * emphasis crosses the other two types instead of containing them: a bold
-   * span holds text and @mentions and links alike, and "***x***" is one run
-   * wearing two marks. A tree would make every consumer walk children to find
-   * a mention; a mark set leaves the segment list exactly as flat as it was
-   * and lets the renderer wrap whatever it was going to draw anyway.
+   * Flat, because emphasis CROSSES the other types rather than containing
+   * them: a bold span holds text, mentions and links alike, and "***x***" is
+   * one run wearing two marks. A tree would make every consumer walk children
+   * to find a mention.
    */
   marks?: ReadonlySet<NoteMark>;
 }
@@ -106,13 +99,10 @@ function byMatchPriority(places: Place[]): Place[] {
 }
 
 /**
- * The link starting exactly at `i`, or null. Shared by the two passes that
- * need to know where a URL ends: the one that emits it, and the emphasis
- * closer scan, which has to step over links rather than into them.
- *
- * The first-character test is the gate both callers used to repeat: a link can
- * only begin 'h' or 'w', so the common position costs a char compare rather
- * than a regex attempt.
+ * The link starting exactly at `i`, or null. Shared by the pass that emits
+ * links and the emphasis closer scan, which steps over them rather than into
+ * them. The first-character gate keeps the common position at a char compare
+ * rather than a regex attempt.
  */
 function urlAt(text: string, i: number): string | null {
   const c = text[i];
@@ -127,11 +117,9 @@ function urlAt(text: string, i: number): string | null {
 /**
  * Where the code span opened at `i` ends, or null if it never closes.
  *
- * Both the scanner and the closer scan need this, and they must agree to the
- * character: the scan steps OVER a span that the scanner will later step INTO,
- * so a disagreement means one of them sees a marker the other has already
- * spoken for. Sharing the function is what makes that agreement structural
- * rather than a promise in a comment.
+ * The scanner and the closer scan must agree to the character — one steps OVER
+ * a span the other steps INTO — so they share this rather than each having a
+ * version that could drift.
  */
 function codeEnd(part: string, i: number): number | null {
   const end = part.indexOf('`', i + 1);
@@ -142,13 +130,10 @@ function codeEnd(part: string, i: number): number | null {
 /**
  * Length of the run of `ch` starting at `i`, counting no further than `max`.
  *
- * The cap is what keeps a long run of one marker from being quadratic.
- * openerAt is asked at every position of a run and only ever needs to know
- * "one, or two or more" — so without a cap, 80,000 asterisks measured the same
- * run 80,000 times and took 23 seconds, and 200,000 tildes took over two
- * minutes of blocked main thread on a note anyone can paste. findCloser needs
- * the true length and asks for it, but it consumes the whole run each time it
- * measures one, so there it is linear.
+ * The cap keeps a long run from being quadratic: openerAt is asked at every
+ * position and only needs "one, or two or more", and without it 80,000
+ * asterisks took 23 seconds of blocked main thread. findCloser needs the true
+ * length but consumes the whole run each time, so it stays linear.
  */
 function runLength(part: string, i: number, ch: string, max = Infinity): number {
   let run = 1;
@@ -159,25 +144,14 @@ function runLength(part: string, i: number, ch: string, max = Infinity): number 
 /**
  * How far past a link the emphasis closer scan should jump.
  *
- * URL_PATTERN takes everything that isn't whitespace, so in
- * "*book www.example.com*" the link match swallows the closing marker, no
- * closer is found, and the span degrades to two literal asterisks around a
- * link. Stopping short of a trailing marker is what lets that closer be seen.
+ * URL_PATTERN takes everything non-whitespace, so in "*book www.example.com*"
+ * the link swallows the closing marker and the span degrades to two literal
+ * asterisks. Stopping short of a trailing marker lets that closer be seen.
  *
- * The trim lives here rather than in trimTrailingPunctuation on purpose. A
- * note with no emphasis anywhere in it must go on rendering "www.example.com*"
- * exactly as it always has, marker and all: there is nothing for that marker
- * to pair with, and a silently shortened href is a broken link wearing a
- * working link's label — the pill only ever shows the host, so the user has no
- * way to see that it now points somewhere else.
- *
- * What this does NOT do is stop a link from absorbing a whole span that abuts
- * it with no space: "www.example.com*bold*" is one link with a garbled href,
- * exactly as it was before emphasis existed, because URL_PATTERN takes every
- * non-space character and nothing here second-guesses it. Left alone on
- * purpose — nobody writes a link and an emphasis run with no space between
- * them, and the case that people DO write, a link wrapped in emphasis, is the
- * one this function exists to make work.
+ * Deliberately NOT in trimTrailingPunctuation: a note with no emphasis must go
+ * on rendering "www.example.com*" with its marker, since a silently shortened
+ * href is a broken link wearing a working link's label — the pill shows only
+ * the host, so nothing on screen reveals the change.
  *
  * Cannot return 0, because a URL always begins with 'h' or 'w'.
  */
@@ -189,15 +163,11 @@ function skipPastLink(url: string): number {
 
 const EMPTY_MARKS: ReadonlySet<NoteMark> = new Set();
 
-// Emphasis is parsed by re-entering the scanner, so a note is only ever as
-// deep as its markers nest — three or four in anything a person writes. The
-// cap exists for what a person PASTES: `parseNoteBody('*'.repeat(12000) + 'x'
-// + '*'.repeat(12000))` overflows the stack without it, and since NoteBody
-// renders inside the React tree, one such note takes the page down for every
-// viewer of the trip rather than only its author. Past the cap markers simply
-// stop being markers, which lands on the same answer everything else here
-// gives when a marker cannot be honoured: it stays the character that was
-// typed.
+// Emphasis re-enters the scanner, so depth follows how far markers nest —
+// three or four in anything written by hand. The cap is for what gets PASTED:
+// 12,000 nested asterisks overflow the stack, and NoteBody renders inside the
+// React tree, so one such note takes the page down for every viewer of the
+// trip. Past the cap a marker stays the character that was typed.
 const MAX_DEPTH = 8;
 
 function withMark(marks: ReadonlySet<NoteMark>, mark: NoteMark): ReadonlySet<NoteMark> {
@@ -220,19 +190,14 @@ const DIGIT = /\p{N}/u;
  * asterisk the user typed disappears, and the text between them is emphasised
  * for no reason anyone can see.
  *
- * Both sides are required, so "*5*" still italicises a number and "a *2* b"
- * is untouched. Both ends of a note count as "not a digit", which is why the
- * check reads the characters rather than testing for undefined.
+ * Both sides required, so "*5*" still italicises a number.
  *
- * This is deliberately narrower than "not inside a word". An earlier version
- * of this file rejected EVERY intraword marker, which is tidy in English and
- * removes inline emphasis outright from any script written without spaces:
- * "京都で*おすすめ*のスポット" and "在东京*必去*的地方" lost their emphasis
- * entirely, since in Japanese and Chinese every mid-sentence marker has a
- * letter before it. A travel planner's notes are exactly where someone writes
- * in the local language. Multiplication was the real hazard; letters were
- * collateral, and this is why CommonMark confines its own version of the rule
- * to punctuation.
+ * Deliberately narrower than "not inside a word". Rejecting every intraword
+ * marker is tidy in English and removes emphasis outright from any script
+ * written without spaces — "京都で*おすすめ*のスポット" lost it entirely, in
+ * an app whose notes are exactly where someone writes in the local language.
+ * Multiplication was the hazard; letters were collateral, which is why
+ * CommonMark confines its own rule to punctuation.
  */
 function digitFlanked(before: string | undefined, after: string | undefined): boolean {
   return before !== undefined && after !== undefined
@@ -242,34 +207,24 @@ function digitFlanked(before: string | undefined, after: string | undefined): bo
 /**
  * The emphasis this marker would open, or null if it opens nothing.
  *
- * Four rules, and all of them exist to keep ordinary prose ordinary:
+ * Four rules, all of them keeping ordinary prose ordinary:
  *
- * A marker must be followed by something that isn't whitespace. That single
- * condition is what keeps "2 * 3 = 6 * 2" arithmetic rather than an italic
- * " 3 = 6 " — without it any two asterisks in a line find each other. It is
- * also why "the answer is *" at the end of a line stays an asterisk.
+ * Must be followed by non-whitespace — that alone keeps "2 * 3 = 6 * 2"
+ * arithmetic rather than an italic " 3 = 6 ".
  *
- * A marker followed by PUNCTUATION only opens if what precedes it is
- * whitespace, punctuation, or the start of the span being scanned —
- * CommonMark's left-flanking rule, and it earns its keep. Without it a stray
- * marker earlier in the line eats the emphasis the writer actually meant:
+ * A marker facing PUNCTUATION only opens after whitespace, punctuation or the
+ * start of the span (CommonMark's left-flanking rule). Without it a stray
+ * marker eats the emphasis actually meant:
  *
  *     Bring adapters*, and *do not* forget  → "adapters, and *do not forget"
  *     Save as IMG*.jpg then *print* it      → "IMG.jpg then *print it"
  *
- * In both, the first asterisk pairs with the OPENING one of the real span, the
- * emphasis lands on text nobody wrote, and a character the user typed goes
- * missing. Requiring a boundary before a punctuation-facing marker says what a
- * writer means: "adapters*," is the tail of a word, "*do" starts something.
+ * Digits on both sides never open — see digitFlanked. findCloser applies the
+ * identical test, or the bug swaps roles and a multiplication CLOSES a stray
+ * opener.
  *
- * A marker with digits on both sides never opens — see digitFlanked. That
- * closes the same hole for arithmetic, which reaches it through the digit door
- * rather than the punctuation one. findCloser applies the identical test, or
- * the bug simply swaps roles: "Take *lots of photos, room is 3*4 m" would let
- * a multiplication CLOSE a stray opener.
- *
- * '~' only counts in pairs. A single one is a tilde, which appears in prose
- * as "~20 minutes" far more often than it appears as an intended marker.
+ * '~' counts only in pairs: a single one is "~20 minutes" far more often than
+ * it is a marker.
  */
 function openerAt(part: string, i: number): { mark: NoteMark; width: number } | null {
   const c = part[i];
@@ -300,63 +255,47 @@ function openerAt(part: string, i: number): { mark: NoteMark; width: number } | 
  * The mirror of the opener rule applies: a closer may not have whitespace
  * before it, so "*a* and * b" has one italic and one asterisk.
  *
- * Runs are measured rather than searched for character by character, because
- * a bare indexOf cannot tell "**" apart from "*". Scanning "*a **b** c*" for
- * the italic's partner has to walk past both halves of the bold and land on
- * the final asterisk; scanning "***x***" for the bold's partner finds no run
- * of exactly two and has to take the last two characters of the run of three,
- * leaving the odd one to close the italic inside it. Hence: an exact-width run
- * wins outright, and an over-long run is remembered as a fallback and consumed
- * from its END, since the marks that close last are the ones that opened first.
+ * Runs are measured, not searched character by character, since indexOf
+ * cannot tell "**" from "*". An exact-width run wins outright; an over-long
+ * one is a fallback consumed from its END, because the marks closing last are
+ * the ones that opened first — which is how "***x***" gives its bold the last
+ * two characters and leaves the odd one to the italic inside.
  */
 function findCloser(part: string, from: number, ch: string, width: number): number | null {
   let fallback: number | null = null;
-  // End of the link most recently stepped over, so the markers this scan hands
-  // back off a link's tail can be read as CLOSERS but never as openers of
-  // anything — `walk` keeps those characters inside the URL, and only this
-  // scan ever sees them on their own. Without the distinction the two passes
-  // disagree about where a code span is: in "*hi www.x.com` there* ok `q` end*"
-  // this scan would take the link's trailing backtick for a code opener, skip
-  // to the next backtick further down the note, and step straight over the
-  // perfectly good closer after "there". Links cannot overlap, so one variable
-  // is enough for a scan that only ever moves forwards.
+  // End of the link most recently stepped over. Markers handed back off a
+  // link's tail may CLOSE but never open: without the distinction, in
+  // "*hi www.x.com` there* ok `q` end*" this scan takes the link's trailing
+  // backtick for a code opener and steps over the good closer after "there".
+  // Links cannot overlap, so one variable suffices for a forward-only scan.
   let linkTail = from;
   let i = from;
   while (i < part.length) {
     const c = part[i];
-    // A link's interior is opaque to emphasis, exactly as it is to mentions.
-    // Without this step-over, "2*3 and http://x.example/*a/b" closes the
-    // italic on the asterisk in the path, and the link is cut in half.
-    //
-    // The one marker that CAN still close is one sitting at a link's very
-    // end, because trimTrailingPunctuation has already handed it back — a
-    // trailing '*' is treated as the sentence's, the same way a trailing '.'
-    // always has been. That is what makes "*book www.example.com*" italic
-    // prose around a whole link rather than two literal asterisks.
+    // A link's interior is opaque to emphasis, as it is to mentions: without
+    // this, "2*3 and http://x.example/*a/b" closes the italic on the asterisk
+    // in the path and cuts the link in half. A marker at a link's very END
+    // still closes, which is what makes "*book www.example.com*" italic prose
+    // around a whole link.
     const url = urlAt(part, i);
     if (url) {
       linkTail = i + url.length;
       i += skipPastLink(url);
       continue;
     }
-    // A code span is opaque for the same reason, and this scan has to know it
-    // before `walk` does: without the step-over, "*price `2*3` here*" closes
-    // the italic on the asterisk between the backticks, and the code span the
-    // user asked for is gone — its backticks render as literal characters and
-    // an emphasis run appears across a boundary nobody wrote.
+    // A code span is opaque for the same reason, and this scan must know it
+    // before `walk` does: otherwise "*price `2*3` here*" closes the italic
+    // inside the backticks and the code span is gone.
     if (c === '`' && i >= linkTail) {
       const end = codeEnd(part, i);
       if (end !== null) { i = end + 1; continue; }
     }
     if (c !== ch) { i += 1; continue; }
     const run = runLength(part, i, ch);
-    // `i > from` rejects an empty span, which is what makes "****" and "~~~~"
-    // four and four characters of literal text rather than an empty <strong>.
-    //
-    // The digit test is openerAt's, mirrored. Without it the arithmetic bug
-    // survives with the roles swapped — "Take *lots of photos, room is 3*4 m"
-    // lets the multiplication CLOSE the stray opener, deleting an asterisk and
-    // italicising twenty-five characters nobody asked for.
+    // `i > from` rejects an empty span, so "****" is four literal characters
+    // rather than an empty <strong>. The digit test is openerAt's, mirrored —
+    // without it "Take *lots of photos, room is 3*4 m" lets the multiplication
+    // close the stray opener.
     if (i > from && !/\s/.test(part[i - 1]) && !digitFlanked(part[i - 1], part[i + run])) {
       if (run === width) return i;
       if (run > width && fallback === null) fallback = i + run - width;
@@ -398,13 +337,10 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
     };
 
     while (i < part.length) {
-      // Links are tested first so an '@' inside one (a userinfo prefix, a query
-      // parameter) can't split the URL in half by starting a mention mid-link.
-      // Emphasis is tested after this branch for the identical reason, and the
-      // hazard is worse there because URLs are full of markers: without this
-      // ordering "www.example.com/a*b*c" loses its middle to an <em> and stops
-      // being one link. (Underscores would be the common case, which is why
-      // _emphasis_ is not supported at all — see the note at the top.)
+      // Links first, so an '@' inside one cannot split it by starting a
+      // mention mid-link. Emphasis comes after for the same reason, and the
+      // hazard is worse — URLs are full of markers, and without this ordering
+      // "www.example.com/a*b*c" loses its middle to an <em>.
       const c = part[i];
       const url = urlAt(part, i);
       if (url) {
@@ -434,18 +370,14 @@ export function parseNoteBody(text: string, places: Place[]): NoteSegment[] {
 
       const open = depth < MAX_DEPTH ? openerAt(part, i) : null;
       if (open) {
-        // Every failed search costs a walk to the end of the string, so a line
-        // dense in unpaired markers was quadratic: 'x' + '*y '.repeat(10000)
-        // took 3.8 seconds, and 40000 took a minute of blocked main thread.
-        // Bodies are unbounded text, the shared trip page renders bodies other
-        // people wrote, and NoteBody parses on every render — so this is worth
-        // not leaving to chance.
+        // Every failed search walks to the end of the string, so a line dense
+        // in unpaired markers was quadratic — 'x' + '*y '.repeat(10000) took
+        // 3.8 seconds, on bodies other people wrote and NoteBody re-parses on
+        // every render.
         //
-        // One failure settles it for the rest of the string. A later opener of
-        // the same kind searches a SUFFIX of the range that just came back
-        // empty, and every test findCloser applies is positional — the run
-        // width, the character before — so a range with no closer in it cannot
-        // acquire one by being entered later.
+        // One failure settles the rest: a later opener of the same kind
+        // searches a SUFFIX of the range that just came back empty, and every
+        // test findCloser applies is positional.
         const key = `${c}${open.width}`;
         if (!hopeless.has(key)) {
           const close = findCloser(part, i + open.width, c, open.width);

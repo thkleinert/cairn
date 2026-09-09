@@ -20,17 +20,14 @@ interface Draft {
   afterId: string | null;
   depth: number;
   /**
-   * Goes in FRONT of everything instead, which `afterId` cannot say — null
-   * there already means "at the end". The one thing that needs it is Enter
-   * pressed at the start of the first bullet: the new bullet belongs above a
-   * row that has nothing above it.
+   * In FRONT of everything, which `afterId` cannot say — null there already
+   * means "at the end". Needed only by Enter at the start of the first bullet.
    */
   atTop?: boolean;
   /**
-   * Opened holding the tail of a bullet Enter has just cut in half. That text
-   * is not something typed into this draft — it was saved a keystroke ago and
-   * this is now the only copy of it, which changes what the caret and Escape
-   * do with it.
+   * Holds the tail of a bullet Enter has just cut in half. Not text typed into
+   * this draft — this is now its only copy, which changes what the caret and
+   * Escape do with it.
    */
   splitTail?: boolean;
 }
@@ -236,22 +233,15 @@ export function NoteList({
    * Where the caret goes when the editor next opens, for the times the end is
    * the wrong place.
    *
-   * autoFocus lands at the END on purpose: a bullet you open by pointing at it
-   * is one you mean to carry on writing. Enter's two moves want otherwise. The
-   * tail of a split opens with the caret in FRONT of text the user has already
-   * written, which is where they cut it; and taking that split back with
-   * Backspace puts the caret at the join, where their finger was — landing at
-   * the end of the rejoined line would mean the next Backspace eating the last
-   * character of the tail instead of the one before the cut.
+   * autoFocus lands at the END, which is right for a bullet opened by pointing
+   * at it. Enter's two moves want otherwise: a split's tail opens with the
+   * caret in FRONT of text already written, and undoing that split puts it at
+   * the join, or the next Backspace eats the wrong character.
    *
-   * A state and an effect rather than a frame callback: React runs a child's
-   * effects before its parent's, so this is ordered AFTER the autoFocus it
-   * corrects, whereas a requestAnimationFrame only usually is — Enter awaits a
-   * write first, so the re-render is scheduled as a task and a frame that got
-   * in ahead of it would move the caret in the textarea on its way out.
-   * Cleared once applied, so that a second bullet asking for the same offset
-   * still gets it, and so that Tabbing a level in or out afterwards does not
-   * yank the caret back out of the middle of a word.
+   * An effect rather than a frame callback, because React runs a child's
+   * effects before its parent's — so this is reliably ordered after the
+   * autoFocus it corrects, where a rAF only usually is. Cleared once applied,
+   * so Tabbing afterwards does not yank the caret out of a word.
    */
   const [caretOnOpen, setCaretOnOpen] = useState<number | null>(null);
   useEffect(() => {
@@ -445,24 +435,20 @@ export function NoteList({
         toast('Could not add note');
         return null;
       }
-      // A bullet meant for the very top arrives at the end of its scope
-      // instead: addNote can only place one AFTER another, and there is
-      // nothing above the first row to name. So the order is written straight
-      // after, and built from the list as it stands NOW rather than from this
-      // closure's copy — a collaborator's bullet that landed during the
-      // insert's round trip would otherwise be missing from it, and
-      // reorder_trip_notes renumbers only the ids it is handed, leaving that
-      // row on a position the rest of the scope has just been renumbered past.
+      // addNote can only place a bullet AFTER another, and nothing sits above
+      // the first row to name — so a top bullet lands at the end and the order
+      // is written straight after. Built from the list as it stands NOW, not
+      // this closure's copy: reorder_trip_notes renumbers only the ids handed
+      // to it, so a collaborator's bullet that arrived mid-insert would be
+      // left on a position the rest of the scope has renumbered past.
       if (created && draft.atTop) {
         try {
           await onReorder([created.id, ...itemsRef.current.map(n => n.id).filter(nid => nid !== created.id)]);
         } catch {
-          // Deliberately not the insert's catch above, and deliberately not
-          // reported back either. A failed hoist is a bullet that saved and
-          // landed at the end of its scope instead of the front: there is
-          // nothing to undo, nothing to retry, and clearing the committed-latch
-          // for it would let the next blur write the same text a second time.
-          // The next bullet opens after it, which is still where it sits.
+          // Not the insert's catch, and not reported: a failed hoist is a
+          // bullet that saved but landed at the end of its scope. Nothing to
+          // undo or retry, and clearing the committed-latch would let the next
+          // blur write the same text twice.
           //
           // The catch is only for a rejection: reorderNotes answers a failed
           // write with `false`, having toasted and refetched it itself, but the
