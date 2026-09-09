@@ -235,9 +235,8 @@ const PUNCT = /[^\p{L}\p{N}\s]/u;
  * emphasise the last two — intraword '*' is allowed there. Dimensions and
  * print sizes written "3*4" are ordinary in a trip note, and this module
  * promises more than CommonMark does about a note reading as it was typed, so
- * the rule applies whatever follows. What it costs is "a**b**c", which now
- * stays literal instead of bolding the b; nobody writes that, and it fails
- * safe when they do.
+ * the rule applies whatever follows. What it costs is "a**b**c", which no
+ * longer bolds the b; nobody writes that, and it fails safe when they do.
  *
  * The preceding character is read as it stands rather than looked past a run
  * of markers, which is why "a**b**c" degrades to an italic "b*" instead of to
