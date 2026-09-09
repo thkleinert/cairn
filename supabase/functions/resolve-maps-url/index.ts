@@ -41,6 +41,14 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// A host that is only ever maps, whatever its path. The share sheet's own
+// chain passes through "maps.google.com?q=…" with no path at all, so the
+// /maps requirement the other Google hosts carry would turn away a URL
+// Google itself produced.
+function isMapsHost(hostname: string): boolean {
+  return /^maps\.google\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(hostname.toLowerCase());
+}
+
 // What the iOS and Android share sheets hand out.
 function isShortener(hostname: string): boolean {
   const h = hostname.toLowerCase();
@@ -77,6 +85,12 @@ const TOTAL_TIMEOUT_MS = 10000;
 async function expand(startUrl: URL): Promise<URL | null> {
   let current = startUrl;
   const deadline = Date.now() + TOTAL_TIMEOUT_MS;
+  // Where we have already been. A consent gate's `continue` points back at
+  // the page it is gating, so unwrapping it hands back a URL we just fetched
+  // — and fetching it again only earns the same gate. Left unchecked that
+  // burns every hop and reports "could not open" for a link that was fully
+  // resolved two hops ago.
+  const seen = new Set<string>([startUrl.href]);
   for (let hop = 0; hop < MAX_HOPS; hop++) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return null;
@@ -141,6 +155,12 @@ async function expand(startUrl: URL): Promise<URL | null> {
     // page we cancel unread, and if it fails the catch above would discard an
     // answer that was already complete and call it a 502.
     if (!needsExpansion(next)) return next;
+
+    // Been here before — the consent gate bouncing us back to the page it
+    // gates. That page is the destination; Google is asking for cookies we
+    // have no way to give it, not sending us somewhere new.
+    if (seen.has(next.href)) return next;
+    seen.add(next.href);
 
     current = next;
   }
@@ -220,9 +240,19 @@ function findPlaceId(url: URL): string | null {
  */
 const COORD_PAIR = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/;
 
+// `?q=48.21,16.36` and `?ll=…`, the documented coordinate forms.
+function findParamCoords(url: URL): RegExpMatchArray | null {
+  for (const key of ['q', 'll']) {
+    const hit = url.searchParams.get(key)?.match(COORD_PAIR);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function findCoords(url: URL): { latitude: number; longitude: number; fromCamera: boolean } | null {
   const blob = decodedBlob(url);
-  const pin = blob.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+  const pin = blob.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
+    ?? findParamCoords(url);
   // The camera is only meaningful on a URL that is *about* a place. Every
   // Maps URL has an `@lat,lng` in it, including a route and a search, and
   // reading those as a location is worse than reading nothing: a directions
@@ -250,7 +280,48 @@ function isCoordinateLabel(name: string): boolean {
   return COORD_PAIR.test(name) || /\d+°\d+'/.test(name);
 }
 
+/**
+ * The `?q=` name, which is the shape a shared link actually arrives in.
+ *
+ * This is what the iOS share sheet produces, via two redirects:
+ *
+ *   maps.app.goo.gl/AmsF…  →  maps.google.com?q=<name>&ftid=0x30e2…
+ *
+ * and `q` there is not a bare label but the place's full formatted address —
+ * "Maeklong Railway Market (Rom Hup Market), Mae Klong, Mueang Samut
+ * Songkhram District, Samut Songkhram 75000, Thailand". That distinction is
+ * why it is reported separately from a `/maps/place/<name>` segment: a
+ * display name needs coordinates beside it before Find Place can be trusted,
+ * and an address with a postcode and a country in it does not.
+ *
+ * The `ftid` riding alongside is the hex feature id — the same identifier
+ * space findPlaceId refuses, and the reason there is nothing better to use.
+ */
+function findQueryName(url: URL): string | null {
+  const q = url.searchParams.get('q')?.trim();
+  if (!q || q.startsWith('place_id:') || isCoordinateLabel(q)) return null;
+  return q;
+}
+
+/**
+ * Is that `q` a formatted address, or just something typed into the box?
+ *
+ * The difference decides whether the client may act on the name with no
+ * coordinates beside it, so it has to be real rather than assumed. Google
+ * writes an address as components — "<place>, <district>, <city> <postcode>,
+ * <country>" — while `?q=coffee` or `?q=Central Park` is a search someone
+ * typed, and acting on those with no pin is exactly the wrong-city match this
+ * has been careful about all along. Three components is the line: it admits
+ * "Eiffel Tower, Paris, France" and turns away "coffee, vienna".
+ */
+function looksLikeAddress(q: string): boolean {
+  return q.split(',').filter(part => part.trim()).length >= 3;
+}
+
 function findName(url: URL): string | null {
+  const fromQuery = findQueryName(url);
+  if (fromQuery) return fromQuery;
+
   const match = url.pathname.match(/\/maps\/place\/([^/@]+)/);
   if (!match) return null;
   let name: string;
@@ -270,33 +341,42 @@ interface Identity {
   longitude: number | null;
   /** True when the coordinates are a viewport centre, not the place itself. */
   fromCamera: boolean;
+  /** True when `name` is Google's own formatted address, not a display name. */
+  nameIsAddress: boolean;
 }
 
 const NOTHING: Identity = {
-  placeId: null, name: null, latitude: null, longitude: null, fromCamera: false,
+  placeId: null, name: null, latitude: null, longitude: null,
+  fromCamera: false, nameIsAddress: false,
 };
 
 function parseIdentity(url: URL): Identity {
   if (isDirectionsUrl(url)) return NOTHING;
   const coords = findCoords(url);
+  const queryName = findQueryName(url);
   return {
     placeId: findPlaceId(url),
     name: findName(url),
     latitude: coords?.latitude ?? null,
     longitude: coords?.longitude ?? null,
     fromCamera: coords?.fromCamera ?? false,
+    nameIsAddress: queryName !== null && looksLikeAddress(queryName),
   };
 }
 
 /**
- * Can the client actually do something with this? A place id, or a location.
- * Deliberately NOT a bare name: the browser half refuses to act on one, since
- * Find Place answers a name with the most famous match and nothing would be
- * left to check it against. Counting a name as identified also stops a URL
- * expanding, so the redirect that would have produced coordinates is missed.
+ * Can the client actually do something with this? A place id, a location, or
+ * a name specific enough to stand alone.
+ *
+ * A bare display name is not: Find Place answers "Central Park" with the most
+ * famous one and, with no coordinates from the link, nothing is left to check
+ * that against. A formatted address is a different thing — it carries its own
+ * town, postcode and country — and refusing it is what made a perfectly
+ * ordinary shared link fail, since that is the only identity the share
+ * sheet's `?q=` form has to offer.
  */
 function isResolvable(id: Identity): boolean {
-  return !!id.placeId || id.latitude !== null;
+  return !!id.placeId || id.latitude !== null || id.nameIsAddress;
 }
 
 /**
@@ -367,7 +447,7 @@ Deno.serve(async (req: Request) => {
   // authenticated GET across everything Google runs. A segment test, not a
   // prefix one — `startsWith('/maps')` would admit /mapsanything.
   const onMapsPath = start.pathname === '/maps' || start.pathname.startsWith('/maps/');
-  if (!isShortener(start.hostname) && !onMapsPath) {
+  if (!isShortener(start.hostname) && !isMapsHost(start.hostname) && !onMapsPath) {
     return json({ error: 'Not a Google Maps link' }, 400);
   }
 

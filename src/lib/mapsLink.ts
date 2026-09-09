@@ -41,6 +41,8 @@ interface LinkIdentity {
   longitude: number | null;
   /** The coordinates are a viewport centre, not the place — see MAX_MATCH_KM. */
   fromCamera: boolean;
+  /** `name` is Google's own formatted address, not a bare display name. */
+  nameIsAddress: boolean;
 }
 
 // Matches what Google actually hands out: maps.app.goo.gl from the mobile
@@ -140,12 +142,14 @@ async function detailsFor(placeId: string): Promise<LinkedPlace | null> {
  * the place by a hex feature id the Places API won't accept. What they do
  * carry is the name and the pin, which together are enough for Find Place.
  *
- * The pin is required, not optional. A name alone is not something this can
- * safely act on: "Central Park" and "Hauptbahnhof" exist in dozens of cities,
- * Find Place answers with the most famous one, and with no coordinates from
- * the link there is nothing left to check that answer against. Offering a
- * confident, photographed, wrong-continent match is worse than declining, so
- * a name-only link is refused by the caller instead.
+ * The pin is optional in exactly one case. A bare display name without one is
+ * not something this can safely act on — "Central Park" and "Hauptbahnhof"
+ * exist in dozens of cities, Find Place answers with the most famous, and
+ * there is nothing left to check that answer against. A formatted address is
+ * different: "…, Mueang Samut Songkhram District, Samut Songkhram 75000,
+ * Thailand" names exactly one place on earth and disambiguates itself. That
+ * is what the share sheet's `?q=` form carries, and it carries no coordinates
+ * at all, so requiring a pin here refused ordinary shared links outright.
  *
  * Cost note: this is a billed Find Place call, not a free Autocomplete
  * session. It is one per link the user actually pastes and never speculative,
@@ -153,7 +157,7 @@ async function detailsFor(placeId: string): Promise<LinkedPlace | null> {
  */
 async function findByName(
   name: string,
-  point: { lat: number; lng: number },
+  point: { lat: number; lng: number } | null,
   fromCamera: boolean,
 ): Promise<LinkedPlace | null> {
   const service = await placesService();
@@ -169,11 +173,13 @@ async function findByName(
     // 25km camera allowance made the guard hollow at metro scale: the bias
     // never took, Find Place answered unbiased, and a same-named station 20km
     // away passed the check with a confident name and photo.
-    locationBias: {
+  };
+  if (point) {
+    request.locationBias = {
       center: point,
       radius: (fromCamera ? MAX_CAMERA_MATCH_KM : MAX_MATCH_KM) * 1000,
-    },
-  };
+    };
+  }
 
   return new Promise(resolve => {
     service.findPlaceFromQuery(request, (results, status) => {
@@ -188,16 +194,21 @@ async function findByName(
         resolve(null);
         return;
       }
-      const away = distanceKm(
-        { latitude: place.latitude, longitude: place.longitude },
-        { latitude: point.lat, longitude: point.lng },
-      );
-      // Matched something, but somewhere else entirely — the same name in
-      // another city. The caller falls back to the link's own name and pin,
-      // which are never wrong, just thinner.
-      if (away > (fromCamera ? MAX_CAMERA_MATCH_KM : MAX_MATCH_KM)) {
-        resolve(null);
-        return;
+      // Only checkable when the link gave us somewhere to check against. With
+      // no pin this is an address query, which carries its own disambiguation
+      // — there is no second "…, Samut Songkhram 75000, Thailand" elsewhere.
+      if (point) {
+        const away = distanceKm(
+          { latitude: place.latitude, longitude: place.longitude },
+          { latitude: point.lat, longitude: point.lng },
+        );
+        // Matched something, but somewhere else entirely — the same name in
+        // another city. The caller falls back to the link's own name and pin,
+        // which are never wrong, just thinner.
+        if (away > (fromCamera ? MAX_CAMERA_MATCH_KM : MAX_MATCH_KM)) {
+          resolve(null);
+          return;
+        }
       }
       resolve(place);
     });
@@ -250,11 +261,13 @@ export async function resolveMapsLink(url: string): Promise<LinkResult> {
     if (place) return { ok: true, place };
   }
 
-  // Both halves required: without the pin there is no way to tell the right
-  // "Central Park" from the famous one (see findByName).
-  if (link.name && point) {
+  // A pin, or a name specific enough not to need one (see findByName).
+  if (link.name && (point || link.nameIsAddress)) {
     const place = await findByName(link.name, point, link.fromCamera);
     if (place) return { ok: true, place };
+    // Nothing to fall back to without coordinates — a name alone can't be a
+    // marker. Rare: it means Google could not find an address Google wrote.
+    if (!point) return { ok: false, reason: UNREADABLE };
     // Deliberately no address, even for a camera position where one would say
     // something useful about where the marker is going. Filling it in reads as
     // a free improvement and is not: with no types and no spanKm, `address` is
