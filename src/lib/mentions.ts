@@ -209,42 +209,64 @@ function withMark(marks: ReadonlySet<NoteMark>, mark: NoteMark): ReadonlySet<Not
 // Anything that is neither a letter, a digit nor whitespace. Used only by the
 // flanking rule below, where "is this a word character?" is the real question.
 const PUNCT = /[^\p{L}\p{N}\s]/u;
+const DIGIT = /\p{N}/u;
+
+/**
+ * Is this marker a multiplication sign rather than emphasis?
+ *
+ * Digits on both sides, which is how a trip note writes a room, a print size
+ * or a screen: "Terrace 3*4 m", "Print 4*6 photos", "screen 1920*1080".
+ * Without this the two markers in such a note pair with each other, an
+ * asterisk the user typed disappears, and the text between them is emphasised
+ * for no reason anyone can see.
+ *
+ * Both sides are required, so "*5*" still italicises a number and "a *2* b"
+ * is untouched. Both ends of a note count as "not a digit", which is why the
+ * check reads the characters rather than testing for undefined.
+ *
+ * This is deliberately narrower than "not inside a word". An earlier version
+ * of this file rejected EVERY intraword marker, which is tidy in English and
+ * removes inline emphasis outright from any script written without spaces:
+ * "京都で*おすすめ*のスポット" and "在东京*必去*的地方" lost their emphasis
+ * entirely, since in Japanese and Chinese every mid-sentence marker has a
+ * letter before it. A travel planner's notes are exactly where someone writes
+ * in the local language. Multiplication was the real hazard; letters were
+ * collateral, and this is why CommonMark confines its own version of the rule
+ * to punctuation.
+ */
+function digitFlanked(before: string | undefined, after: string | undefined): boolean {
+  return before !== undefined && after !== undefined
+    && DIGIT.test(before) && DIGIT.test(after);
+}
 
 /**
  * The emphasis this marker would open, or null if it opens nothing.
  *
- * Three rules, and all of them exist to keep ordinary prose ordinary:
+ * Four rules, and all of them exist to keep ordinary prose ordinary:
  *
  * A marker must be followed by something that isn't whitespace. That single
  * condition is what keeps "2 * 3 = 6 * 2" arithmetic rather than an italic
  * " 3 = 6 " — without it any two asterisks in a line find each other. It is
  * also why "the answer is *" at the end of a line stays an asterisk.
  *
- * A marker must START at a boundary: what precedes it has to be whitespace,
- * punctuation, or the beginning of the span being scanned. Without that, a
- * marker buried in a word pairs with the OPENING marker of the span the writer
- * actually meant, the emphasis lands on text nobody wrote, and the characters
- * the user typed go missing:
+ * A marker followed by PUNCTUATION only opens if what precedes it is
+ * whitespace, punctuation, or the start of the span being scanned —
+ * CommonMark's left-flanking rule, and it earns its keep. Without it a stray
+ * marker earlier in the line eats the emphasis the writer actually meant:
  *
  *     Bring adapters*, and *do not* forget  → "adapters, and *do not forget"
  *     Save as IMG*.jpg then *print* it      → "IMG.jpg then *print it"
- *     Terrace 3*4 m, room 5*6 m             → "Terrace 3" + em("4 m, room 5")
- *     Print 4*6 photos, screen 1920*1080    → two multiplications, one italic
  *
- * CommonMark only applies this when the marker faces punctuation, and would
- * emphasise the last two — intraword '*' is allowed there. Dimensions and
- * print sizes written "3*4" are ordinary in a trip note, and this module
- * promises more than CommonMark does about a note reading as it was typed, so
- * the rule applies whatever follows. What it costs is "a**b**c", which no
- * longer bolds the b; nobody writes that, and it fails safe when they do.
+ * In both, the first asterisk pairs with the OPENING one of the real span, the
+ * emphasis lands on text nobody wrote, and a character the user typed goes
+ * missing. Requiring a boundary before a punctuation-facing marker says what a
+ * writer means: "adapters*," is the tail of a word, "*do" starts something.
  *
- * The preceding character is read as it stands rather than looked past a run
- * of markers, which is why "a**b**c" degrades to an italic "b*" instead of to
- * plain text: the scanner retries at the run's second '*', whose neighbour is
- * a marker rather than the 'a' that disqualified the first. Looking past the
- * run would be tidier and costs a scan per position, which is exactly the
- * quadratic this function just stopped paying — and every character still
- * survives either way, so it buys nothing worth that.
+ * A marker with digits on both sides never opens — see digitFlanked. That
+ * closes the same hole for arithmetic, which reaches it through the digit door
+ * rather than the punctuation one. findCloser applies the identical test, or
+ * the bug simply swaps roles: "Take *lots of photos, room is 3*4 m" would let
+ * a multiplication CLOSE a stray opener.
  *
  * '~' only counts in pairs. A single one is a tilde, which appears in prose
  * as "~20 minutes" far more often than it appears as an intended marker.
@@ -264,7 +286,10 @@ function openerAt(part: string, i: number): { mark: NoteMark; width: number } | 
   if (next === undefined || /\s/.test(next)) return null;
   // undefined means the start of the span being scanned, which is a boundary.
   const prev = part[i - 1];
-  if (prev !== undefined && !/\s/.test(prev) && !PUNCT.test(prev)) return null;
+  if (PUNCT.test(next) && prev !== undefined && !/\s/.test(prev) && !PUNCT.test(prev)) {
+    return null;
+  }
+  if (digitFlanked(prev, next)) return null;
   return { mark: c === '~' ? 'strike' : width === 2 ? 'bold' : 'italic', width };
 }
 
@@ -327,7 +352,12 @@ function findCloser(part: string, from: number, ch: string, width: number): numb
     const run = runLength(part, i, ch);
     // `i > from` rejects an empty span, which is what makes "****" and "~~~~"
     // four and four characters of literal text rather than an empty <strong>.
-    if (i > from && !/\s/.test(part[i - 1])) {
+    //
+    // The digit test is openerAt's, mirrored. Without it the arithmetic bug
+    // survives with the roles swapped — "Take *lots of photos, room is 3*4 m"
+    // lets the multiplication CLOSE the stray opener, deleting an asterisk and
+    // italicising twenty-five characters nobody asked for.
+    if (i > from && !/\s/.test(part[i - 1]) && !digitFlanked(part[i - 1], part[i + run])) {
       if (run === width) return i;
       if (run > width && fallback === null) fallback = i + run - width;
     }
