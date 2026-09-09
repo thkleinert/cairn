@@ -233,6 +233,35 @@ export function NoteList({
   }, [items, onRemove, onSetDepths, onRestore]);
 
   /**
+   * Where the caret goes when the editor next opens, for the times the end is
+   * the wrong place.
+   *
+   * autoFocus lands at the END on purpose: a bullet you open by pointing at it
+   * is one you mean to carry on writing. Enter's two moves want otherwise. The
+   * tail of a split opens with the caret in FRONT of text the user has already
+   * written, which is where they cut it; and taking that split back with
+   * Backspace puts the caret at the join, where their finger was — landing at
+   * the end of the rejoined line would mean the next Backspace eating the last
+   * character of the tail instead of the one before the cut.
+   *
+   * A state and an effect rather than a frame callback: React runs a child's
+   * effects before its parent's, so this is ordered AFTER the autoFocus it
+   * corrects, whereas a requestAnimationFrame only usually is — Enter awaits a
+   * write first, so the re-render is scheduled as a task and a frame that got
+   * in ahead of it would move the caret in the textarea on its way out.
+   * Cleared once applied, so that a second bullet asking for the same offset
+   * still gets it, and so that Tabbing a level in or out afterwards does not
+   * yank the caret back out of the middle of a word.
+   */
+  const [caretOnOpen, setCaretOnOpen] = useState<number | null>(null);
+  useEffect(() => {
+    if (caretOnOpen === null) return;
+    const el = inputRef.current;
+    if (el) { el.focus(); el.setSelectionRange(caretOnOpen, caretOnOpen); }
+    setCaretOnOpen(null);
+  }, [caretOnOpen]);
+
+  /**
    * Open a new bullet and put the caret in it. Every way of starting one goes
    * through here so the committed-latch is cleared in exactly one place —
    * forgetting it at a call site would mean a bullet that silently refuses to
@@ -240,7 +269,7 @@ export function NoteList({
    *
    * `text` is the tail of a bullet Enter has just cut in half. It arrives
    * already written, so the caret goes in FRONT of it rather than after it —
-   * the effect below, which is also what `splitTail` is latched for.
+   * the effect above, which is also what `splitTail` is latched for.
    */
   const openDraft = useCallback((
     afterId: string | null,
@@ -252,37 +281,8 @@ export function NoteList({
     setDraftState({ afterId, depth, atTop: opts.atTop, splitTail: text.length > 0 });
     setFocusId(DRAFT);
     setBody(text);
+    if (text) setCaretOnOpen(0);
   }, []);
-
-  /**
-   * The caret goes in FRONT of a tail a split has just handed to the draft.
-   *
-   * Neither way into the field puts it there. Arriving from a bullet's own
-   * editor the draft's textarea MOUNTS and autoFocus jumps to the end — right
-   * for a bullet you opened to carry on writing, wrong for one whose text you
-   * are standing in front of. Arriving from another draft the row is reused
-   * rather than remounted, autoFocus does not run at all, and the browser
-   * parks the caret at the end of the replaced value.
-   *
-   * An effect rather than a frame callback: React runs a child's effects
-   * before its parent's, so this is ordered AFTER the autoFocus it corrects.
-   * A requestAnimationFrame is only usually ordered that way — Enter awaits
-   * the write first, so the re-render is scheduled as a task, and a frame that
-   * gets in before it would move the caret in the textarea on its way out and
-   * leave the real one at the end of the tail.
-   *
-   * Keyed on which draft is holding a tail, not on the draft object, so
-   * Tabbing the bullet a level in or out does not yank the caret back out of
-   * the middle of a word.
-   */
-  const splitTailKey = draft?.splitTail ? (draft.afterId ?? '') : null;
-  useEffect(() => {
-    if (splitTailKey === null) return;
-    const el = inputRef.current;
-    if (!el) return;
-    el.focus();
-    el.setSelectionRange(0, 0);
-  }, [splitTailKey]);
 
   // Opening a bullet because the heading asked for one. Keyed on the flag
   // going true rather than on its value, so the parent can leave it set for a
@@ -493,7 +493,15 @@ export function NoteList({
     if (focusId === note.id) return;
     movingFocus.current = true;
     try {
-      await commit();
+      const saved = await commit();
+      // The same guard blur has: a draft whose insert failed keeps its text
+      // and its row, so it can be tried again rather than disappearing behind
+      // a toast. It was missing here, which mattered little while a draft only
+      // ever held text the user had just typed — after a split it holds the
+      // tail of a saved bullet, with the head already written, and tapping
+      // another bullet was enough to throw away a half-line nothing on screen
+      // could reconstruct.
+      if (focusId === DRAFT && saved === null && body.trim()) return;
       setDraftState(null);
       setFocusId(note.id);
       setBody(note.body);
@@ -506,7 +514,7 @@ export function NoteList({
       // than returning an error when the network is down.
       movingFocus.current = false;
     }
-  }, [commit, focusId]);
+  }, [commit, focusId, body]);
 
   /**
    * `from` is the row the textarea was rendered for. If focus has since moved
@@ -572,6 +580,10 @@ export function NoteList({
           setDraftState(null);
           setFocusId(head.id);
           setBody(joined);
+          // At the join, not at the end of the line the two halves make. The
+          // caret was sitting on the cut, and the next Backspace is meant for
+          // the character in front of it.
+          setCaretOnOpen(head.body.length);
         });
         return true;
       }
@@ -708,7 +720,17 @@ export function NoteList({
         // and openDraft replaces `body` — an uncommitted edit left here would
         // simply be dropped.
         if (!(await commit())) return;
-        const before = at > 0 ? items[at - 1] : undefined;
+        // Read the outline again rather than from `items`, which is the list
+        // as it was when the key was pressed and the write has been to the
+        // server and back since. A bullet that arrived in that window — a
+        // collaborator's, or one the write's own refetch carried — changes
+        // what "the row above" is, and anchoring to the old neighbour would
+        // put the new bullet above the wrong row, or hoist it to the very top
+        // of a list it is no longer the first row of.
+        const fresh = itemsRef.current;
+        const now = fresh.findIndex(n => n.id === id);
+        if (now === -1) return;
+        const before = now > 0 ? fresh[now - 1] : undefined;
         // The row above in the OUTLINE is what the new bullet has to be
         // anchored to in order to land immediately above this one, and it can
         // be hidden inside a folded subtree — a draft anchored to a row that
@@ -717,13 +739,13 @@ export function NoteList({
         // every ancestor of it, because folds nest and opening the outermost
         // one alone can leave it hidden under an inner one.
         let level = before?.depth ?? 0;
-        for (let i = at - 2; i >= 0 && level > 0; i--) {
-          if (items[i].depth < level) {
-            level = items[i].depth;
-            if (folded(items[i].id)) onExpand?.(items[i].id);
+        for (let i = now - 2; i >= 0 && level > 0; i--) {
+          if (fresh[i].depth < level) {
+            level = fresh[i].depth;
+            if (folded(fresh[i].id)) onExpand?.(fresh[i].id);
           }
         }
-        openDraft(before?.id ?? null, note?.depth ?? 0, { atTop: !before });
+        openDraft(before?.id ?? null, fresh[now].depth, { atTop: !before });
         return;
       }
 
