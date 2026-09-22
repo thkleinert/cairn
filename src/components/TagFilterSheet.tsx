@@ -17,6 +17,16 @@ const TAG_PRESETS = [
 interface Props {
   tags: Tag[];
   activeTags: string[];
+  /**
+   * How many places the filter currently matches, and how many there are.
+   *
+   * Stated as a match count rather than "showing N", because what any given
+   * view shows is its own business — the map additionally hides spots behind
+   * its own toggle, and a number it could not be read to confirm is the exact
+   * trap the counting note in TripView warns about.
+   */
+  matchingCount: number;
+  totalCount: number;
   onToggleTag: (id: string) => void;
   onClearTags: () => void;
   onCreateTag: (name: string, color: string, icon?: string) => void;
@@ -26,7 +36,8 @@ interface Props {
 }
 
 export function TagFilterSheet({
-  tags, activeTags, onToggleTag, onClearTags, onCreateTag, onDeleteTag, onUpdateTag, onClose
+  tags, activeTags, matchingCount, totalCount,
+  onToggleTag, onClearTags, onCreateTag, onDeleteTag, onUpdateTag, onClose
 }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -84,19 +95,40 @@ export function TagFilterSheet({
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Tags"
+        aria-label="Filter by tag"
       >
         <div className="bottom-sheet-handle" {...handleProps} />
         <div className="sheet-header-row">
-          <h2 className="bottom-sheet-title">Tags</h2>
+          {/* Named for what it does, matching the aria-label on the topbar
+              button that opens it. "Tags" is a noun, and next to a pencil and
+              a bin on every row it read as a tag manager that happened to
+              highlight things — the filtering went unnoticed. */}
+          <h2 className="bottom-sheet-title">Filter by tag</h2>
           <button className="sheet-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
 
-        {activeTags.length > 0 && (
-          <button className="btn-ghost u-mb8" onClick={onClearTags}>
-            Clear filter ({activeTags.length})
-          </button>
-        )}
+        {/* Always rendered, unlike the Clear button it sits beside. The only
+            place the word "filter" used to appear was that button, which shows
+            up only once a tag is already active — so the one label explaining
+            the sheet was invisible precisely while it was still needed.
+            aria-live, because toggling a chip changes this line and nothing
+            else a screen reader would announce. */}
+        <div className="tag-filter-status" aria-live="polite">
+          <span>
+            {totalCount === 0
+              // A trip with nothing in it yet. "all 0 places" is a sentence
+              // about nothing; say what is actually true instead.
+              ? 'No places to filter yet'
+              : activeTags.length === 0
+                ? `No filter — all ${totalCount} ${totalCount === 1 ? 'place' : 'places'}`
+                : `${matchingCount} of ${totalCount} ${totalCount === 1 ? 'place' : 'places'}`}
+          </span>
+          {activeTags.length > 0 && (
+            <button className="btn-ghost tag-filter-clear" onClick={onClearTags}>
+              Clear
+            </button>
+          )}
+        </div>
 
         <div className="tag-list">
           {tags.map(tag => (
@@ -162,13 +194,21 @@ export function TagFilterSheet({
                     className={`tag-filter-chip ${activeTags.includes(tag.id) ? 'tag-filter-chip--active' : ''}`}
                     style={{ '--tag-color': tag.color } as React.CSSProperties}
                     onClick={() => onToggleTag(tag.id)}
+                    aria-pressed={activeTags.includes(tag.id)}
                   >
                     {tag.icon ? (
                       <span className="tag-icon">{tag.icon}</span>
                     ) : (
                       <span className="tag-dot" style={{ background: tag.color }} />
                     )}
-                    {tag.name}
+                    <span className="tag-filter-name">{tag.name}</span>
+                    {/* A tick, because the border tint this used to rely on is
+                        also how an editor draws "selected" — the one state
+                        that had to read as ON at a glance was the quietest
+                        thing on the row. */}
+                    {activeTags.includes(tag.id) && (
+                      <Check size={16} className="tag-filter-check" aria-hidden="true" />
+                    )}
                   </button>
                   {confirmDeleteId === tag.id ? (
                     <>
