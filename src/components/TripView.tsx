@@ -488,6 +488,11 @@ export function TripView({ trip, userId, onBack, onTripUpdated, initialPlaceId, 
         <TagFilterSheet
           tags={tags}
           activeTags={activeTags}
+          // Counted over every place, not over what a view happens to be
+          // drawing: this sheet is opened from the trip topbar and the filter
+          // it sets outlives whichever view is behind it.
+          matchingCount={places.filter(passesTagFilter).length}
+          totalCount={places.length}
           onToggleTag={handleToggleTag}
           onClearTags={() => setActiveTags([])}
           onCreateTag={createTag}

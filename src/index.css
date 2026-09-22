@@ -1308,10 +1308,31 @@ select.input {
   border: 1.5px solid var(--color-border);
   text-align: left;
 }
+/* The tag's OWN colour, not the app's accent. --tag-color is already set on
+   every chip and went unused here, so the one row that was on looked like any
+   other row with a slightly bluer edge. Tinting with the colour the user chose
+   for that tag ties the chip to the markers it is filtering. */
 .tag-filter-chip--active {
-  border-color: var(--color-primary);
-  background: var(--color-primary-light);
+  border-color: var(--tag-color, var(--color-primary));
+  background: color-mix(in srgb, var(--tag-color, var(--color-primary)) 12%, transparent);
+  font-weight: 600;
 }
+
+/* Pushes the tick to the trailing edge, away from the icon and the name. */
+.tag-filter-name { flex: 1; min-width: 0; }
+
+.tag-filter-check { color: var(--tag-color, var(--color-primary)); flex-shrink: 0; }
+
+/* Always on screen, so the sheet states what it is doing before anything is
+   picked. Sits where the Clear button used to appear only once filtering had
+   already started. */
+.tag-filter-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: var(--tap-target);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.tag-filter-clear { flex-shrink: 0; }
 
 .tag-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .tag-icon { font-size: 16px; line-height: 1; }
