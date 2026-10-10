@@ -804,6 +804,12 @@ select.input {
 }
 .prediction-status--error { color: var(--color-danger); }
 
+/* The second line of a status row — the way out, under what went wrong.
+   Column, because the two read as a sentence and its footnote rather than as
+   two competing messages on one line. */
+.prediction-status { display: flex; flex-direction: column; gap: 3px; }
+.prediction-status-hint { font-size: 12px; color: var(--color-text-secondary); }
+
 /* ============================================================
    BOTTOM SHEETS
    ============================================================ */
