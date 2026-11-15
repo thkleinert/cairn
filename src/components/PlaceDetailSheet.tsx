@@ -245,6 +245,23 @@ export function PlaceDetailSheet({
     </button>
   );
 
+  // Beside the name rather than in the body: it is the one thing you reach
+  // for standing on a street corner, and it should not move with whatever
+  // the sheet holds. Tinted, not muted like the visited check next to it —
+  // that one shows a state, this one does something. Offered in the shared
+  // view too: following a trip you can't edit still means getting there.
+  const directionsButton = (
+    <button
+      type="button"
+      className="directions-icon-btn"
+      onClick={() => setShowDirections(true)}
+      aria-label={`Directions to ${place.name}`}
+      title="Directions"
+    >
+      <Navigation size={16} />
+    </button>
+  );
+
   const { sheetRef, handleProps } = useSwipeToClose(handleClose);
 
   return (
@@ -269,6 +286,7 @@ export function PlaceDetailSheet({
         ) : (
           <div className="sheet-header-row">
             <h2 className="place-name">{place.name}</h2>
+            {directionsButton}
             {visitedToggle}
             <button className="sheet-close" onClick={handleClose} aria-label="Close"><X size={20} /></button>
           </div>
@@ -277,6 +295,7 @@ export function PlaceDetailSheet({
         {place.image_url && (
           <div className="place-name-row">
             <h2 className="place-name">{place.name}</h2>
+            {directionsButton}
             {visitedToggle}
           </div>
         )}
@@ -287,14 +306,6 @@ export function PlaceDetailSheet({
         {isVisited && place.visited_at && (
           <p className="visited-date-line">Visited · {format(new Date(place.visited_at), 'MMM d, yyyy')}</p>
         )}
-
-        {/* Offered in the shared view too — someone following a trip they
-            can't edit still needs to get there. */}
-        <div className="place-directions-row">
-          <button type="button" className="btn-secondary place-directions-btn" onClick={() => setShowDirections(true)}>
-            <Navigation size={15} /> Directions
-          </button>
-        </div>
 
         {/* Tags — only the ones already on this place; the + opens the
             full trip tag list to add more or create a new one */}

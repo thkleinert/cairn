@@ -1019,16 +1019,18 @@ select.input {
   margin-top: -12px;
 }
 
-/* Directions — a compact action under the address rather than another
-   full-width button, so it doesn't push the sheet's content down. */
-.place-directions-row {
-  margin: -4px 0 16px;
+/* Directions — sits in the name row beside the visited check, same size,
+   but filled with the primary tint so it reads as an action, not a state. */
+.directions-icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  transition: background 0.12s, transform var(--dur-fast) var(--spring-bounce);
 }
-.place-directions-btn {
-  min-height: 36px;
-  padding: 0 14px;
-  font-size: 14px;
-}
+.directions-icon-btn:active { transform: scale(0.92); }
 
 .directions-options {
   list-style: none; margin: 0; padding: 0;
