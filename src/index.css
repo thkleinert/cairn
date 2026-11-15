@@ -1019,6 +1019,38 @@ select.input {
   margin-top: -12px;
 }
 
+/* Directions — sits in the name row beside the visited check, same size,
+   but filled with the primary tint so it reads as an action, not a state. */
+.directions-icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  transition: background 0.12s, transform var(--dur-fast) var(--spring-bounce);
+}
+.directions-icon-btn:active { transform: scale(0.92); }
+
+.directions-options {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.directions-option {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: var(--tap-target);
+  padding: 0 16px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 15px; font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.directions-option:active { background: var(--color-border); }
+.directions-option svg { color: var(--color-muted); }
+
 /* Compact icon toggle next to the place name — replaces the old
    full-width "Mark as visited" button */
 .visited-icon-btn {

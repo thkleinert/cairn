@@ -5,6 +5,7 @@ import { useComments } from '../hooks/useComments';
 import { ImageLightbox } from './ImageLightbox';
 import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
+import { DirectionsSheet } from './DirectionsSheet';
 import { NoteList } from './NoteList';
 import { NoteBody } from './NoteBody';
 import { DateRangeField } from './DateRangeField';
@@ -13,7 +14,7 @@ import { normaliseDepths } from '../lib/outline';
 import { visitsForPlace, baseYear } from '../lib/timeline';
 import {
   X,
-  Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
+  Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight, Navigation
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage, TripNote, PlaceVisit } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -88,6 +89,7 @@ export function PlaceDetailSheet({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [showDirections, setShowDirections] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   // Whether the calendar is open for a NEW visit. Existing ones carry their
   // own open state inside their field.
@@ -159,6 +161,7 @@ export function PlaceDetailSheet({
     // The sheet is reused rather than remounted when another place is opened,
     // so a calendar left open would follow you to the next one.
     setAddingVisit(false);
+    setShowDirections(false);
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
@@ -242,6 +245,23 @@ export function PlaceDetailSheet({
     </button>
   );
 
+  // Beside the name rather than in the body: it is the one thing you reach
+  // for standing on a street corner, and it should not move with whatever
+  // the sheet holds. Tinted, not muted like the visited check next to it —
+  // that one shows a state, this one does something. Offered in the shared
+  // view too: following a trip you can't edit still means getting there.
+  const directionsButton = (
+    <button
+      type="button"
+      className="directions-icon-btn"
+      onClick={() => setShowDirections(true)}
+      aria-label={`Directions to ${place.name}`}
+      title="Directions"
+    >
+      <Navigation size={16} />
+    </button>
+  );
+
   const { sheetRef, handleProps } = useSwipeToClose(handleClose);
 
   return (
@@ -266,6 +286,7 @@ export function PlaceDetailSheet({
         ) : (
           <div className="sheet-header-row">
             <h2 className="place-name">{place.name}</h2>
+            {directionsButton}
             {visitedToggle}
             <button className="sheet-close" onClick={handleClose} aria-label="Close"><X size={20} /></button>
           </div>
@@ -274,6 +295,7 @@ export function PlaceDetailSheet({
         {place.image_url && (
           <div className="place-name-row">
             <h2 className="place-name">{place.name}</h2>
+            {directionsButton}
             {visitedToggle}
           </div>
         )}
@@ -665,6 +687,10 @@ export function PlaceDetailSheet({
           uploadMultiple
           onClose={() => setShowAddPhotos(false)}
         />
+      )}
+
+      {showDirections && (
+        <DirectionsSheet place={place} onClose={() => setShowDirections(false)} />
       )}
 
       {showTagPicker && (
