@@ -5,6 +5,7 @@ import { useComments } from '../hooks/useComments';
 import { ImageLightbox } from './ImageLightbox';
 import { QuickAddSheet } from './QuickAddSheet';
 import { TagPickerSheet } from './TagPickerSheet';
+import { DirectionsSheet } from './DirectionsSheet';
 import { NoteList } from './NoteList';
 import { NoteBody } from './NoteBody';
 import { DateRangeField } from './DateRangeField';
@@ -13,7 +14,7 @@ import { normaliseDepths } from '../lib/outline';
 import { visitsForPlace, baseYear } from '../lib/timeline';
 import {
   X,
-  Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight
+  Trash2, Save, MapPin, Plus, SendHorizontal, ChevronRight, Navigation
 } from 'lucide-react';
 import type { Place, Tag, PlaceImage, TripNote, PlaceVisit } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -88,6 +89,7 @@ export function PlaceDetailSheet({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [showDirections, setShowDirections] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   // Whether the calendar is open for a NEW visit. Existing ones carry their
   // own open state inside their field.
@@ -159,6 +161,7 @@ export function PlaceDetailSheet({
     // The sheet is reused rather than remounted when another place is opened,
     // so a calendar left open would follow you to the next one.
     setAddingVisit(false);
+    setShowDirections(false);
   }, [place.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
@@ -284,6 +287,14 @@ export function PlaceDetailSheet({
         {isVisited && place.visited_at && (
           <p className="visited-date-line">Visited · {format(new Date(place.visited_at), 'MMM d, yyyy')}</p>
         )}
+
+        {/* Offered in the shared view too — someone following a trip they
+            can't edit still needs to get there. */}
+        <div className="place-directions-row">
+          <button type="button" className="btn-secondary place-directions-btn" onClick={() => setShowDirections(true)}>
+            <Navigation size={15} /> Directions
+          </button>
+        </div>
 
         {/* Tags — only the ones already on this place; the + opens the
             full trip tag list to add more or create a new one */}
@@ -665,6 +676,10 @@ export function PlaceDetailSheet({
           uploadMultiple
           onClose={() => setShowAddPhotos(false)}
         />
+      )}
+
+      {showDirections && (
+        <DirectionsSheet place={place} onClose={() => setShowDirections(false)} />
       )}
 
       {showTagPicker && (
